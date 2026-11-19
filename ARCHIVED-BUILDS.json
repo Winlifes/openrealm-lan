@@ -36,7 +36,25 @@
       "Omitted unrelated game modules and original reference media",
       "Substituted a console atlas from the retained public-domain X11 fixed font",
       "Preserved original comparison tests with local reference inputs"
-    ]
+    ],
+    "archiveBrowserBuild": {
+      "emscripten": "4.0.23",
+      "memory64": true,
+      "rebuiltArtifacts": [
+        "openwarcraft3.js",
+        "openwarcraft3.wasm",
+        "openwarcraft3.data"
+      ],
+      "scope": "Clean open-source tree with local toolchain"
+    },
+    "archiveLanSmoke": {
+      "nativeRoomState": "waiting",
+      "seconds": 17.68,
+      "nativeBuild": "r93-archive-check",
+      "mapCatalogEntries": 1,
+      "browserStagingSucceeded": true,
+      "scope": "Local resource bootstrap, matched release staging and native room startup"
+    }
   },
   "r94": {
     "originalSourceCommit": "d78708b7997be738efa912ca9e4201f8c64b0797",
@@ -56,6 +74,15 @@
     "jassSnapshotVersion": 17,
     "releasedToOriginalLan": false,
     "fullGameplayVerified": false,
-    "openIssue": "Private two-client Edge session reached the map. Missing inherited icon data hid the map-created Divine Shield button."
+    "openIssue": "Private two-client Edge session reached the map. Missing inherited icon data hid the map-created Divine Shield button.",
+    "archiveFocusedNativeVerification": {
+      "suites": 2,
+      "tests": 48,
+      "assertions": 506,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "scope": "Native ROC and TFT Divine Shield regressions"
+    }
   }
 }
