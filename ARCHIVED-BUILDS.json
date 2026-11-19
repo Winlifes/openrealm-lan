@@ -1,0 +1,61 @@
+{
+  "r93": {
+    "originalSourceCommit": "bbf3543a5480a85cb2a4eb99c0461902e6be7e3f",
+    "originalNativeTests": {
+      "suites": 39,
+      "tests": 9734,
+      "assertions": 17776147,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "originalMemory64GameTests": 454,
+    "originalMemory64GameAssertions": 7644,
+    "originalWasmSha256": "1373332518c3be2fc03c7aa8cb34b12bf8a4c83e1fc009a70d50cc4b5c7a01c7",
+    "nativeSaveVersion": 171,
+    "browserSaveVersion": 32,
+    "jassSnapshotVersion": 17,
+    "releasedToOriginalLan": true,
+    "fullGameplayVerified": false,
+    "archiveNativeVerification": {
+      "suites": 29,
+      "tests": 9234,
+      "assertions": 17770184,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "scope": "Shared engine and Warcraft III tests using local reference fixtures"
+    },
+    "archiveLocalMapMetadata": {
+      "readableMapFiles": 273,
+      "roomSlotEligible": 270,
+      "scope": "Metadata only"
+    },
+    "archivalChanges": [
+      "Parameterized LAN build and deployment settings",
+      "Omitted unrelated game modules and original reference media",
+      "Substituted a console atlas from the retained public-domain X11 fixed font",
+      "Preserved original comparison tests with local reference inputs"
+    ]
+  },
+  "r94": {
+    "originalSourceCommit": "d78708b7997be738efa912ca9e4201f8c64b0797",
+    "originalNativeTests": {
+      "suites": 39,
+      "tests": 9760,
+      "assertions": 17776471,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "originalMemory64GameTests": 512,
+    "originalMemory64GameAssertions": 8314,
+    "originalWasmSha256": "b68a808e57be74cb69154badf24aad8dda21a46ff2d97e14a13bcbee09b83fac",
+    "nativeSaveVersion": 171,
+    "browserSaveVersion": 32,
+    "jassSnapshotVersion": 17,
+    "releasedToOriginalLan": false,
+    "fullGameplayVerified": false,
+    "openIssue": "Private two-client Edge session reached the map. Missing inherited icon data hid the map-created Divine Shield button."
+  }
+}

@@ -1,0 +1,210 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Winlife 魔兽争霸 III · 标准对战测试版</title>
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; height: 100%; overscroll-behavior: none; }
+  /* The engine adapts to whatever size the canvas is; fill the viewport so
+     portrait phones render edge-to-edge (dvh handles mobile URL-bar chrome). */
+  canvas { display: block; width: 100vw; height: 100vh; height: 100dvh; outline: none; touch-action: none; }
+  #status { position: fixed; left: 10px; top: 8px; color: #bbb; font: 12px/1.5 monospace;
+            text-shadow: 0 0 4px #000; pointer-events: none; }
+  #input-status { position: fixed; left: 10px; bottom: 8px; right: 10px; color: #888;
+                  font: 11px/1.4 monospace; text-shadow: 0 0 4px #000; pointer-events: none; }
+  .touch-mode { -webkit-user-select: none; user-select: none; }
+  #movie { display: none; position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 20;
+           background: #000; object-fit: contain; }
+  #movie-tap { display: none; position: fixed; inset: 0; z-index: 21; color: #ddd;
+               font: 14px/1.6 monospace; text-align: center; padding-top: 45vh;
+               background: rgba(0,0,0,.55); cursor: pointer; }
+</style>
+<canvas id="canvas" width="1280" height="720" oncontextmenu="event.preventDefault()" tabindex="0"></canvas>
+<div id="status">loading…</div>
+<div id="input-status"></div>
+<video id="movie" playsinline preload="none"></video>
+<div id="movie-tap">▶ click to play</div>
+<script>
+  window.__status = 'loading';
+  window.__logs = [];
+  window.__errors = [];
+  var st = document.getElementById('status');
+  function setStatus(s) { window.__status = s; st.textContent = s; st.style.display = s === 'runtime-initialized' ? 'none' : ''; }
+  window.addEventListener('error', function (e) { window.__errors.push(String(e.message)); });
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    preRun: [function () {
+      Module.FS.mkdirTree('/data');
+      Module.ENV.XDG_DATA_HOME = '/userdata';
+      if (new URLSearchParams(location.search).get('audio') === 'dummy') Module.ENV.SDL_AUDIODRIVER = 'dummy';
+      Module.addRunDependency('game-resources');
+      Promise.all([seedMapCatalog(),loadBrowserResources(),loadPlayerFiles(),loadMovieCatalog()])
+        .then(function () {
+          // Removing the final dependency starts main synchronously. A renderer
+          // exception here is an engine startup error, not a failed download.
+          try { Module.removeRunDependency('game-resources'); }
+          catch(e) { console.error('Game startup failed',e); window.__errors.push('startup: '+e); setStatus('游戏启动失败，请刷新重试'); }
+        }, function (e) { console.error('Game resource setup failed',e); window.__errors.push('resources: '+e); setStatus('资源加载失败，请刷新重试'); });
+    }],
+    arguments: ['-data', '/data', '+com_maxfps', '60', '+fs_expansion', '1', '+vid_native', '0', '+vid_fullscreen', '0', '+vid_mode', '4', '+set', 'wc3_locale', 'zhCN'].concat((() => {
+      // A validated room id selects the site's same-origin multiplayer route.
+      const query = new URLSearchParams(location.search);
+      const room = query.get('room');
+      const wsUrl = room && /^[a-f0-9]{18}$/.test(room)
+        ? 'wss://' + location.host + '/api/rooms/' + room + '/ws' : '';
+      let args = [];
+      const nickname = (localStorage.getItem('winlife-wc3-nickname') || '玩家').replace(/["\\+;\x00-\x1f]/g,' ').trim().slice(0,24);
+      if (nickname) args.push('+set','name',nickname);
+      if (wsUrl) args.push('+ws_url',wsUrl,'+set','connect','127.0.0.1');
+      if (query.get('debug') === '1') args.push('+set','cl_ui_hit_debug','1');
+      return args;
+    })()),
+    print: function (t) { if (window.__logs.length < 2000) window.__logs.push(String(t)); },
+    printErr: function (t) { console.error(t); window.__errors.push(String(t)); if (window.__errors.length > 4000) window.__errors.shift(); },
+    WC3_DATA_BASE: '/play/gamedata/',
+    onSessionEnded: function () { finishBrowserSession(); },
+    onExit: function () { finishBrowserSession(); },
+    onRuntimeInitialized: function () { setStatus('runtime-initialized'); },
+    locateFile: function (f) { return f + '?v=' + window.__BUILD; },
+    onAbort: function (why) { window.__errors.push('ABORT: ' + why); setStatus('aborted'); },
+    wc3PlayMovie: function (path) {
+      var name=String(path).replace(/\\/g,'/').split('/').pop().replace(/\.(mpq|avi|mp4|bik|webm)$/i,'').toLowerCase();
+      if (Module.WC3_MOVIES && Module.WC3_MOVIES.has(name)) {
+        if (window.__moviePlay) window.__moviePlay(String(path));
+      } else {
+        window.__logs.push('Optional movie is not installed: '+path);
+        // The completion can start the next logo. Deliver it after CL_PlayMovie
+        // returns, so a nested request cannot leave the engine's movie gate set.
+        setTimeout(function () { if(Module._WC3_MovieDone)Module._WC3_MovieDone(); },0);
+      }
+    },
+  };
+  window.Module = Module;
+  var returningToSite = false;
+  function finishBrowserSession() {
+    if (returningToSite) return;
+    returningToSite = true;
+    setStatus('正在保存进度并返回…');
+    var leave = function (error) {
+      if (error) {
+        returningToSite = false;
+        window.__errors.push('保存进度失败: ' + error);
+        setStatus('进度保存失败，请稍后重试退出');
+        return;
+      }
+      location.assign(new URLSearchParams(location.search).has('room') ? '/rooms.html' : '/');
+    };
+    if (Module.FS && Module.FS.syncfs) Module.FS.syncfs(false, leave);
+    else leave();
+  }
+  window.loadPlayerFiles = function () {
+    return new Promise(function (resolve, reject) {
+      Module.FS.mkdirTree('/userdata');
+      // Multiplayer has no saved-game UI. Keep its temporary files out of the
+      // single-player IDBFS store: syncing an older tab's tree would delete
+      // saves created by another tab after it started (IDBFS reconcile semantics).
+      if (/^[a-f0-9]{18}$/.test(new URLSearchParams(location.search).get('room') || '')) {
+        resolve();
+        return;
+      }
+      Module.FS.mount(Module.FS.filesystems.IDBFS, {autoPersist:true}, '/userdata');
+      Module.FS.syncfs(true, function (error) { if(error)reject(error);else resolve(); });
+    });
+  };
+  window.loadBrowserResources = async function () {
+    setStatus('正在加载游戏资源…');
+    var index = await fetch('assets.index.txt?v='+window.__BUILD);
+    if (!index.ok) throw new Error('资源目录不可用');
+    Module.WC3_ASSET_INDEX = new Set((await index.text()).split(/\r?\n/).filter(Boolean));
+    var response = await fetch('bootstrap.mpq?v='+window.__BUILD);
+    if (!response.ok) throw new Error('游戏资源包不可用');
+    var reader=response.body.getReader(), chunks=[], total=0;
+    while (true) {
+      var part=await reader.read(); if (part.done) break;
+      chunks.push(part.value);total+=part.value.length;
+      setStatus('正在加载游戏资源（已下载 '+(total/1048576).toFixed(1)+' MB）');
+    }
+    var bytes=new Uint8Array(total), offset=0;
+    chunks.forEach(function (part) { bytes.set(part,offset);offset+=part.length; });
+    Module.FS.writeFile('/data/startup.mpq',bytes,{canOwn:true});
+    setStatus('正在初始化游戏…');
+  };
+</script>
+<script src="wc3-movies.js"></script>
+<script>
+  // Build-id negotiation: version.json is deployed with every bundle and served
+  // no-cache, so the wasm/data URLs ALWAYS change when the build changes (they
+  // are served immutable).  The URL ?v= stays as a manual override fallback.
+  window.__BUILD = (new URLSearchParams(location.search)).get('v') || '0';
+  (function () {
+    // Text files that the browser's sync-XHR text path would mangle are served
+    // as <path>.b64 sidecars; preload the index so the engine fetches exact
+    // bytes for them. Missing index = plain path (older mirrors).
+    try {
+      var b = new XMLHttpRequest();
+      b.open('GET', Module.WC3_DATA_BASE + 'b64.index.txt?' + window.__BUILD, false);
+      b.send();
+      if (b.status === 200) {
+        var set = new Set();
+        b.responseText.split(/\r?\n/).forEach(function (line) {
+          line = line.trim().toLowerCase();
+          if (line) set.add(line);
+        });
+        Module.WC3_B64_SET = set;
+      }
+    } catch (e) {}
+
+    async function load() {
+      const ws = Module.arguments.indexOf('+ws_url');
+      if (ws >= 0) {
+        const response = await fetch('/api/health', {cache:'no-store'});
+        if (!response.ok) throw new Error('联机服务暂时不可用，请返回房间列表重试');
+        const active = await response.json();
+        if (active.build !== window.__BUILD)
+          throw new Error('游戏版本已更新，请返回房间列表重新进入');
+        Module.arguments[ws+1] += '?build=' + encodeURIComponent(window.__BUILD);
+      }
+      var s = document.createElement('script');
+      s.src = 'openwarcraft3.js?v=' + window.__BUILD;
+      document.head.appendChild(s);
+      var t = document.createElement('script');
+      t.src = 'wc3-input.js?v=' + window.__BUILD;
+      document.head.appendChild(t);
+    }
+    fetch('version.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (j && j.build) window.__BUILD = j.build; })
+      .catch(function () {})
+      .then(load)
+      .catch(function(e) { window.__errors.push(String(e)); setStatus(e.message); });
+  })();
+
+  // Seed the full map catalog as zero-byte placeholders so the in-game map
+  // browser lists every map; opening one triggers the engine's fetch-on-demand
+  // (common.c WC3_FetchRemoteFile) which pulls the real archive from
+  // Module.WC3_DATA_BASE and writes it into the MEMFS. Failures leave the catalog as-is.
+  window.seedMapCatalog = function () {
+    var FS = (window.Module && Module.FS) || window.FS;
+    if (!FS) return Promise.reject(new Error('游戏目录尚未初始化'));
+    return fetch('playable-maps.index.txt', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (txt) {
+        var n = 0;
+        var h = 0;
+        for (var ci = 0; ci < txt.length; ci++) h = (h * 31 + txt.charCodeAt(ci)) | 0;
+        Module.WC3_DATA_V = String(h >>> 0);
+        txt.split('\n').forEach(function (line) {
+          line = line.trim();
+          if (!line) return;
+          var p = '/data/' + line.replace(/\\/g, '/').replace(/^maps\//i, 'Maps/');
+          try {
+            var dir = p.replace(/\/[^\/]*$/, '');
+            if (dir && dir !== p) FS.mkdirTree(dir);
+            FS.writeFile(p, new Uint8Array(0));
+            n++;
+          } catch (e) {}
+        });
+        window.__mapCatalog = n;
+      })
+      .catch(function (e) { window.__errors.push('map catalog: ' + e); });
+  };
+</script>

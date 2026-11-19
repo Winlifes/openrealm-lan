@@ -1,0 +1,491 @@
+#include "s_skills.h"
+
+/* Name=Immolation
+ * Ubertip="Immolates nearby enemy units, dealing damage over time."
+ * Untip="Deactivate Immolation"
+ * Unubertip=""
+ */
+/* Immolation's DataA is damage per second, DataB is mana drain per second,
+ * and Area is its self-centered radius. Mana drain is distributed over seven substeps per second
+ * (one point each for stock DataB=7); damage remains a one-second pulse. */
+#define IMMOLATION_TICK_MS 1000 // milliseconds; authored damage is per second
+#define IMMOLATION_MANA_RATE 7 // substeps/second; preserves stock one-point mana drain cadence
+#define ID_IMMOLATION_STATUS MAKEFOURCC('B','E','i','m')
+#define ID_PERMANENT_IMMOLATION MAKEFOURCC('A','N','p','i')
+#define ID_PIG_IMMOLATION MAKEFOURCC('A','p','i','g')
+
+/* Passive permanent immolation is enabled by owning the ability: no click,
+ * upkeep mana, or toggled stance. The same saveable BEim status provides a
+ * one-second deadline without introducing a new edict field. */
+static bool immolation_update_passive(edict_t *ent) {
+    abilityAliasRef_t passive;
+    heroabilitystatus_t *status;
+    abilityLevel_t const *row;
+    if (!ent || !ent->unit_state || !S_AuraUnitActive(ent)) return false;
+    passive = S_ResolveAbilityAlias(ent, ID_PERMANENT_IMMOLATION);
+    if (!passive.alias) passive = S_ResolveAbilityAlias(ent, ID_PIG_IMMOLATION);
+    /* Permanent Immolation rows can be authored as standalone passive IDs
+     * whose code= points to themselves. The shared alias resolver correctly
+     * treats those as their own family, so query concrete ownership too. */
+    if (!passive.alias && G_ActorHasSkill(ent, "ANpi"))
+        passive = (abilityAliasRef_t){ .alias = ID_PERMANENT_IMMOLATION, .level = 1 };
+    if (!passive.alias && G_ActorHasSkill(ent, "Apig"))
+        passive = (abilityAliasRef_t){ .alias = ID_PIG_IMMOLATION, .level = 1 };
+    if (!passive.alias) return false;
+    status = unit_findstatus(ent, ID_IMMOLATION_STATUS);
+    if (!status) {
+        status_application_t const app = {
+            .buff = "BEim", .level = passive.level, .source_ability = passive.alias,
+            .data = passive.alias, .source = ent, .rank = passive.level,
+            .buff_flags = WC3_STATUS_BUFF_TARGET_ART
+        };
+        status = unit_applystatus(ent, &app);
+        if (!status) return true;
+        status->next_tick = G_Time() + IMMOLATION_TICK_MS;
+    }
+    /* A custom map may change ability rank while the passive is running. */
+    status->data = passive.alias;
+    status->source_ability = passive.alias;
+    status->rank = passive.level;
+    row = G_AbilityLevel(passive.alias, passive.level);
+    if (!status->next_tick) status->next_tick = G_Time() + IMMOLATION_TICK_MS;
+    while ((int32_t)(G_Time() - status->next_tick) >= 0) {
+        float const damage = MAX(0.0f, row->data[0].number);
+        float const area = MAX(0.0f, row->area);
+        /* Advance before damage: target deaths may dispatch status callbacks. */
+        status->next_tick += IMMOLATION_TICK_MS;
+        if (damage <= 0.0f || area <= 0.0f) continue;
+        FILTER_EDICTS(target, target != ent && S_SpellIsAliveTarget(target) &&
+                      S_SpellIsEnemy(ent, target) && G_UnitTargetType(target) == TARG_GROUND &&
+                      Vector2_distance(&target->s.origin2, &ent->s.origin2) <= area)
+            S_SpellDamage(target, ent, (int)damage);
+    }
+    return true;
+}
+/* Item Immolation (AIcf) has its own buff and a held-item source. Never
+ * reuse the BEim toggle/permanent status: an equipped Cloak cannot switch
+ * off a unit's unrelated ANpi or active AEim ability. A single item family
+ * produces one fire pulse, even when multiple identical items are held; the
+ * exact retail stacking contract remains a separate retail test. */
+#define ID_ITEM_IMMOLATION MAKEFOURCC('A','I','c','f')
+
+static uint32_t item_immolation_owned(edict_t *unit, edict_t const *exclude) {
+    if (!unit || !unit->unit_state) return 0;
+    if (G_InventoryCanUseItems(unit)) FOR_LOOP(i, G_InventoryCapacity(unit)) {
+        edict_t *item = G_InventoryItem(unit, i);
+        cstring_t list;
+        if (!item || item == exclude) continue;
+        list = G_ItemAbilityList(item);
+        if (!list) continue;
+        PARSE_LIST(list, token, parse_segment) {
+            uint32_t code;
+            abilityitem_t registered;
+            if (strlen(token) != 4) continue;
+            code = FS_SLKKey(token);
+            registered = S_AbilityItem(code);
+            if (registered.ability && registered.ability->proc == CAbilityItemImmolation)
+                return code;
+        }
+    }
+    if (G_ActorHasSkill(unit, "AIcf")) return ID_ITEM_IMMOLATION;
+    return 0;
+}
+
+static heroabilitystatus_t *item_immolation_status(edict_t *unit) {
+    if (!unit || !unit->unit_state) return NULL;
+    FOR_LOOP(i, MAX_UNIT_STATUSES) {
+        heroabilitystatus_t *slot = unit->unit_state->statuses + i;
+        abilityitem_t item;
+        if (!slot->level || !slot->source_ability) continue;
+        item = S_AbilityItem(slot->source_ability);
+        if (item.ability && item.ability->proc == CAbilityItemImmolation)
+            return slot;
+    }
+    return NULL;
+}
+
+static void item_immolation_update(edict_t *unit, edict_t const *excluded, bool tick) {
+    uint32_t code = item_immolation_owned(unit, excluded);
+    heroabilitystatus_t *status = item_immolation_status(unit);
+    cstring_t buff;
+    if (!unit || !unit->unit_state) return;
+    if (!code) {
+        if (status) unit_removestatus(unit, status, STATUS_REMOVE_SCRIPT);
+        return;
+    }
+    buff = S_SpellBuffId(code, 1);
+    if (!buff || strlen(buff) < 4) return;
+    if (status && status->code != FS_SLKKey(buff)) {
+        unit_removestatus(unit, status, STATUS_REMOVE_SCRIPT);
+        status = NULL;
+    }
+    if (!status) {
+        status = S_SpellApplyTimedStatusFromAbility(unit, code, 1, buff, 0.0f);
+        if (!status) return;
+        unit_status_enabletargetart(unit, status, "origin");
+        status->next_tick = G_Time() + IMMOLATION_TICK_MS;
+    }
+    status->data = code;
+    status->source_ability = code;
+    status->rank = 1;
+    if (!status->next_tick) status->next_tick = G_Time() + IMMOLATION_TICK_MS;
+    if (!tick || !S_AuraUnitActive(unit)) return;
+    while ((int32_t)(G_Time() - status->next_tick) >= 0) {
+        float const damage = MAX(0.0f, S_SpellData(code, 1, 1));
+        float const area = MAX(0.0f, S_SpellNumber(code, ABILITY_NUMBER_AREA, 1));
+        status->next_tick += IMMOLATION_TICK_MS;
+        if (damage <= 0.0f || area <= 0.0f) continue;
+        /* AIcf targs excludes friendlies and air, but does NOT require
+         * organic units (ANpi does). Mechanical ground enemies are valid. */
+        FILTER_EDICTS(target, target != unit && S_SpellIsAliveTarget(target) &&
+                      S_SpellAllowsAreaTarget(code, unit, target) &&
+                      Vector2_distance(&target->s.origin2, &unit->s.origin2) <= area)
+            S_SpellDamage(target, unit, (int)damage);
+    }
+}
+
+BZ_ABILITY_PROC(CAbilityItemImmolation) {
+    switch (msg) {
+    case A_ITEM_ADD:
+    case A_ENABLE:
+        item_immolation_update(ent, NULL, false);
+        return true;
+    case A_ITEM_REMOVE:
+        item_immolation_update(ent, call ? call->source_item : NULL, false);
+        return true;
+    case A_DISABLE:
+        if (ent && ent->unit_state) {
+            heroabilitystatus_t *status = item_immolation_status(ent);
+            if (status) unit_removestatus(ent, status, STATUS_REMOVE_SCRIPT);
+        }
+        return true;
+    case A_UPDATE:
+        if (ent && ent->unit_state) item_immolation_update(ent, NULL, true);
+        return true;
+    default:
+        return CAbilityPassive(ent, msg, call);
+    }
+}
+
+BZ_ABILITY_PROC(CAbilityImmolation) {
+    heroabilitystatus_t *status;
+    uint32_t code;
+    if (msg == A_TOGGLE_ON)
+        return ent && unit_findstatus(ent, ID_IMMOLATION_STATUS) != NULL;
+    if (msg == A_UPDATE) {
+        if (immolation_update_passive(ent)) return true;
+        if (!ent || !ent->unit_state) return true;
+        status = unit_findstatus(ent, ID_IMMOLATION_STATUS);
+        if (!status || !status->level || !status->data) return true;
+        if (!status->next_tick) status->next_tick = G_Time() + (IMMOLATION_TICK_MS + IMMOLATION_MANA_RATE - 1) / IMMOLATION_MANA_RATE;
+        while (status->level && status->next_tick && G_Time() >= status->next_tick) {
+            abilityLevel_t const *row;
+            float damage, mana_drain, area;
+            uint32_t level;
+            code = status->data;
+            level = status->rank ? status->rank : MAX(1u, S_SpellLevel(ent, code));
+            row = G_AbilityLevel(code, level);
+            damage = row->data[0].number;
+            mana_drain = row->data[1].number;
+            area = row->area;
+            if (damage > 0.0f && area > 0.0f && (status->duration_ms + 1) % IMMOLATION_MANA_RATE == 0) {
+                FILTER_EDICTS(target, target != ent && S_SpellIsAliveTarget(target) &&
+                              S_SpellIsEnemy(ent, target) && G_UnitTargetType(target) == TARG_GROUND &&
+                              Vector2_distance(&target->s.origin2, &ent->s.origin2) <= area) {
+                    S_SpellDamage(target, ent, (int)damage);
+                }
+            }
+            /* Damage timing must not depend on DataB. The old variable step
+             * count changed DPS for custom rates and never ticked at DataB=0. */
+            uint32_t const step = status->duration_ms + 1;
+            uint32_t const elapsed_ms = (uint32_t)(((uint64_t)step * IMMOLATION_TICK_MS + IMMOLATION_MANA_RATE - 1) / IMMOLATION_MANA_RATE);
+            uint32_t const next_ms = (uint32_t)(((uint64_t)(step + 1) * IMMOLATION_TICK_MS + IMMOLATION_MANA_RATE - 1) / IMMOLATION_MANA_RATE);
+            status->duration_ms = step;
+            status->next_tick += next_ms - elapsed_ms;
+            if (mana_drain > 0.0f) {
+                ent->mana.value = MAX(0.0f, ent->mana.value - mana_drain / IMMOLATION_MANA_RATE);
+                G_InvalidateUnitInfoPanel(ent);
+                if (ent->mana.value <= 0.0f) {
+                    unit_removestatus(ent, status, STATUS_REMOVE_SCRIPT);
+                    G_InvalidateUnitInfoPanel(ent);
+                    G_InvalidateUnitCommands(ent);
+                    return true;
+                }
+            }
+        }
+        return true;
+    }
+    if (msg != A_EXECUTE) return CAbilitySimpleSpell(ent, msg, call);
+    code = call && call->item ? call->item->code : 0;
+    if (!code || !ent || !ent->unit_state) return true;
+    status = unit_findstatus(ent, ID_IMMOLATION_STATUS);
+    if (status) {
+        unit_removestatus(ent, status, STATUS_REMOVE_SCRIPT);
+        G_InvalidateUnitInfoPanel(ent);
+        G_InvalidateUnitCommands(ent);
+        return true;
+    }
+    {
+        uint32_t const level = MAX(1u, S_SpellLevel(ent, code));
+        float const cost = S_SpellNumber(code, ABILITY_NUMBER_COST, level);
+        status_application_t application = {
+            .buff = "BEim", .level = 1, .data = code,
+            .source_ability = code, .source = ent, .rank = level,
+            .buff_flags = WC3_STATUS_BUFF_TARGET_ART
+        };
+        if (ent->mana.value < cost) return true;
+        status = unit_applystatus(ent, &application);
+        if (!status) return true;
+        /* Reserve the status slot before charging. A full status table must
+         * not consume the activation cost without enabling Immolation. */
+        if (!S_SpellSpendMana(ent, code, level)) {
+            status = unit_findstatus(ent, ID_IMMOLATION_STATUS);
+            if (status) unit_removestatus(ent, status, STATUS_REMOVE_SCRIPT);
+            return true;
+        }
+        status = unit_findstatus(ent, ID_IMMOLATION_STATUS);
+        if (status) {
+            status->data = code;
+            status->source_ability = code;
+            status->source = ent;
+            status->source_spawn_time = ent->spawn_time;
+            status->rank = level;
+            status->duration_ms = 0;
+            status->next_tick = G_Time() + (IMMOLATION_TICK_MS + IMMOLATION_MANA_RATE - 1) / IMMOLATION_MANA_RATE;
+        }
+        G_InvalidateUnitInfoPanel(ent);
+        G_InvalidateUnitCommands(ent);
+    }
+    return true;
+}
+
+/* Cold Arrows is an attack modifier. The selected autocast alias controls
+ * attack damage and projectile presentation; clicking the command button
+ * opens the same one-shot target order used by Searing Arrows. */
+BZ_ABILITY_PROC(CAbilityColdArrows) {
+    uint32_t const code = call && call->item ? call->item->code : 0;
+    bool const active = ent && ent->unit_state && ent->unit_state->autocast == code;
+    switch (msg) {
+    case A_TOGGLE_ON: return active;
+    case A_AUTOCAST_ON: return active;
+    case A_AUTOCAST_SET: return true;
+    default: return CAbilitySimpleSpell(ent, msg, call);
+    }
+}
+
+/* Name=War Stomp
+ * Ubertip="Slams the ground, dealing <AOws,DataA1> damage to nearby enemy land units and stunning them for <AOws,Dur1> seconds."
+ */
+BZ_SIMPLE_SPELL_PROC(AbilityStomp) {
+    uint32_t level = S_SpellLevel(caster, spell->code);
+    float radius = S_SpellNumber(spell->code, ABILITY_NUMBER_AREA, level);
+    uint32_t damage = (uint32_t)S_SpellData(spell->code, level, 1);
+    float duration = S_SpellDuration(spell->code, level, false);
+
+    G_SpawnAbilityEffectTarget(spell->code, WC3_EFFECT_CASTER, 0, caster, NULL, true);
+
+#define WAR_STOMP_HITS(t) ((t)->inuse && (t) != caster && S_SpellIsAliveTarget(t) && \
+                           S_SpellIsEnemy(caster, t) && G_UnitTargetType(t) == TARG_GROUND && \
+                           Vector2_distance(&(t)->s.origin2, &caster->s.origin2) <= radius)
+    FILTER_EDICTS(target, WAR_STOMP_HITS(target)) {
+        if (S_SpellDamage(target, caster, damage) && !M_IsDead(target) && duration > 0.0f)
+            S_SpellApplyStun(target, duration);
+    }
+#undef WAR_STOMP_HITS
+}
+
+/* Name=Endurance Aura
+ * Ubertip="Increases nearby friendly units' movement speed and attack rate."
+ */
+/* Name=Mana Burn
+ * Ubertip="Sends a bolt of negative energy that burns a target enemy unit's mana and deals damage proportional to the amount of mana burned."
+ */
+BZ_SIMPLE_SPELL_PROC(AbilityManaBurn) {
+    edict_t *target = st.entity;
+    uint32_t level = S_SpellLevel(caster, spell->code);
+    float amount = MIN(target->mana.value, S_SpellData(spell->code, level, 1));
+
+    G_SpawnAbilityLightning(&(abilityLightningParams_t){
+        .ability_id = spell->code, .index = 0, .source = caster, .target = target,
+        .duration_ms = 300,
+    });
+    G_SpawnAbilityEffectTarget(spell->code, WC3_EFFECT_TARGET, 0, target, NULL, true);
+    target->mana.value -= amount;
+    if (amount > 0.0f) S_SpellDamage(target, caster, (int)amount);
+}
+
+/* Name=Dark Ritual
+ * Ubertip="Sacrifices a friendly non-Hero unit, converting a percentage of its hit points into mana for the caster."
+ * Dark Ritual converts the authored fraction of an allied non-hero's maximum
+ * life into caster mana, then uses the normal damage/death path to sacrifice it. */
+static void dark_ritual_cast_done(edict_t *caster) {
+    if (caster && caster->stand) caster->stand(caster);
+}
+
+static umove_t dark_ritual_cast_move = { "spell", ai_idle, dark_ritual_cast_done, CAbilityDarkRitual };
+
+static void AbilityDarkRitual_Execute(edict_t *caster, spellTarget_t st, abilityitem_t const *spell) {
+    edict_t *target = st.entity;
+    uint32_t level = S_SpellLevel(caster, spell->code);
+    float mana = target->health.max_value * S_SpellData(spell->code, level, 1);
+
+    unit_setmove(caster, &dark_ritual_cast_move);
+    G_SpawnAbilityEffectTarget(spell->code, WC3_EFFECT_TARGET, 0, target, NULL, true);
+    caster->mana.value = MIN(caster->mana.max_value, caster->mana.value + mana);
+    G_SpawnAbilityEffectTarget(spell->code, WC3_EFFECT_CASTER, 0, caster, NULL, true);
+    T_Damage(target, caster, (uint32_t)MAX(1.0f, target->health.value));
+}
+
+BZ_ABILITY_PROC(CAbilityDarkRitual) {
+    abilityitem_t const *spell = call ? call->item : NULL;
+    if (msg == A_COMMAND) {
+        edict_t *clent = call ? call->entity : NULL;
+        edict_t *caster = clent && clent->client ? G_GetMainSelectedUnit(clent->client) : ent;
+        if (caster && caster->mana.max_value > 0.0f && caster->mana.value >= caster->mana.max_value) {
+            G_ShowCommandErrorKey(clent, "Manamaxed", NULL);
+            return true;
+        }
+    } else if (msg == A_EXECUTE) {
+        spellTarget_t target = call && call->target ? *call->target : MAKE(spellTarget_t, .type = SPELL_TARGET_NONE);
+        AbilityDarkRitual_Execute(ent, target, spell);
+        return true;
+    }
+    return CAbilitySimpleSpell(ent, msg, call);
+}
+
+/* Name=Frost Armor
+ * Ubertip="Creates a shield of frost around a target friendly unit. The shield adds <ACfu,DataB1> armor and slows melee units that attack it for <ACfu,Dur1> seconds. Lasts <ACfu,DataA1> seconds."
+ * Untip="Right-click to activate auto-casting."
+ * Unubertip="Right-click to deactivate auto-casting."
+ */
+static void AbilityFrostArmor_Execute(edict_t *caster, spellTarget_t st, abilityitem_t const *spell);
+BZ_ABILITY_PROC(CAbilityFrostArmor) {
+    if (msg == A_MELEE_ATTACKED) {
+        heroabilitystatus_t const *status = call ? call->status.slot : NULL;
+        edict_t *attacker = call ? call->entity : NULL;
+        if (status && attacker && !M_IsDead(attacker)) {
+            uint32_t const level = status->rank ? status->rank : status->level;
+            S_SpellApplyTimedStatus(attacker, "Bfro", level,
+                                    S_SpellResistantDuration(status->source_ability, level, attacker));
+        }
+        return 0;
+    }
+    if (msg == A_EXECUTE) {
+        spellTarget_t target = call && call->target ? *call->target : MAKE(spellTarget_t, .type = SPELL_TARGET_NONE);
+        AbilityFrostArmor_Execute(ent, target, call ? call->item : NULL);
+        return true;
+    }
+    return CAbilitySimpleSpell(ent, msg, call);
+}
+static void AbilityFrostArmor_Execute(edict_t *caster, spellTarget_t st, abilityitem_t const *spell) {
+    edict_t *target = st.entity;
+    uint32_t level = S_SpellLevel(caster, spell->code);
+    cstring_t buff = S_SpellBuffId(spell->code, level);
+#if BZ_COMPAT_WORKAROUNDS
+    /* RoC AbilityData omits BuffID; the stock Frost Armor status is BUfa. */
+    if ((!buff || strlen(buff) < 4) && (G_AbilityCode(spell->code) == MAKEFOURCC('A','U','f','a') ||
+                  G_AbilityCode(spell->code) == MAKEFOURCC('A','U','f','u') ||
+                  G_AbilityCode(spell->code) == MAKEFOURCC('A','C','f','u')))
+        buff = "BUfa";
+#endif
+
+    if (!target || !buff || strlen(buff) < 4) {
+        fprintf(stderr, "WC3: %.4s has no authored BuffID\n", (cstring_t)&spell->code);
+        return;
+    }
+    {
+        heroabilitystatus_t *status = S_SpellApplyTimedStatusFromAbility(
+            target, spell->code, level, buff, S_SpellData(spell->code, level, 1));
+        /* Frost Armor's TargetArt is authored on its BUfa buff, not AUfa/AUfu. */
+        if (status) unit_status_enabletargetart(target, status, "chest");
+        /* Preserve the source as the status event owner, including map aliases. */
+        if (status) status->data = spell->code;
+        if (status) unit_status_setmodifier(status, 0, &(wc3_status_modifier_t){
+            .type = WC3_STATUS_MOD_ARMOR_FLAT, .policy = WC3_STATUS_MOD_ADD,
+            .value = S_SpellData(spell->code, level, 2) });
+    }
+}
+
+void divine_shield_think(edict_t *ent) {
+    edict_t *caster = S_SpellChannelOwner(ent);
+
+    if (!caster) {
+        G_FreeEdict(ent);
+        return;
+    }
+    if (G_Time() < ent->spawn_time) return;
+    /* The timed status owns immunity. A previous cast's helper must never
+     * restore a captured unit flag over the current script/status sources. */
+    G_FreeEdict(ent);
+}
+
+static status_application_t divine_shield_application(edict_t *caster, abilityitem_t const *spell) {
+    uint32_t level = S_SpellLevel(caster, spell->code);
+    float duration = MAX(0.1f, S_SpellDuration(spell->code, level, true));
+    cstring_t buff = S_SpellBuffId(spell->code, level);
+
+#if BZ_COMPAT_WORKAROUNDS
+    /* RoC AbilityData has no BuffID column; the HumanAbilityFunc contract
+     * still authors Divine Shield's TargetArt under BHds. Phase Shift has
+     * the same missing-column issue in 1.07; its status is Bpsh. */
+    if ((!buff || !*buff || !strcmp(buff, "-") || !strcmp(buff, "_")) &&
+        spell->code == MAKEFOURCC('A','H','d','s')) buff = "BHds";
+    else if ((!buff || !*buff || !strcmp(buff, "-") || !strcmp(buff, "_")) &&
+             spell->code == MAKEFOURCC('A','p','s','h')) buff = "Bpsh";
+#endif
+    return (status_application_t){ .buff = buff, .level = level, .duration = duration,
+        .source_ability = spell->code, .state_mask = WC3_STATUS_STATE_INVULNERABLE,
+        .source = caster, .rank = level };
+}
+
+/* The native buff contributes one independent state owner; it does not own
+ * SetUnitInvulnerable's explicit flag. Custom BuffID values share this rule. */
+BZ_ABILITY_PROC(CAbilityDivineShield) {
+    if ((msg == A_VALIDATE || msg == A_EXECUTE) && call && call->item) {
+        status_application_t app = divine_shield_application(ent, call->item);
+        if (msg == A_VALIDATE) {
+            wc3_status_apply_check_t check = unit_status_checkapplication(ent, &app);
+            return check != WC3_STATUS_APPLY_INVALID && check != WC3_STATUS_APPLY_FULL;
+        }
+        heroabilitystatus_t *status = unit_applystatus(ent, &app);
+        if (!status) return false;
+        edict_t *thinker = S_SpellIdentityThinker(ent, 0, NULL);
+        if (thinker) {
+            thinker->spawn_time = status->timestamp;
+            thinker->think = divine_shield_think;
+        }
+        unit_status_enabletargetart(ent, status, "origin");
+        return true;
+    }
+    return CAbilitySimpleSpell(ent, msg, call);
+}
+
+/* Phase Shift is unavailable while the Faerie Dragon's Mana Flare status locks orders. */
+BZ_ABILITY_PROC(CAbilityPhaseShift) {
+    uint32_t const code = call && call->item ? call->item->code : 0;
+    switch (msg) {
+    case A_AUTOCAST_ON:
+        return ent && ent->unit_state && ent->unit_state->autocast == code;
+    case A_AUTOCAST_SET:
+        return true;
+    case A_DAMAGED:
+        /* UnitAbilities.slk selects Apsh as the Faerie Dragon's default
+         * autocast. Trigger its ordinary no-target cast when a hit lands. */
+        if (ent && code && G_UnitAutocastIsOn(ent, code))
+            (void)S_CastNoTargetSpell(ent, code);
+        return false;
+    default:
+        break;
+    }
+    if (msg == A_VALIDATE && S_ManaFlareActive(ent))
+        return false;
+    return CAbilityDivineShield(ent, msg, call);
+}
+
+/* Name=Bash
+ * Ubertip="Gives a chance that an attack will deal bonus damage and stun the target."
+ * TODO: no command handler; the attack-resolution path must consume this passive.
+ */
+/* Name=Invulnerable
+ * Ubertip="This unit cannot be damaged."
+ */

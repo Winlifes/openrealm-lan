@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+node_modules/
+*.local
+.env
+.env.*
+*.pem
+*.key
+*.zip
+*.mpq
+*.exe
+*.dylib
+*.wasm
+data-current/
+runtime/

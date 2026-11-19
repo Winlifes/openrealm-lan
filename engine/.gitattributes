@@ -1,0 +1,4 @@
+* text=auto eol=lf
+# Exact-byte original parser inputs retain their source line endings and spacing.
+games/warcraft-3/tests/resources-src/TestUI/Compat/*.fdf -text -whitespace
+games/warcraft-3/tests/resources-src/TestUI/Compat/War3skins-3.0.txt -text -whitespace

@@ -1,0 +1,16 @@
+globals
+    integer saved_ticks = 10
+endglobals
+
+function SavedHeroLevel takes nothing returns integer
+    return saved_ticks
+endfunction
+
+function main takes nothing returns nothing
+    call SetHeroLevels(function SavedHeroLevel)
+    loop
+        call Sleep(1.0)
+        set saved_ticks = saved_ticks + 1
+        call SetPlayerState(Player(GetAiPlayer()), PLAYER_STATE_RESOURCE_GOLD, saved_ticks)
+    endloop
+endfunction

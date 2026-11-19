@@ -1,0 +1,11 @@
+{
+  "name": "wc3-ws-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WebSocket to UDP bridge for the browser (wasm) OpenWarcraft3 client",
+  "scripts": { "test": "node --test rooms.test.mjs transport.test.mjs" },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

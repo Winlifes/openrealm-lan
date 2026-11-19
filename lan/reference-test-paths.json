@@ -1,0 +1,15 @@
+{
+  "sourcePaths": [
+    "games/warcraft-3/tests/resources-src/TestUI/Compat/EscMenuTemplates-3.0.fdf",
+    "games/warcraft-3/tests/resources-src/TestUI/Compat/EscMenuTemplates-classic.fdf",
+    "games/warcraft-3/tests/resources-src/TestUI/Compat/ScoreScreen-3.0.fdf",
+    "games/warcraft-3/tests/resources-src/TestUI/Compat/ScoreScreen-classic.fdf",
+    "games/warcraft-3/tests/resources-src/TestUI/Compat/StandardTemplates-3.0.fdf",
+    "games/warcraft-3/tests/resources-src/TestUI/Compat/StandardTemplates-classic.fdf",
+    "games/warcraft-3/tests/resources-src/TestUI/Compat/War3skins-3.0.txt",
+    "games/warcraft-3/tests/resources-src/TestUI/FrameDef/UI/UpperButtonBar.fdf",
+    "games/warcraft-3/tests/resources-src/UI/FrameDef/Glue/MapListBox.fdf",
+    "games/warcraft-3/tests/resources-src/UI/Glues/SpriteLayers/TopLeftPanel.mdx"
+  ],
+  "excludedFromPublicArchive": true
+}

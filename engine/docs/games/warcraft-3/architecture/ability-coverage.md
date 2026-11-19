@@ -1,0 +1,433 @@
+# Ability Coverage
+
+This note tracks the current OpenWarcraft3 game-side ability registry against
+the reference ability base-code list used for parity work.
+
+See the [implemented ability verification review](../ability-verification-review.md) for the
+September 2026 source audit, lifecycle fixes, and current coverage limits.
+
+Primary local files:
+
+- `games/warcraft-3/game/skills/s_skills.c`
+- `games/warcraft-3/game/skills/*.c`
+
+The practical parity list maps Warcraft ability base codes to concrete ability
+type definitions. Unknown or unsupported codes may resolve to explicit local
+stubs for recognition/passive coverage, but command-card discovery requires a
+an explicit command or an executable `AB_SPELL` definition so a stub cannot create a dead button.
+
+## Obsidian Statue and Destroyer (`Arpl` / `Arpm` / `Aave` / `Afak` / `Advm` / `Aabs`)
+
+The Statue support cast respects authored AoE masks, six-recipient caps,
+per-recipient cost and timed buff suppression; caster/overhead/target art is
+spawned through the shared effect contract. Destroyer Form is a permanent,
+resource-paid same-edict transform with the common model's morph sequence.
+Orb has manual/autocast mana expenditure, launch-snapshotted bonus damage,
+ability-authored splash radii/falloffs and its own projectile. Devour Magic
+restores per hostile unit and does not remove terrain blight; its authored
+point missile now flies before gameplay dispel and SpecialArt are resolved.
+Absorb Mana is an active targeted homing transfer whose missile plays Death
+on impact. Missile arc and unusual target/lifecycle parity remain to verify.
+
+See [Obsidian Statue and Destroyer](../obsidian-statue-destroyer.md) for
+mechanical contracts, confirmed MPQ mappings, regression tests and unresolved
+retail visual/impact timing.
+
+## Beastmaster Stampede (`ANst` / `Arsp`)
+
+Both aliases now dispatch through `CAbilityStampede` as authored point-targeted
+channels. `s_stampede.c` replaces the old once-per-second area damage and
+campaign summon approximation with individual fixed-target lizard projectiles,
+first-contact detection, `DataE` delayed explosions, `DataC` damage and `DataD`
+splash; emission uses `DataA`, and `Area` controls the spawn line and travel
+length. Existing saved channel identity and projectile presentation are reused.
+See [Stampede](../stampede.md) for evidence, tests and unresolved retail timing.
+
+## Orc Pillage (`Asal` / `Ropg`)
+
+Pillage is a passive attack-damage consumer, not a spell cast. `Asal` remains
+registered under `CAbilitySalvage`, but `S_PillageOnAttackDamage()` now awards
+resources only for **primary** attack damage after shields/Spirit Link and
+other damage reductions. Splash, scripted damage, retaliation, spell attacks,
+misses and overkill never independently award Pillage. Completed live
+structures use their `UnitBalance` gold/lumber costs and live maximum HP.
+
+The unit's active `Asal`-family alias determines its `DataA` salvage ratio
+(`Sal1`) and `DataB` damage accumulation step (`Sal2`); rank and runtime
+ability additions/removals are respected. Stock `Asal` is gated by researched
+`Ropg` when the unit's Upgrades Used list contains `Ropg`. Direct custom
+aliases without the stock dependency work immediately. Income is awarded via
+`G_CreditResourceIncome` for the owning player, including ordinary upkeep and
+score/HUD accounting. Per-structure, per-attacking-player fractional damage
+and resource entitlements reside in the optional Pillage component and survive
+save/load; component ID 29 and save version 117 are reserved for this contract.
+Invalid DataB (non-positive/nonfinite) disables payment instead of hanging.
+
+Remaining retail-observation details: exact integer rounding on DataB > 1,
+neutral relationship masks in specialized custom maps, whether income is
+rounded before or after upkeep on each threshold, and cap/overheal behaviour.
+See [Pillage mechanics](../pillage.md) for tests and limitations.
+
+## Current Model
+
+Campaign rawcodes in `CampaignAbilityStrings.txt` are registered through
+`games/warcraft-3/game/skills/s_campaign_abilities.c`. Registry entries resolve to reusable `ability_t` handlers; each invocation carries its
+actual rawcode in `abilityitem_t`, so `S_SpellData`, duration, unit, buff, and
+target lookups read the campaign `AbilityData.slk` row. Shared execution
+families cover campaign area damage, War Stomp, summons, timed statuses,
+toggles, dispel, Battle Roar, and Storm Bolt without aliasing a standard
+rawcode's gameplay data. The registry test in `game/tests/t_spell.c` checks every
+campaign rawcode for a concrete command, executable procedure, and matching spell
+code. Campaign-specific presentation, exact summon composition, Parasite
+death spawning, and full three-form Storm/Earth/Fire behavior remain separate
+follow-up contracts when their authored rows and runtime consumers are added.
+
+OpenWarcraft3 uses a small Quake-style `ability_t` registry row and one `abilityProc_t` per behavior. Flags select command, spell, item, autocast and update paths; those paths send typed `abilityMsg_t` messages. `UnitAddAbility` and `UnitRemoveAbility` send `A_ENABLE` and `A_DISABLE` immediately. Stateful abilities answer `A_LEVEL`, and `S_RefreshAbilityLevel()` forwards the value through `A_LEVEL_CHANGED`. Command-card discovery uses `S_AbilityHasCommand`, so passive/no-op procedures do not create dead buttons. Concrete procedures explicitly call their TFT parent procedure for unhandled messages; no callback descriptor or runtime parent table exists.
+`Aoar` (Healing Ward Aura), `Aabr` (Aura of Blight), and `Aarm` (Mana Regeneration Aura) are registered passive regeneration families. Alias rows such as `ACnr -> Aoar` and `ANre -> Aarm` are discovered on the owning unit and keep alias-authored area, targets, and DataA/DataB values. Percentage mode scales against the recipient's maximum HP/mana; same-family sources use the strongest value while `Aoar` and `Aabr` remain distinct contributors. Presentation effects remain separate work. See [Regeneration Auras And Fountains](../regeneration-auras.md).
+
+The CommonAbility base codes use the subsystem that already owns their behavior.
+`AEbu`, `AGbu`, `AHbu`, `ANbu`, `AObu`, and `AUbu` share the build command; `AGbu` (including aliases whose base resolves to it) selects explicit Naga worker-inside/autonomous construction before race fallback;
+`ARal`, `Aatk`, and `Amov` share the ordinary rally, attack, and move commands;
+`Atdp` and `Atlp` share cargo drop/load. `AEpa` is the Poison Arrows toggle and
+reads its own `DataA` bonus in missile attack resolution. `Aloc` applies
+unselectable, invulnerable, collisionless, no-pathing traits during unit spawn.
+The five `Afih`/`Afin`/`Afio`/`Afir`/`Afiu` rawcodes share one passive procedure;
+retail does not list these rawcodes in `UnitAbilities.slk`, so buildings synthesize
+`CAbilityOnFireHuman` as an intrinsic capability. `G_SetHealth()` refreshes its derived level and
+the `A_LEVEL_CHANGED` case owns health-stage and `UnitData.race` model selection. Hero revival and Hero identity
+remain owned by their existing lifecycle systems, while their CommonAbility rawcodes
+are explicit passive rows. ROC and TFT `ability_audit` rows match for this block;
+`Adet` is an abstract base code absent as a standalone row in both archives.
+
+Timed statuses remain generic `abilstatus[]` records. Their common duration and
+expiration bookkeeping stays in `unit_updatestatuses()`; add apply, refresh, or remove
+procedure cases only when a status record can resolve its owning ability unambiguously.
+`unit_updatestatuses()` keeps a transient bit index of timed slots to avoid
+scanning empty records every frame. `G_UnitStatusLevel()` uses a second
+occupied-slot mask, including permanent statuses, so frequent status queries
+can skip empty records. `unit_applystatus()` and
+`unit_removestatus[_deferred]()` maintain both masks across additions,
+replacements, refreshes, and callbacks. Raw/direct status writes must call
+`unit_status_invalidate_update_mask()` so the next update rebuilds both masks
+from `unit_state->statuses[]`; queries on an invalid index fall back to a full
+scan. Neither index is saved; see [WC3 save/load](../save-load.md#status-slot-indexes).
+An ARM64 RG40XX-H `perf report --stdio --no-children` capture (about 7K cycles
+samples) attributed 8.15% exclusive samples to the empty-slot check at
+`unit_updatestatuses+0xa8`. After the timed-index optimisation, a second
+capture attributed 8.15% exclusive samples to the `cbz` in
+`G_UnitStatusLevel+0x38` while the timed updater dropped out of the top
+hotspots. These percentages are not predicted FPS gains; re-profile the new
+binary to evaluate the occupied-slot index.
+
+Abilities are discovered through the static `abilitylist[]` in
+`games/warcraft-3/game/skills/s_skills.c`. Normal unit command buttons are shown only when the
+unit ability alias resolves through `Units\AbilityData.slk` to a registered base
+code. The command keeps the original alias when dispatching so per-alias SLK
+data such as item heal amounts still resolves correctly. Hero abilities are
+stored as `heroability_t` entries on the unit; `heroAbilList`, skill points,
+`reqLevel`, `levelSkip`, maximum ranks, and the Research-button learn menu are
+described in [Hero Ability Progression](../hero-abilities.md).
+
+Registry entries must not be counted as implemented until their gameplay
+consumer, authored data, and inverse behavior are covered. Use the
+[Ability Implementation Plan](../ability-implementation.md) to start from
+the archive data and observable behavior, then add focused evidence for any
+remaining uncertainty before adding coverage.
+
+The old `a_unimplemented` registry marker is not an implementation strategy for
+these entries. It may remain only as temporary audit scaffolding while a real
+handler is being developed, and must be removed from an entry when that entry
+is registered for gameplay.
+
+Directly copying another engine's ability classes is not mechanical. The local
+implementation should port behavior into flat C procedures, `umove_t` state
+machines, existing edict fields, and data loaded from SLK/config tables.
+
+`AIbl`, `AIbg`, `AIbt`, `AIbb`, `AIbf`, `AIbr`, `AIbs`, and `AIbh` now share
+a partial point-targeted Tiny Structures item ability: the gameplay layer
+validates placement and starts workerless automatic construction with the
+authored duration. HumanX01's `tgrh` item uses its stock `AIbg` ability and
+resolves to the Human Town Hall; its campaign hint calls it a Tiny Castle, but
+the hint does not override the item data. The stock Great Hall ability remains
+owner-race dependent, with explicit map `UnitID` overrides preserved. See
+[Tiny Structures](../tiny-structures.md).
+
+## Local Registry
+
+| Code | Local file | Status |
+|---|---|---|
+| `CmdStop` | `s_stop.c` | Implemented immediate Stop command; clears retained movement/combat goals, interrupts channels, captures the current Stop guard point, permits ordinary idle acquisition/chase and returns there after automatic combat when no explicit queued work supersedes it, supports Shift-queued no-target replay, and exposes the ordinary stopped/idle command-card engaged state. |
+| `CmdMove` | `s_move.c` | Implemented ground move command. |
+| `CmdAttack` | `s_attack.c` | Implemented basic melee/ranged attack and projectiles. Explicit Attack may target friendly units and buildings; Smart/right-click attack selection remains unchanged. Building attack range is measured to authored pathing footprints so large blocked structures do not cause attackers to orbit their centres. |
+| `CmdBuild` | `s_build.c` | Implemented build menu and placement flow. |
+| `CmdHoldPos` | `s_holdpos.c` | Implemented persistent Hold Position state; command-card and scripted `holdposition` orders share the same transition, interrupt active channels, support Shift-queued no-target replay, retain the Hold command-card engaged state through automatic combat, acquire at normal `uacq`, and suppress chase movement. Generic Hold-safe autocast remains. |
+| `CmdPatrol` | `s_patrol.c` | Registered stub. |
+| `CmdCancel` | `s_cancel.c` | Implemented UI cancel. |
+| `CmdSelectSkill` | `s_selectskill.c` | Partial; candidate skill menu, next-rank Research UI, point/level gating, max-rank hiding, and authoritative learning are implemented. Skill-point and next-rank numeric overlays are implemented; multi-selection presentation remains. |
+| `Ahar` | `s_harvest_lumber.c` | Partial worker harvest implementation. |
+| `Awrp` | `s_waygate.c`, `api/api_unit.h` | Partial; `CAbilityWarp` owns explicit Smart traversal, authored rectangular entry dimensions, interruption cleanup, and JASS state. `m_unit.c` only supplies generic target-order/order-accepted hooks. Automatic portal-aware point routing remains. See [Way Gates](../way-gates.md). |
+| `Amic`, `Amil` | `s_militia.c` | Partial; paired Hall/worker Call to Arms and Back to Work orders, footprint approach, Data A/B in-place Peasant/Militia transform, carried-resource return, per-unit `Bmil` expiry, and explicit worker auto-harvest resume are implemented. CommandStrings-keyed errors, ability sound/effects, and morph-animation polish remain. See [Call to Arms and Militia](../call-to-arms-and-militia.md). |
+| `Amrf`, `Arav` | `m_unit.c` | Partial; script-issued `ravenform`/`unravenform` immediate orders select the matching stock transform ability by its AbilityData Data A / UnitID endpoints, transform the same unit in place, and rebind the target type's Required Animation Names. Full cast/morph timing, altitude transition, effects/sounds, automatic duration reversion, and command-card behavior remain. See [Unit Animation Properties And Transformation Forms](../unit-animation-properties.md). |
+| `Asb1`, `Asb2`, `Asb3`, `ANsu` | `s_campaign_abilities.c` | Partial; `submerge` / `unsubmerge` use authored Data A / UnitID form endpoints, require swimmable non-walkable terrain to enter, preserve one unit identity through `G_TransformUnitType`, expose Surface through toggle state, and route submerged `RF_HIDDEN` through gameplay invisibility/detection. Exact morph animation/effect timing remains. |
+| `Arep` | `s_repair.c` | Partial; entity command, Smart/Shift orders, building-footprint and live mechanical-unit approach, completed-target DataA/DataB costs, Friend/mechanical/Ancient target subset, floating-target DataE, paused owner-only Human power building, canonical numeric Repair order IDs, and nearest-valid Auto Repair are wired. Complete generic target masks, destructibles, and broader autocast policy coverage remain. |
+| `Agld` | `s_goldmine.c` | Basic gold mine harvest loop. |
+| `AHad` | `s_devotionaura.c`, `s_hero_passives.c`, `m_unit.c`, `hud_infopanel.c` | Partial; registered passive, learned aliases use authored Area/DataA/DataB/Targets Allowed in the shared strongest-source Hero-aura cache, including `Had2` percent-of-authored-Defense-Base armor. `G_UnitArmorValue()` consumes the bonus, and the HUD renders the winning authored BuffID virtually while recipients reconcile persistent target art. Broader cross-aura presentation sharing remains. |
+| `AHhb` | `s_holylight.c` | Partial target spell; validates target/range/masks, rejects self and full-health friendly targets before commitment, spends mana, starts cooldown, heals allies, damages undead enemies, and plays target art. |
+| `AHds` | `s_ability_stubs.c` | Partial; authored-duration/BuffID immunity belongs to the composable timed status, preserving explicit script flags and other timed sources through refresh, expiry and save/load. Status-capacity preflight precedes commitment. Cancellation and inherited zero-duration semantics remain. See [Divine Shield state ownership](../divine-shield-sources.md). |
+| `AHre` | `s_requested_abilities.c` | Partial; rejects empty casts, revives nearby friendly ordinary raisable corpses in place, prefers higher-level corpses and then the nearest equal-level corpse, preserves owner, retires death state, honors authored DataB/`Hre2` raised-unit invulnerability, and plays authored caster/target art. |
+| `AUdc` | `s_requested_abilities.c` | Partial; validates friendly Undead/enemy living targets, rejects self/full-health friendly targets, launches MissileArt at authored/fallback missile speed, rejects reused target incarnations at impact, and applies heal/damage; enemy SpecialArt is emitted only when shared spell damage actually applies. Richer damage typing remains. |
+| `AUdp` | `s_requested_abilities.c`, `m_unit.c` | Partial; requires a friendly Undead non-Hero target, implements current-life DataA/DataB conversion plus DataC/DataD fixed-value conversion and its target-mana rule, honors DataE leave-target-alive, otherwise kills as a direct sacrifice and marks the victim non-raisable/no-decay so corpse abilities cannot reuse it. Richer localized command errors remain. |
+| `AUau` | `s_hero_passives.c`, `s_move.c`, `g_phys.c`, `hud_infopanel.c` | Partial; learned aliases use authored Area/DataA/DataB/DataC/Targets Allowed in strongest-source movement and HP-regeneration consumers; DataC selects max-life-percent vs flat regeneration. The HUD renders the winning BuffID virtually and recipients reconcile persistent target art. |
+| `AUan` / `AUa2` | `s_requested_abilities.c` | Partial; rejects empty casts, raises nearby non-Hero/non-building raisable corpses for the caster, prefers higher-level corpses before lower-level ones, retires death state, restores full life without food reactivation, preserves existing ability ownership in place, honors authored DataB/`Hre2` raised-unit invulnerability, marks the temporary unit non-raisable/no-decay with `summon_ability`, applies non-dispellable lifecycle `BTLF`, excludes it from dispel-style summoned-unit damage, relinks, and plays authored caster/target art. Modern `AUa2` is registered to this ability-preserving path; classic random equal-level selection, `Uan3`, and legacy ability stripping remain. |
+| `Acan` | `s_undead_abilities.c`, `m_unit.c` | Partial; nearest authored-target-valid corpse acquisition through DataB, including holder-relative stored Meat Wagon cargo and holder-directed approach movement, exclusive decay-suspending reservation, continuous DataA HP/sec, full-health/duration/channel termination, corpse consumption on every started-channel end, and `Cantfindcorpse` feedback are implemented. Group-order wounded-unit assignment/retention and exact presentation remain. See [Corpse Mechanics](../corpse-mechanics.md). |
+| `Agyd` | `s_undead_abilities.c`, `m_unit.c` | Partial; passive `Cool` cadence, DataA corpse cap, DataB/Gyd2 spawn radius, DataC/Gyd3 count radius (including holder-relative stored corpses), UnitID corpse type, normal raisability/decay lifecycle, and saveable producer thinker are implemented. Exact retail random/grave-marker placement remains. See [Corpse Mechanics](../corpse-mechanics.md). |
+| `Arai`, `ACrd`, `AIrd` | `s_undead_abilities.c`, `s_summon.c` | Partial; lower-rank-before-distance corpse priority, `Cantfindcorpse`, DataA×DataC plus DataB×DataD summons, authored BuffID presentation beside shared `BTLF` timed life, summon identity/effects, holder-relative corpse cargo, autocast/item alias, and the authored Raiu/UnitID 25-per-player oldest-first limit check are implemented. Exact presentation remains. See [Corpse Mechanics](../corpse-mechanics.md). |
+| `AHtb` | `s_thunderbolt.c` | Partial target spell; projectile, damage, mana, cooldown, range, target masks, and stun status. |
+| `ANfb` | `s_thunderbolt.c` | Partial target spell sharing Thunder Bolt behavior with Fire Bolt data/art. |
+| `ANdc`, `SNdc` | `s_campaign_abilities.c` | Dark Conversion consumes the targeted unit, spawns the authored `UnitID` at its location, applies its authored buff, and publishes summon events. Human05's JASS conversion trigger owns the final zombie replacement, allegiance, and order. |
+| `AHwe`, `AOsf` | `s_summon.c` | Partial no-target summon; reads unit id/count/duration, spawns owned timed-life units, and publishes unit/player summon events. |
+| `AOmi` | `s_mirror_image.c` | Partial Mirror Image; no-target cast creates data-counted timed copies, marks them as illusions, copies visible Hero state, excludes them from persistent Hero shortcut/XP/revival behavior, and publishes summon events. Damage multipliers, dispel, shuffle, and complete visual semantics remain. |
+| `AHbz`, `AUcs`, `ACca`, `ACcv`, `ACc2`, `ACc3`, `ANcl` | `s_area_spell.c` | Partial point/channel family; Blizzard ticks area damage; Carrion Swarm and Crushing Wave use finite travelling swept corridors, expanding width, damage caps and optional missile art; Channel opens cancel mode. See [Travelling Waves](../carrion-wave.md). |
+| `ANch`, `ACch`, `AIco`, `Aeat`, `Ambt`, `Aroo` | `s_utility_abilities.c` | Charm distinguishes neutral-creep `DataA` level restrictions from player-owned targets, uses shared immunity/mask validation, clears prior owner orders, and presents temporary overhead `TargetArt`; Eat Tree heal/remove, Moon Well transfer, Root toggle. See [Dark Ranger](../dark-ranger.md). |
+| `AIhe`, `AIma`, `AImi` | `s_item.c` | Synchronous item use for heal, mana restore, and permanent life gain; successful charged uses decrement charges and zero-charge perishables are removed. |
+| `AIpm` | `s_wards.c`, `g_items.c`, `s_spell.c` | Point-target mine placement through authored UnitID; successful targeted item completion consumes exactly one charge while invalid/cancelled targets do not. See [Land Mines](../land-mines.md). |
+| `Amin` | `s_wards.c` | Innate mine activation/invisibility/proximity behavior; DataA arm delay, DataB invisibility transition, Cast Range trigger radius, walk-over collision, True Sight integration, rooted-Ancient exclusion/mobile-uprooted exception, and normal self-death dispatch are implemented. See [Land Mines](../land-mines.md). |
+| `Adda`, `Amnx` | `s_creep_abilities.c` | Two-ring authored death AOE with target-mask filtering, Duration-delayed victim enumeration at the saved death position, and authored tree/wall/debris/bridge/decoration destructible damage. See [Land Mines](../land-mines.md). |
+| `Ablo`, `Afae`, `Arej`, `Aroa` | `s_melee_spells.c` | Partial melee unit spells; Bloodlust/Faerie Fire are autocast unit-target timed statuses, Rejuvenation is a friendly heal-over-time status, and Roar is a no-target friendly-area status. TFT Bear Form exposes Roar as a disabled command while Mark of the Claw (`Reeb`) is available but unresearched, then permits casting after research; RoC keeps it hidden. Attack-rate/move, armor, damage-bonus, and heal-rate consumers read authored DataA/DataB/Dur. Faerie Fire vision and Ensnare-style movement locks remain. |
+| `Afzy` | `s_melee_spells.c` | Partial; autocast unit-target timed status applies `Bfzy`. `S_FrenzyAttackBonus` feeds the attack-speed divisor; `S_FrenzyArmorDelta` subtracts authored DataB armor in `G_UnitArmorValue`. |
+| `Auhf` | `s_melee_spells.c` | Partial; unit-target timed status applies `Buhf`. `S_UnholyFrenzyAttackBonus` feeds the attack-speed divisor; `S_UnholyFrenzyLifeDrain` drains authored DataB HP/sec in the physics tick. No autocast (parent `AAsm`). |
+| `Acrs` | `s_melee_spells.c` | Partial; autocast unit-target timed status applies `Bcrs`. `S_CurseMissChance` returns authored DataA miss fraction checked against the attacker before damage in `S_ResolveAttackHit`. Vision reveal of cursed targets is not yet implemented. |
+| `Acri`, `ACcr` | `s_status_spells.c` | Partial; enemy unit-target timed status applies `Bcri`. `S_CrippleMoveReduction` feeds `unit_effective_speed`; `S_CrippleAttackReduction` feeds the attack-speed divisor; `S_CrippleDamageReduction` scales outgoing attack damage. All three read authored DataA/DataB/DataC. |
+| `ANba`, `ACbk` | `s_requested_abilities.c`, `s_attack.c`, `g_phys.c` | Partial: manual one-shot and autocast attack selection, authored per-shot mana/damage, alias-specific missile art and speed, and save-safe in-flight ability/rank snapshot on ordinary, splash and artillery primary attacks. Post-mitigation attacks now leave a timed victim mark (authored Dur, otherwise 2s) whose A_STATUS_DEATH callback creates one level-appropriate Dark Minion for corpse-eligible deaths, including kills by other attackers; mark owner and expiry survive save/load. Retail skeleton-conversion visuals and unusual aliases remain to verify. See [Dark Ranger](../dark-ranger.md). |
+| `ANdr` (shared drain base `AHdr`) | `s_siphon_mana.c`, `g_effects.c` | Partial: authored health-drain channel and cancellation, persistent `Bdcl`/`Bdtl` chest art, moving `DRAL` lightning and looped `DrainLoop` sound; the existing thinker owns visual cleanup by unique beam handle across recasts and save/load. Siphon Mana behaviour is unchanged. Retail lightning chest sockets and mixed-drain selection need verification. See [Dark Ranger](../dark-ranger.md). |
+| `ANsi`, `ACsi` | `s_requested_abilities.c` | Partial: point-cast `BNsi` Silence with authored area and Hero duration; `EffectArt` ground burst and persistent buff `TargetArt` attached overhead. Shared area targeting excludes wrong types and spell immunity; negative magical status cleans up its art on dispel/expiry/refresh. Sound and retail presentation timing remain unverified. See [Dark Ranger](../dark-ranger.md). |
+| `ANso` | `s_status_spells.c` | `CAbilitySoulBurn`. Enemy unit-target timed status applies `BNso`. `S_SoulBurnDamageRate` drains authored DataA HP/sec; `S_SoulBurnDamageReduction` scales outgoing attack damage by DataC. `S_UnitIsSilenced` (`BNso` or `BNsi`) blocks `spell_validate` / `spell_validate_point`. DataB unused. |
+| `Atau`, `ANta` | `s_status_spells.c` | Partial; no-target order redirection selects up to ten nearest authored-mask enemies in Area that can attack the Giant. Spell immunity alone does not exclude a target; active channel and repair orders are preserved. No persistent forced-target state; manual orders can replace the redirect. |
+| `Aens`, `ANen`, `ACen` | `s_campaign_abilities.c` | `CAbilityEnsnare` + `AB_UPDATE`. TFT `Bena`/`Beng` by air/ground, ROC empty BuffID → `Bens`. `S_UnitIsEnsnared` locks `order_move` with `BEer`. Flyers clear `AI_FLYING` immediately; DataA/B gradual land/rise; DataC melee attack range via `S_EnsnareMeleeRange`. Flight/phase ownership lives in the ability via `A_STATUS_REFRESH`/`A_STATUS_REMOVE`; `m_unit.c` keeps storage/iteration/timing/dispatch. |
+| `Aprg`, `Apg2`, `AIlp` | `s_orc_abilities.c` | `CAbilityPurge`. Clears timed statuses, applies BuffID/`Bprg`, slows via authored DataA (`S_PurgeMoveReduction`), damages summoned (`DataC` when `owner` set). `Apg2` immobilizes for `DataD` (unit) / `DataE` (hero) via `S_PurgeIsImmobilized` in `order_move` / walk. Gradual slow recovery over Dur and creep `ACpu` remain. See [Purge](../purge.md). |
+| `ACtb` | `s_thunderbolt.c` (shared) | Registered; shares `CAbilityThunderBolt` with own authored data (Hurl Boulder projectile, stun, damage). |
+| `Adis`, `Adch`, `Advm` | `s_human_abilities.c` | `CAbilityDispelMagic`. Area timed-status dispel. Adis/Adch summoned damage from DataB; Advm heals caster DataA HP / DataB mana per buff removed and damages summons with DataE. See [dispel-magic.md](../dispel-magic.md). |
+| `ACcs` | `s_melee_spells.c` (shared) | Registered; shares `CAbilityCurse` with autocast for the creep Curse variant. |
+| `Aams`, `Aam2`, `ACam` | `s_undead_abilities.c` | `CAbilityAntiMagicShell`. Empty DataC applies `Bams` targeting/spell immunity; authored DataC applies `Bam2` and absorbs that much `S_SpellDamage`. Physical hits ignore the shell. ROC rows omit BuffID and fall back to `Bams`. |
+| `Aami`, `AIxs` | `s_undead_abilities.c` | `CAbilityAntiMagicShellInstant` (parent Aams). Item Instant AMS; `AIxs` `code=Aami` (not an Aams alias). Reuses Bams/Bam2 DataC paths. DataB magic-damage reduction authored, not wired. |
+| `Apos`, `ACps`, `Aps2` | `s_undead_abilities.c` | `CAbilityPossession` / `CAbilityPossessionTwo`. Instant Apos/ACps transfer ownership and kill the caster. TFT `Aps2` channels for Dur with `Bpos`/`Bpoc`, DataB attack amp, DataC invuln, DataD spell-immune. Not Charm. See [possession.md](../possession.md). |
+| `Acyc`, `ACcy`, `SCc1`, `Acny`, `AIcy` | `s_cyclone.c` | `CAbilityCyclone`. Authored targs (TFT unit `organic`; item `AIcy` omits it); first BuffID token or ROC `Bcyc` fallback; `S_UnitIsCycloned` locks move/attack/spell. DataA (`Can Be Dispelled`) via `status.data` + `S_StatusIsUndispellable` (0 survives Dispel/Purge). |
+| `ANvc` | `s_volcano.c` | `CAbilityVolcano` channel. DataB waves every DataC seconds, DataE full damage inside Area/2, DataF half factor outside, buildings × DataD, stun `Bstu` for Dur/HeroDur, UnitID doodad, tree/debris via `G_DestructableApplyDamage`. DataA Rock Ring Count is presentation-only. |
+| `ANsy`, `ANs1`, `ANs2`, `ANs3` | `s_pocket_factory.c` | `CAbilityPocketFactory`. UnitID factory, DataA interval, DataB Clockwerk via `S_SpellDataId`, DataC goblin life, DataD offset, DataE leash. ANfy is not implemented. Clockwerk death blast is `Asdg`/`Asd2`/`Asd3`, not ANsy. |
+| `Asds`, `Asdg`, `Asd2`, `Asd3` | `s_self_destruct.c` | `CAbilitySelfDestruct`. All aliases expose the Kaboom cast/autocast command; `DataF` separately controls death explosions. DataA/B full radius/damage, DataC/D partial, DataE building factor. |
+| `ANin` | `s_summon.c` | `CAbilityInferno`. Point-target delayed landing: DataA damage, DataB summon life, DataC impact delay, Dur/HeroDur `Bstu` stun, UnitID summon. See [inferno.md](../inferno.md). |
+| `ANrc`, `ANr3` | `s_summon.c` | `CAbilityRainOfChaos`. Not channeled. DataA Inferno abilCode, DataB landing count, Dur interval, Area scatter. Each landing calls `S_InfernoLand`. |
+| `ANdp` | `s_dark_portal.c` | `CAbilityDarkPortal`. Point-target, not Mass Teleport. DataA unitList, DataB/C min/max count, Dur exit interval. Permanent troops (no owner/BTLF). See [dark-portal.md](../dark-portal.md). |
+| `AIda` | `s_item.c` | Scroll of Protection item-defense AOE: applies authored `Bdef` duration/area/armor bonus to allowed friendly targets and consumes the successful charged use. |
+| Heavy/system abilities | `s_ability_stubs.c` | Registered explicit stubs for passive autocast, cargo, mine, shop, harvest variants, item passives, and stat/XP item families. |
+
+## Evidence-backed additions
+
+`ANto` (Tornado) is registered as a `CAbilityWhirlwind` channel and reuses the
+existing whirlwind thinker. ROC and TFT `ability_audit` rows both author a
+40-second no-target ability with summon unit `ntor` and buff `BNto`; the local
+thinker therefore follows the caster like `AOww` while retaining the normal
+channel lifetime and periodic area-status path.
+
+The selected neutral-hero contracts now also cover `ANms` (Mana Shield) as an
+authored-`BNms` no-target toggle at the central damage boundary, `AHre` (Resurrection) through nearby ordinary friendly-corpse
+revival, `ANbf` (Breath of Fire) through point-area damage, `ANdb` (Drunken
+Brawler) through the existing critical/evasion hooks, `ANdh` (Drunken Haze) and
+`ANdo` (Doom) through a persistent undispellable silencing damage/status and death-owned summoned demon, `ANht` (Howl of Terror) through its
+authored area buff and status-owned `BNht` target visual, and `ANca` (Cleaving
+Attack) through melee physical splash with authored secondary-hit art and target
+mask. See [Pit Lord](../pit-lord.md) for implementation details and the
+Rain of Fire wave/shard art and loop/wave sounds, with remaining burn-dispel
+parity, exact retail impact/sound cadence, and Doom visual verification.
+
+The current selected-block implementation also covers `AHfa` (Searing Arrows)
+through the missile attack hook, `AEar` (Trueshot Aura) through the ranged
+attack bonus hook, `AOre` (Reincarnation) through the unit death/revival
+lifecycle, `AOhw` (Healing Wave), `AOhx` (Hex), `AOvd` (Big Bad Voodoo), `AEsv`
+(Vengeance), and `ANab` (Acid Bomb: delayed homing impact,
+`BNab` armor reduction, primary/splash DOT). The Goblin Alchemist also has
+`ANhs` Healing Spray bottles and friendly healing, `ANcr` timed rank-specific
+Chemical Rage forms, and `ANtm` homing Transmute with authored bounty handling;
+see [Goblin Alchemist](../goblin-alchemist.md) for implementation and retail
+parity gaps. `AOwd` (Serpent Ward) remains unresolved:
+the ROC and TFT AbilityData archives contain no `AOwd` row, so no authoritative
+summoned unit or level data exists for a faithful registration.
+
+`a_train` exists in `s_train.c`, but training is currently handled by the
+generic `Button` command path rather than by a registered ability code.
+
+`Ablo` (Bloodlust, `CAbilityBloodlust`/`AAat`), `Afae` (Faerie Fire,
+`CAbilityFaerieFire`/`AAat`), `Arej` (Rejuvenation,
+`CAbilityRejuvination`/`AAsm`), and `Aroa` (Roar, `CAbilityRoar`/`AAsp`) share
+one status-execution path in `s_melee_spells.c`. ROC and TFT `ability_audit`
+rows match for all four. Bloodlust contributes `DataA` to the attack-speed
+divisor and `DataB` to move speed; Faerie Fire subtracts `DataA` armor in
+`G_UnitArmorValue`; Roar scales attack damage by `DataA`; Rejuvenation heals
+`DataA`/`Dur` per second through the HP-regen block. Bloodlust and Faerie Fire
+expose the retail right-click autocast policy; Rejuvenation and Roar do not.
+Faerie Fire vision of the target is not yet implemented.
+
+`Afzy` (Frenzy, `CAbilityFrenzy`/`Ablo`) and `Auhf` (Unholy Frenzy,
+`CAbilityUnholyFrenzy`/`AAsm`) extend the Bloodlust execution family. Frenzy
+adds a `DataA` attack-speed bonus and `DataB` armor reduction; Unholy Frenzy
+adds a `DataA` attack-speed bonus and drains `DataB` HP/sec from the carrier
+through the physics tick. Frenzy exposes the autocast policy like Bloodlust;
+Unholy Frenzy does not (parent `AAsm`). `Acrs` (Curse, `CAbilityCurse`/`AAat`)
+applies `Bcrs` to an enemy unit; `S_CurseMissChance` returns authored `DataA`
+and is checked against the attacker in `S_ResolveAttackHit` before damage
+is applied. All three abilities share the `melee_status_execute` path.
+
+## Reference Parity List
+
+| Code | Reference behavior | OpenWarcraft3 status | Notes |
+|---|---|---|---|
+| `AHhb` | Holy Light | Partial | Target selection (including [selected-unit multiselect portrait targeting](../selection-and-control.md) without subgroup-focus changes), range, mana, cooldown, target masks, undead-only enemy damage, healing, and target art exist. Full-health friendly casts are rejected before commitment. Needs richer dispel/damage typing and retail-complete invalid-target feedback. |
+| `AHds` | Divine Shield | Partial | No-target timed invulnerability and the authored timed buff exist. A general overlapping invulnerability-source model remains. |
+| `AHad` | Devotion Aura | Partial | Learned aliases use authored Area/DataA/DataB/Targets Allowed; flat armor and `Had2` percent-of-authored-Defense-Base modes feed strongest-source combat/HUD values. The HUD renders the winning BuffID virtually and recipients reconcile target art. |
+| `AHre` | Resurrection | Partial | Empty-cast rejection, friendly raisable-corpse revival, higher-level-then-nearest corpse selection, original ownership, corpse-state cleanup, authored DataB/`Hre2` raised-unit invulnerability, and caster/target art exist. |
+| `AUdc` | Death Coil | Partial | Self/full-health-friendly validation, homing missile presentation, target-incarnation cancellation, and impact-time friendly-Undead heal/enemy-living damage exist; enemy impact art requires damage to apply. Richer damage typing remains. |
+| `AUdp` | Death Pact | Partial | Friendly Undead non-Hero/resource validation, current-life DataA/DataB conversion, DataC/DataD fixed-value conversion (including DataC's target-mana gate), DataE leave-target-alive, direct sacrifice (including authored invulnerable targets), and non-raisable/no-decay corpse semantics exist. Richer localized command errors remain. |
+| `AUau` | Unholy Aura | Partial | Learned aliases use authored Area/DataA/DataB/DataC/Targets Allowed in strongest-source movement and HP-regeneration consumers; DataC selects max-life-percent vs flat regeneration. The winning BuffID is rendered virtually in the HUD and recipient target art is reconciled with aura membership. |
+| `AUan` / `AUa2` | Animate Dead | Partial | Empty-cast rejection, higher-level-before-lower-level corpse selection, corpse-state cleanup, caster ownership, full life, no food reactivation, in-place ability ownership preservation, authored DataB/`Hre2` raised-unit invulnerability, non-raisable summon state, non-dispellable timed life, immunity to dispel-style summoned-unit damage, and authored caster/target art exist. Modern `AUa2` is registered to the ability-preserving path. Classic random equal-level corpse selection, `Uan3`, and legacy ability-stripping differences remain. |
+| `Adev`, `ACdv` | Devour (Kodo/Dragon Turtle/creep) | Partial | Physical unit-target swallow (non-Hero, ground, organic enemy), authored Dev1 maximum creep level and Dev2 HP/s, one victim per caster, hidden/paused/off-world digestion, no external attack damage, automatic alive-victim ejection on caster death/removal, complete-digestion death, save-safe thinker identity. See [Devour](../devour.md). Remaining: precise retail animation/buff, morph-to-instant-digest behaviour, richer damage events and custom-map Devour Cargo (`Advc`). |
+| `Acan` | Cannibalize | Partial | DataB nearest corpse search (including holder-directed approach for stored Meat Wagon corpses), authored corpse target filtering, exclusive reservation, continuous DataA healing, full-health/duration/interruption completion, corpse consumption, and `Cantfindcorpse` exist. Group-order policy and exact presentation remain. |
+| `Agyd` | Create Corpse | Partial | Cool interval, DataA cap, DataB/Gyd2 spawn radius, DataC/Gyd3 nearby-corpse radius, UnitID generation, holder-relative stored-corpse counting, shared corpse lifetime, and saveable producer state exist. Exact random/grave-marker placement remains. |
+| `Arai`, `ACrd`, `AIrd` | Raise Dead | Partial | Lower-rank-before-distance corpse search, CommandStrings failure, two authored summon groups, timed life/authored buff, summon identity/effects, autocast/item alias, holder-relative Meat Wagon cargo, and Raiu/UnitID 25-per-player oldest-first limit enforcement exist. Exact presentation remains. |
+| `AHwe` | Summon Water Elemental | Partial | No-target summon, level unit id, mana/cooldown, ownership, and timed life exist. Needs better placement/art/order polish. |
+| `ANcs` / `ANc1`–`ANc3` | Cluster Rockets | Partial | Four authored DataB/DataF damage pulses, DataA damage, DataD interval budget, ground-only BNcs stun and DataC visual rocket missiles; precise retail scatter, timing and wave ownership remain. See [Goblin Tinker](../goblin-tinker.md). |
+| `ANeg` | Engineering Upgrade | Partial | Learned-rank movement and attack bonuses and stock factory/rocket/robot/Demolish variants; JASS level mutations and exact retail replacement UI still need comparison. |
+| `ANrg` / `ANg1`–`ANg3` | Robo-Goblin | Partial | Reversible persistent Ntin/Nrob morph, hero preservation, mechanical classification, strength/armor bonuses, alternate animations; morph frame and immunity/repair edge cases remain. |
+| `ANde` / `ANd1`–`ANd3` | Demolish | Partial | Mechanical-form-only structure attack multiplier 2–3.5 before attack-vs-defense math. |
+| `AHbz` | Blizzard | Partial | Point targeting and periodic enemy area damage exist. Needs shard visuals, channel cancellation details, building reduction, and max-damage rules. |
+| `AHtb` | Thunder Bolt | Partial | Target selection, projectile, damage, stun, range, mana, cooldown, and target masks exist. Needs better cast animation timing. |
+| `ANfb` | Firebolt via Thunder Bolt type | Partial | Shares Thunder Bolt implementation with Fire Bolt data/art. Needs better cast animation timing. |
+| `AHpx`, `Aphx` | Phoenix and Egg Rebirth | Partial | Authored UnitID, no generic summon mark, recast replacement, negative HP regeneration, death-to-egg and ten-second surviving-egg rebirth. Visual and event parity tests remain. See [Phoenix](../phoenix.md). |
+| `Apxf` | Phoenix Fire | Partial | Automatic authored-area enemy acquisition, separate homing projectile, DataA initial damage, DataB timed burn, independent per-source refresh and persistent cooldown. Manual gameplay, ROC/TFT data and visual parity tests remain. See [Phoenix](../phoenix.md). |
+| `ANto`, `Atdg`, `Atsp`, `Atwa`, `Aasl` | Naga Sea Witch Tornado | Partial | ANto summons a real timed `ntor` with Birth/Stand Walk/Death, authored building damage bands, existing Aasl slow, periodic spin/Cyclone and autonomous wandering. Retail-exact Atwa leash/targeting, Btsp attachment lifetime and spin timing are pending. See [Tornado](../tornado.md). |
+| `AOsf` | Feral Spirit | Partial | Warsmash-style recast replacement, single spawn point in front of the caster using authored Area, level unit id/count, ownership, timed life, summon events, and SpecialArt presentation exist. Feral Spirit wolves also use the authored buff EffectArt (falling back to unit SpecialArt) and disappear without the regular Death animation/sound/corpse on expiry, recast, or combat death, following Warsmash’s exploding-timed-life policy. Summoned-unit classification is not yet exposed as a general WC3 unit-type flag. |
+| `AOmi` | Mirror Image | Partial | No-target cast, mana/cooldown, data-defined image count/duration, illusion identity, summon event context, and campaign-script discovery exist. Needs retail damage multipliers, dispel/image shuffle, and richer visual behavior. |
+| `Abun` | Burrow cargo hold | Partial | Per-holder capacity/target/range lookup, hidden+paused cargo state, death ejection, empty attack gating, Warsmash cooldown scaling, footprint-aware boarding range, and Battle Stations/Smart boarding exist. While occupied, the Burrow portrait remains on its dedicated layer and capacity-driven clickable cargo slots replace only the ordinary stat subsection; world hover also renders the shared yellow segmented cargo-occupancy bar. Remaining work is retail verification of exact segment/health/mana decoration and other presentation details. |
+| `Abtl` | Battle Stations | Partial | OpenRealm uses its data-driven AoE, busy-unit flag, and allowed unit type to choose the nearest eligible workers up to remaining cargo capacity; selected workers path to the Burrow and load on arrival. The bundled Warsmash source defines the order/error keys but has no `Abtl` implementation, so this auto-call flow is retail/data-derived rather than source-confirmed Warsmash behavior. Needs localized no-Peons command feedback and broader custom-map validation. |
+| `Astd` | Stand Down | Partial | Occupied Burrows synthesize the stock Stand Down command even when the unit ability list omits `Astd`; empty Burrows hide it. Activation first applies normal Stop semantics so any persistent Burrow attack/order is retired, then unloads all occupants through the shared unstuck/unpause path. Needs explicit reference-style remembered-resource Back-to-Work state and remaining presentation parity. |
+| `Agra` | Mountain Giant War Club | Partial | Tree-targeted `grabtree`/Smart cast, target-preserving movement, destructable death, runtime Attack 2 switch, 15 committed strikes, Upgrade animation and save state are implemented. Per-tree club replaceable texture, exact missed-swing/recast retail behaviour and additional animation verification remain. See [War Club](../mountain-giant-war-club.md). |
+| `AEim` | Immolation | Stub | Toggle status exists; needs mana drain, periodic area damage, and caster buff art/rules. |
+| `Adtn` | Wisp Detonate | Partial | Point-order `detonate` (852145), authored Area/Rng/DataA mana/DataB summon damage, shared magical-status removal, friendly mana drain, invulnerable/immune/resistant protection, loose-Blight removal, and Wisp SpecialArt self-sacrifice through the normal death lifecycle. [Design and regression notes](../detonate.md). Exact occupied-point behaviour, Blight provenance, and stock visual/event timing remain retail-parity work. |
+| `Aenc` | Entangled mine cargo hold | Partial | Reuses generic cargo capacity/Smart boarding, hides+pauses loaded Wisps, preserves a rallied/Smart-ordered Wisp's boarding intent while the mine is incomplete, automatically retries loading after construction, and drives first-through-fifth occupancy animation tags. Needs remaining retail presentation/target-error verification. |
+| `Aent` | Entangle Gold Mine | Implemented | Validates an ordinary live Gold Mine with footprint-aware building range, supports `entangle`/`autoentangle` and instant variants, lets Blizzard melee `entangleinstant` create a completed starting overlay, auto-entangles an eligible nearby mine when Root completes, reports `Targetgoldmine` for invalid mine targets, owns persistent caster art/state, and hides/marks the caster ability permanent until overlay teardown restores it. |
+| `Aegm` | Entangled Mine | Partial | Uses `Aenc` cargo occupancy, Warsmash-style round-robin income slots, the parent mine's finite gold pool, direct player income, depletion death, Wisp ejection, and parent restoration. Needs remaining presentation parity. |
+| `Aeat` | Eat Tree | Partial | Tree target, self-heal, mana/cooldown, and tree removal exist. Needs rip/eat timing and buff art. |
+| `Ambt` | Moon Well | Partial | Manual friendly replenish restores life first then mana using DataB/DataA; nearest-valid autocast honors DataC and authored Area only (stock `Area=400`, `Rng=99999`); DataE gates natural mana regeneration to night; persistent EffectArt height follows DataD times mana fraction. Remaining work is retail presentation verification. |
+| `Apos`, `ACps` | Possession | Done | Instant takeover + caster death; DataA max-level; targs ground/nonhero/enemy/organic/neutral. |
+| `Aps2` | Possession (Channeling) | Done | TFT channel; Bpos/Bpoc, DataB amp, DataC/DataD victim protections; abort strips buffs. |
+| `ANch`, `ACch` | Charm | Partial | Permanent transfer with food/accounting and old-owner order cleanup; authored mask and immunity, neutral-creep-only level cap, and temporary overhead TargetArt implemented. Remaining: custom ownership edge cases and retail visual/audio timing. See [Dark Ranger](../dark-ranger.md). |
+| `AIpm` | Item Place Goblin Land Mine | Partial | Authored UnitID point summon, ownership/summon lifecycle, and post-success charged-item consumption are wired. Placement/presentation edge cases beyond the shared point-spell validator remain. See [Land Mines](../land-mines.md). |
+| `Amin` | Mine - exploding | Partial | DataA arming, DataB invisibility transition, Cast Range enemy-ground trigger, walk-over collision, True Sight integration, rooted-Ancient/mobile-uprooted distinction, normal self-death, `Death Spell`, and renderer `SPN` child-model presentation are wired. Broader unusual target edge cases remain. See [Land Mines](../land-mines.md). |
+| `Amnx` / `Adda` | AOE Damage Upon Death | Partial | DataA/B full ring, DataC/D partial ring, authored unit target masks, Duration-delayed resolution at the death position, and authored destructible target classes are wired. Mine explosion presentation is model-driven through `Death Spell`/`SPN`; broader alliance/target-mask edge cases remain. See [Land Mines](../land-mines.md). |
+| `AIco` | Item command using Charm behavior | Partial | Shares Charm ownership/target-validation handler and data-selected TargetArt; inventory alias-to-base dispatch is wired. |
+| `AHca` | Cold Arrows | TODO | Needs autocast/toggle projectile modifier and slow buff. |
+| `Afzy` | Frenzy | Partial | Autocast unit-target timed status, attack-speed and armor consumers wired. Aliased creep variants resolve through SLK. Art/sound effects and exact retail target mask remain. |
+| `Auhf` | Unholy Frenzy | Partial | Friendly unit-target timed status; attack-speed bonus and life drain per second are wired. Vision of Faerie Fire is analogous but here the drain carries the risk. Aliased creep/item variants resolve through SLK. Art/sound effects remain. |
+| `Acrs` | Curse | Partial | Autocast enemy unit-target timed status; miss-chance consumer checked before attack damage. Vision reveal of cursed targets is not yet implemented. |
+| `Acri`, `ACcr` | Cripple | Partial | Enemy unit-target timed status; all three reduction consumers wired. Art/sound and any additional dispel interactions remain. |
+| `ANso` | Soul Burn | Done | Enemy unit-target `BNso`; DataA drain, DataC attack reduction, and cast silence via `S_UnitIsSilenced` (also covers `BNsi`). |
+| `Atau`, `ANta` | Taunt | Partial | No-target cast redirects up to ten nearest eligible enemies in authored Area, using real attack-target validation and stable entity-number tie breaks. It skips active channel and repair work, and spell immunity alone does not block the order redirect. No persistent forced-target state. Remaining validation: retail behavior for unusual target classes, exact channel interruptibility, and creep guard/order restoration. |
+| `Aens`, `ANen` | Ensnare | Done | Air/ground buff split, move lock, DataA/B gradual land/rise, DataC melee range. |
+| `Aprg`, `Apg2`, `AIlp` | Purge | Partial | Shared `CAbilityPurge`; dispel (skips `S_StatusIsUndispellable`), Bprg slow from casting-row DataA, summoned DataC damage except Animate Dead dispel-immune summons, Apg2 DataD/DataE immobilize. Gradual recovery and `ACpu` remain. |
+| `ACtb` | Hurl Boulder | Partial | Shares `CAbilityThunderBolt`; projectile stun and authored damage use own SLK row. Art remains. |
+| `Adis` | Dispel Magic | Partial | Area timed-status dispel and DataB summoned damage via `CAbilityDispelMagic`. Honors `S_StatusIsUndispellable` and skips summoned-unit damage for Animate Dead aliases. Tree targs / Adcn+Adsm aliases remain. |
+| `Adch`, `Adcn` | Disenchant | Partial | Both use shared `CAbilityDispelMagic`; stock TFT Spirit Walker uses `Adcn` (100 mana, 250 area, 250 summoned damage); old `Adch` has a different target mask. Retail target filtering and effects require further comparison. |
+| `Advm` | Devour Magic | Partial | Shares `CAbilityDispelMagic`; per-hostile-unit DataA/DataB restoration, DataE summoned damage, authored point missile and impact SpecialArt. Arc 0.10 presentation, alternate alias handling and retail dispel impact timing remain. |
+| `AUcb` | Carrion Beetles | Partial | Manual corpse targeting and right-click autocast create permanent DataC beetles, consume a corpse only after successful creation, and enforce per-Crypt-Lord living-beetle cap from DataE. See [Carrion Beetles](../carrion-beetles.md). |
+| `Asps` | Spell Steal | Partial | Transfers explicitly classified Inner Fire, Bloodlust, and Faerie Fire statuses after destination allocation succeeds. Other buff families remain unsupported until their callback, periodic, source, and presentation restoration is safe. |
+| `ANfl` | Forked Lightning | Partial | Unit-target cone from the caster through the selected target; hits up to `DataB` alive enemies within the authored range and `Area`-scaled cone, each for authored `DataA` damage, with a direct lightning bolt from caster to each target. Current selection prefers the closest eligible targets; exact retail ordering and visual parity remain to verify. |
+| `Agld` | Gold Mine | Partial | Per-mine `Agld`-derived capacity/duration/max-gold, finite depletion, waiting workers, inside-miner protection, partial final trips, WORK occupancy animation, and shared Haunted/Entangled parent-resource ownership are implemented. Remaining gaps are mostly feedback/presentation parity. |
+| `Agl2` | Overlayed Gold Mine | Partial | Shared parent-mine relationship keeps the underlying `Agld` entity as the sole finite resource pool, hides/pauses it while overlaid, and restores it on overlay death/removal. Exact visual/effect parity remains. |
+| `Abgm` | Blighted Gold Mine | Partial | Build-on-mine overlays retain the parent resource pool; fixed Acolyte ring slots, miner-count-dependent direct income, teardown, finite-gold deduction, and Warsmash-style persistent `EffectArt` at each ring slot are implemented. Exact retail effect/model presentation beyond those authored effects remains. |
+| `Abli` | Blight | Partial | Passive Warsmash-style `DataA` create/remove, `DataB` expansion, `Area` cap, and `Duration` cadence mutate the authoritative WC3 game-owned Blight field. Placement, `uhrt=blight`, JASS queries/mutations, save/load, runtime terrain rendering, client preview sync, and Blighted trees consume the same state. Remaining is retail visual verification of ground-texture edge cases (see [Blight](../blight.md)). |
+| `Auns` | Unsummon Building | Partial | Unit-target channel now applies `DataB` demolition HP/sec, progressive `DataA` cost recovery proportional to HP actually removed, temporary `Buns` spell immunity, and the data-driven `UnderConstruction` rejection before mana spend. Cancellation retains partial damage/refund and strips immunity. Remaining: exact work/effect presentation, ROC `debris`, and patch-1.17 accumulated cost for upgraded structures (see [Unsummon](../unsummon.md)). |
+| `Asac`, `Alam` | Sacrifice | Partial | Both Pit->Acolyte and Acolyte->Pit endpoints share `CAbilitySacrifice`; an accepted pair queues fixed `ushd` production, hides/pauses the worker, uses Shade build time without extra food reservation, consumes the Acolyte on completion, and restores it on cancel. Remaining: exact effects/animation and dedicated command-error keys (see [Sacrifice](../sacrifice.md)). |
+| `Atru` | True Sight | Done | Registered as a passive detector and resolves its own authored `Rng` through the shared viewer-local True Sight path used by other detector abilities. |
+| `Aaha` | Acolyte Harvest | Partial | Gather/Smart orders walk to an owned completed Haunted Mine, claim the nearest free authored ring slot, remain visible in Stand Work, unregister on retask/death/removal, and use Warcraft `CommandStrings` keys for wrong-owner/wrong-target/full-ring feedback. Remaining gaps are minor presentation/edge-case parity. |
+| `Artn` | Return Resources | Partial | Drop-off eligibility is ability-driven (`Argd`/`Arlm`/`Argl` plus `Artn`-derived data), with nearest compatible selection, destroyed-target retargeting, explicit Smart-click return, and no-target return through the worker Harvest command; carried-resource state still lives in the harvest state machines. |
+| `Ahar` | Harvest | Partial | Human worker harvest/return gameplay exists, including capacity clamping and same-forest resume after a dead remembered tree, but not as the same split data model as the ability data; command-card art/text does not yet model the carried-state presentation separately. |
+| `Awrp` | Way Gate | Partial | `Awrp`-derived aliases read authored DataA/DataB as the rectangular entry area; `CAbilityWarp` owns target-order validation, approach/cleanup, and traversal. All five `Waygate*` JASS natives, active `alternate` presentation, static-pathing entrance selection, unstuck relocation, generation guarding, Shift continuation, and save/load are implemented. Ordinary Move/Attack-Move pathfinding does not yet discover portal routes automatically. See [Way Gates](../way-gates.md). |
+| `Awha` | Wisp Harvest | Implemented | Persistent direct DataA lumber income at the attached tree, authored `Rng` reacquisition radius and `Dur` interval (stock 900/8), one-Wisp-per-tree reservation, free-tree retargeting, Smart orders, TargetArt at DataC height, and authored `EffectSoundLooped`; missing required tuning rejects orders instead of borrowing Harvest defaults. No carry/drop-off cycle or tree damage. |
+| `Ahrl` | Harvest Lumber | Partial | Shares the lumber harvest/return state machine with `Ahar`, but remains lumber-only: Smart, the Harvest command, and `autoharvestlumber` target trees; `DataA`/`DataB`/`Rng`/`Dur` are resolved from the worker's actual `Ahrl` (including derived aliases), and gold mining is rejected. Remaining parity is mostly exact target-error/presentation behavior and Undead tree-blight marking. |
+| `ANcl` | Channel test | Stub | Opens cancel mode as a generic channel scaffold. |
+| `AUcs`, `ACca`, `ACcv`, `ACc2`, `ACc3` | Carrion Swarm / Crushing Wave | Partial | Finite travelling wave resolves area hits once per target, in spatial order for damage caps, independently of missile art. See [Travelling Waves](../carrion-wave.md). Visual parity and extreme-density performance remain to verify. |
+| `AInv` | Inventory | Partial | Inventory storage and item use exist, but no `AInv` ability type/capacity/drop rules. |
+| `Arep` | Human Repair | Partial | Entity targeting, Smart/Shift orders, completed structure and authored mechanical-unit Repair, Friend + Ancient/Non-Ancient target subset, DataA/DataB costs, floating-target DataE range, owner-only Human DataC/DataD power building, canonical numeric Repair toggle IDs, and nearest-valid Auto Repair are implemented. Complete generic target masks and destructible Repair remain. |
+| `Aren` | Repair | Partial | Shares completed structure/mechanical Repair, Friend/classification target subset, DataA/DataB costs, floating-target DataE range, Shift target order, numeric Repair toggle IDs, and nearest-valid Auto Repair; rejects construction. Complete generic target masks and destructibles remain. |
+| `Arst` | Repair | Partial | Shares completed structure/mechanical Repair, Friend/classification target subset, DataA/DataB costs, floating-target DataE range, Shift target order, numeric Repair toggle IDs, and nearest-valid Auto Repair; rejects construction. Its stock-style target row can admit Ancient targets because it lacks `nonancient`. Complete generic target masks and destructibles remain. |
+| `Avul` | Invulnerable | Partial | Units with `Avul` spawn with damage immunity; damage guard is tested. Needs targetability/UI status polish. |
+| `Apit` | Shop Purchase Item | Partial | `Sellitems` item buttons, authoritative item purchase, local-player resource charging, inventory handoff, shared item stock/restock, and pawnable sell-back are wired through the neutral-shop subsystem. The Apit ability procedure itself remains a marker; power-up acquisition and JASS stock mutation remain. |
+| `Aneu` | Neutral Building | Partial | Neutral item shops expose a command card without granting control, use Aneu/Aall DataA as activation radius, deterministically choose a nearby owned Hero/inventory unit as patron, and present that patron's inventory. Explicit neutralinteract selection button/indicator and persistent per-player patron state remain. |
+| `Aall` | Shop Sharing | TODO | Allied/shared neutral-building policy is not implemented; current patron resolution is intentionally local-player-owned only. |
+| `Acoi` | Couple Instant | TODO | Test/special ability; low priority unless map data requires it. |
+| `AIhe` | Item Heal | Partial | Inventory dispatch, selected-unit heal, target art and synchronous charge/consume rules exist. Shared item cooldown groups remain. |
+| `AIma` | Item Mana Regain | Partial | Inventory dispatch, selected-unit mana restore, target art and synchronous charge/consume rules exist. Shared item cooldown groups remain. |
+| `AIso` | Item Soul Theft / Soul Trap | Partial | Retail `CAbilitySoulTrap` uses the shared unit-target spell pipeline and authored target masks; it preserves the originating item through approach, publishes successful use-item events, traps the same target edict without death, binds the filled `soul`, and reveals the carrier to the trapped unit's owner. Custom target-mask parity remains. |
+| `Asou` | Item Soul Possession | Partial | `CAbilitySoulTrapped` owns the persistent carrier/target relationship, carrier-death release at the death position, carrier-removal cleanup, and target-removal item cleanup. Unusual custom targets and subsystem-specific timer/building behavior remain unverified. |
+| `AIda` | Item Defense AOE | Partial | Authored area/duration/target mask applies `Bdef`; live status contributes its authored armor bonus to combat/HUD. Persistent buff-world-art ownership and shared item cooldown groups remain. |
+| `AIat` | Item Attack Bonus | Partial | Passive item bonus updates temporary Attack 1/2 damage and HUD modifier; broader stacking/modifier framework remains. |
+| `AIab` | Item Stat Bonus | TODO | Needs hero stat modifier system. |
+| `AIim` | Permanent Intelligence Gain | TODO | Needs permanent hero stat updates. |
+| `AIsm` | Permanent Strength Gain | TODO | Needs permanent hero stat updates. |
+| `AIam` | Permanent Agility Gain | TODO | Needs permanent hero stat updates. |
+| `AIxm` | Permanent Multi-stat Gain | TODO | Needs permanent hero stat updates. |
+| `AIde` | Item Defense Bonus | Partial | Passive item armor modifier applies on inventory acquisition and reverses on removal, using the shared temporary armor bonus preserved across Hero Agility recomputation; this matches Warsmash Ring-of-Protection-style add/remove semantics. Broader armor modifier framework remains. |
+| `AIml` | Item Life Bonus | TODO | Needs max-health modifier system. |
+| `AImm` | Item Mana Bonus | TODO | Needs max-mana modifier system. |
+| `AIfs` | Figurine Summon | Partial | `CAbilityFigurineSkeleton` reads DataA/DataB unit counts and DataC/DataD unit IDs (or UnitID), spawns authored summons around the selected unit, and uses the ability duration. Book of the Dead rawcode identity and exact retail summon counts/lifetime still need archive verification and production-path coverage. |
+| `AImi` | Permanent Life Gain | Partial | Selected-unit max-health/current-health gain plus synchronous charge/consume rules exist. Shared item cooldown groups remain. |
+| `AIem` | Experience Gain | Implemented | Grants Data A XP through the shared Hero progression path and plays the target effect. |
+| `AIlm` | Level Gain | Implemented | Converts Data A level gain to the target XP threshold and uses the shared Hero progression path. |
+| `Acar` | Cargo Hold | Partial | Per-holder capacity, real-unit cargo storage, hidden+paused occupants, single-passenger cargo-slot unload, timed Unload All spacing from the hold's authored `Dur`, death ejection, loaded-state JASS queries, selected-unit cargo slots, and shared world-hover segmented occupancy presentation exist. Needs broader mobile walk-into-range compatibility and exact retail segment styling verification. |
+| `Amel`, `Amed`, `Amtc`/`Sch2` | Meat Wagon corpse cargo | Partial | Data-driven capacity, real corpse-edict storage, decay suspension, holder-relative corpse position, corpse-only `Amtc` gating that rejects living-unit Load/Smart boarding, Get Corpse approach plus acquisition-range autocast, authored target filtering without a hard-coded corpse-owner restriction, Drop All, death ejection, Exhume integration, stored-corpse Raise Dead/Cannibalize consumption, and segmented hover occupancy exist. Exact spill/unload placement/facing and flesh-phase unload semantics remain. |
+| `Aloa` | Load | Partial | Same-owner, capacity, target-mask, allowed-unit-type, already-loaded, and footprint-aware range validation feed real cargo state. Smart boarding now walks compatible units into range; explicit mobile transport targeting still needs broader compatibility work and command errors. |
+| `Adro` | Drop | Partial | Unload All now ejects the first occupant immediately and then one occupant per Cargo Hold `Dur` until empty, using an active ability move so Stop/Move cancel it and pause/stun suspend it; save/load resumes the remaining sequence. See [shared transport unloading](../orc-burrows.md#shared-transport-unloading). The current selected point is still not used for transport movement/placement, so exact authored point semantics remain. |
+| `Adri` | Drop Instant | Partial | No-target Unload All Instant now ejects every occupant immediately through the shared cargo-removal path. Exact reference presentation/sound semantics remain. |
+| `Aroo`, `Aro1`, `Aro2` | Root/Uproot | Partial | Current handler is still a legacy `no_pathing`/movetype toggle. Verified behavior requires rooted/uprooted weapon-set bits, rooted turning, uprooted defense, point-target reroot, dynamic structure/pathing state, animation transitions, and rooted/uprooted ability-set swaps. |
+
+## TODO: Audit JASS autocast on/off orders
+
+Audit every autocast ability's authored `Orderon`/`Orderoff` strings against
+the runtime order registry and `unit_issueimmediateorder()` handling. Ensure
+`IssueImmediateOrder` and `IssueImmediateOrderById` can enable and disable the
+same ability state that command-card right-click changes, including concrete
+aliases and no-target autocasts. Add a JASS-order regression test for each
+supported order pair. Obsidian Statue `Arpl` (`replenishlifeon/off`) and `Arpm`
+(`replenishmanaon/off`) were confirmed missing and have now been registered;
+continue the audit across the remaining autocast abilities.
+
+## Suggested Port Order
+
+1. Finish the common spell plumbing: ability level data, mana/cooldown checks,
+   target filters, point/unit/no-target command flows, and buff/status storage.
+2. Complete one targeted spell end to end, preferably `AHtb` Thunder Bolt, then
+   reuse that path for `ANfb`.
+3. Finish `AHhb` retail parity around the existing target validation/healing path: preserve selected-unit portrait targeting, add retail-complete invalid-target feedback when its authoritative error mapping is known, and complete richer damage/dispel typing.
+4. Add no-target summon spells (`AHwe`, `AOsf`) once timed-life units are
+   available.
+5. Finish Repair's remaining generic target categories and destructible behavior, expand generic autocast beyond Repair's nearest-valid policy, and then generalize the remaining Wisp harvest variant (`Awha`).
+6. Defer cargo, shops, inventory item modifiers, root/entangle mine, and passive
+   autocast abilities until the underlying status, item, and transform systems
+   exist.
+
+Beastmaster/Rexxar beast summons (`ANsg`, `ANsq`, `ANsw`, `Arsg`, `Arsq`) share Feral Spirit's magical no-blood death presentation on combat death and timed expiry; regular summoned units retain normal death handling.
+
+### Crypt Lord Impale travelling-wave and lift stages
+
+`AUim` and `ACmp` use a saveable, time-swept line for one-hit damage and authored target masks. `BUim` now owns the timed stun and a separate victim component controls the `DataD` airborne visual offset without overwriting other flight heights; stun and landing expire independently. Patch 3 renders authored CasterArt, BUim hit art and progressive SpecialArt miss spikes through temporary MDX entities. Visual sample spacing is provisional. Patch 4 reads DataE/DataF for movement interruption and airborne damage/targetability, while blocking new targeted spells mid-lift. **Remaining:** retail spike spacing and edge-case airborne overlap/cast animation parity. See [Impale](../impale.md).
+
+Firelord (TFT): `ANlm` attack-driven split marker with DataB-F and BTLF extension; `ANia` mana-gated autocast; `ANvc` presentation-only rock missiles. See [Firelord](../firelord.md).
+
+### Pandaren Brewmaster (TFT)
+
+`ANbf`/`ANcf` use directional cone damage with `BNdh` ignition, a `BNbf`
+status-owned burn and saveable tick controller. `ANdh`/`Acdh` use a homing
+bottle, area splash, authored slow and attack miss chance. Drunken Brawler
+`ANdb`/`Acdb` reuse the combat passive hooks. `ANef`/`Acef` create three
+linked elemental units instead of treating their missing `UnitID` as a summon
+lookup; a saveable controller hides/returns/kills the original hero. See
+[Pandaren Brewmaster](../pandaren-brewmaster.md) for remaining retail gaps.

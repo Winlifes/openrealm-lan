@@ -1,0 +1,16 @@
+Eris for Lua 5.3, with strict project heap snapshots
+
+Source: https://github.com/Panakotta00/eris
+Commit: 9d328c612a825ca10f1c495595acd96f27f5e288 (master-lua5.3)
+Original hashes and local changes: provenance.json. MIT license: LICENSE.
+
+Local format W53 revision 1 rejects upstream ERIS and different ABI layouts;
+there is no compatibility migration. C continuation context is explicitly
+int64_t. Continuation payload is retained for zero-status C frames as well as
+other non-base frames. The base_ci sentinel alone has no frame payload.
+
+Eris serializes Lua object graphs, closure upvalues and suspended Lua stacks.
+Native functions and private standard-library continuations need explicit
+permanent identities. Host userdata needs a typed persistence constructor;
+raw process pointers are not a world-save codec. Hooks and external host state
+are not implicitly preserved. The game integration owns those contracts.

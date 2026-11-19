@@ -1,0 +1,10 @@
+[Xt01]
+skinType=destructable
+file=TestUI\Models\panel_sprite
+file:sd=TestUI\Models\quad_sprite
+numVar=1
+armor=Wood
+selcircsize=146
+colorR=190
+colorG=220
+colorB=230

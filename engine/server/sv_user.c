@@ -1,0 +1,283 @@
+#include "server.h"
+#include <stdlib.h>
+
+/* Host-gated lobby commands; defined below the ucmd table that references them. */
+static void SV_LobbyConfigClient_f(client_t *cl, int argc, cstring_t *argv);
+static void SV_LobbySlotClient_f(client_t *cl, int argc, cstring_t *argv);
+static void SV_LobbyStartMatchClient_f(client_t *cl, int argc, cstring_t *argv);
+
+static uint32_t SV_ClientPlayerNumber(client_t *cl) {
+    return cl->playernum < MAX_PLAYERS ? cl->playernum : 0;
+}
+
+/* The game owns the mapping between lobby player numbers and client entities. */
+static edict_t *SV_ClientEdict(client_t *cl) {
+    return ge->ClientEntity(SV_ClientPlayerNumber(cl));
+}
+
+/* Continuation indexes come from the peer; reject malformed requests before indexing server tables. */
+static int SV_SignonStart(int argc, cstring_t *argv, uint32_t count) {
+    if (argc == 1) return 0;
+    char *end;
+    long start = argc == 2 ? strtol(argv[1], &end, 10) : -1;
+    if (start < 0 || start > count || !argv[1][0] || *end) {
+        fprintf(stderr, "SV_SignonStart: invalid %s continuation\n", argv[0]);
+        return -1;
+    }
+    return (int)start;
+}
+
+/* Q2-style request pacing bounds UDP packets and avoids flooding the receiver during registration. */
+void SV_Configstrings_f(client_t *cl, int argc, cstring_t *argv) {
+    int start = SV_SignonStart(argc, argv, MAX_CONFIGSTRINGS);
+    uint32_t limit = SV_SignonLimit(&cl->netchan);
+    if (cl->state != cs_connected || start < 0) return;
+    if (!cl->edict) cl->edict = SV_ClientEdict(cl);
+    for (; start < MAX_CONFIGSTRINGS; start++) {
+        if (!*sv.configstrings[start]) continue;
+        /* The engine buffer is much larger than a UDP datagram; reserve room for the next request too. */
+        if (cl->netchan.message.cursize + SV_ConfigStringWireSize(start) + 32 > limit) break;
+        SV_WriteConfigString(&cl->netchan.message, start);
+        cl->syncstrings[start] = true;
+    }
+    char next[32];
+    if (start == MAX_CONFIGSTRINGS) strlcpy(next, "baselines", sizeof(next));
+    else snprintf(next, sizeof(next), "configstrings %d", start);
+    MSG_WriteByte(&cl->netchan.message, svc_mirror);
+    MSG_WriteString(&cl->netchan.message, next);
+    Netchan_Transmit(NS_SERVER, &cl->netchan);
+}
+
+/* Baselines share the configstring continuation contract, so begin cannot overtake later entity pages. */
+void SV_Baselines_f(client_t *cl, int argc, cstring_t *argv) {
+    entityState_t empty = { 0 }, base;
+    int start = SV_SignonStart(argc, argv, ge->num_edicts);
+    uint32_t limit = SV_SignonLimit(&cl->netchan);
+    if (cl->state != cs_connected || start < 0) return;
+    if (!sv.baselines) {
+        fprintf(stderr, "SV_Baselines_f: missing map baselines\n");
+        SV_DropClient(cl);
+        return;
+    }
+    for (; start < ge->num_edicts; start++) {
+        edict_t *ent = EDICT_NUM(start);
+        if (ent->svflags & SVF_NOCLIENT) continue;
+        if (cl->netchan.message.cursize + 512 + 32 > limit) break;
+        /* An edict spawned after SV_CreateBaseline has a zeroed baseline whose number is 0. Sending it as-is
+         * addressed every late entity's empty baseline to entity 0 and wiped that entity's real baseline on
+         * the client, so address each baseline by its own slot. */
+        base = sv.baselines[start];
+        base.number = start;
+        MSG_WriteByte(&cl->netchan.message, svc_spawnbaseline);
+        MSG_WriteDeltaEntity(&cl->netchan.message, &empty, &base, true);
+    }
+    char next[32];
+    if (start == ge->num_edicts) strlcpy(next, "precache", sizeof(next));
+    else snprintf(next, sizeof(next), "baselines %d", start);
+    MSG_WriteByte(&cl->netchan.message, svc_mirror);
+    MSG_WriteString(&cl->netchan.message, next);
+    Netchan_Transmit(NS_SERVER, &cl->netchan);
+}
+
+void SV_Begin_f(client_t *cl, int argc, cstring_t *argv) {
+    uint32_t playernum;
+
+    (void)argc;
+    (void)argv;
+
+    if (!cl->edict) {
+        playernum = SV_ClientPlayerNumber(cl);
+        cl->edict = SV_ClientEdict(cl);
+        fprintf(stderr,
+                "SV_Begin_f: assigned missing edict for client=%ld player=%u\n",
+                (long)(cl - svs.clients),
+                (unsigned)playernum);
+    }
+    cl->state = cs_spawned;
+    cl->lastframe = (uint32_t)-1;
+    ge->ClientBegin(cl->edict);
+}
+
+/* The client could not decode a snapshot because it does not hold its delta base (Q2 sends -1 as its last frame).
+ * Send the next snapshot in full; the frames sent before this request may have been discarded too. */
+static void SV_NoDelta_f(client_t *cl, int argc, cstring_t *argv) {
+    (void)argc;
+    (void)argv;
+    SV_ResetDeltaBase(cl);
+}
+
+void SV_PlayerInfo_f(client_t *cl, int argc, cstring_t *argv) {
+    (void)argc;
+    (void)argv;
+
+    /* Assign the client's game edict (Quake 2/3 pattern) */
+    cl->edict = SV_ClientEdict(cl);
+}
+
+void SV_New_f(client_t *cl, int argc, cstring_t *argv) {
+    (void)argc;
+    (void)argv;
+
+    if (sv.state == ss_lobby) {
+        SV_LobbyWriteSetup(cl);
+        Netchan_Transmit(NS_SERVER, &cl->netchan);
+        return;
+    }
+    SV_SendLoadingScreen(cl);
+    MSG_WriteByte(&cl->netchan.message, svc_mirror);
+    MSG_WriteString(&cl->netchan.message, "configstrings");
+    Netchan_Transmit(NS_SERVER, &cl->netchan);
+}
+
+static uint32_t SV_ClientIndex(client_t *client) {
+    if (!client || client < svs.clients || client >= svs.clients + MAX_CLIENTS) {
+        return 0;
+    }
+    return (uint32_t)(client - svs.clients);
+}
+
+static void SV_LobbySayClient_f(client_t *cl, int argc, cstring_t *argv) {
+    char text[256];
+    size_t used = 0;
+
+    if (argc < 2 || !argv) {
+        return;
+    }
+    text[0] = '\0';
+    for (int i = 1; i < argc; i++) {
+        cstring_t value = argv[i] ? argv[i] : "";
+        size_t len = strlen(value);
+
+        if (used && used + 1 < sizeof(text)) {
+            text[used++] = ' ';
+            text[used] = '\0';
+        }
+        if (len >= sizeof(text) - used) {
+            len = sizeof(text) - used - 1;
+        }
+        memcpy(text + used, value, len);
+        used += len;
+        text[used] = '\0';
+    }
+    SV_LobbyBroadcastChatFrom(SV_ClientIndex(cl), cl->name, text);
+}
+
+/* Quake 2 SV_Disconnect_f: the client announces it is leaving. This used to fall through to the game as an
+ * unknown ClientCommand, so the slot stayed spawned and the game never learned the player was gone. */
+void SV_Disconnect_f(client_t *cl, int argc, cstring_t *argv) {
+    (void)argc; (void)argv;
+    SV_DropClient(cl);
+}
+
+typedef struct {
+    cstring_t name;
+    void (*func)(client_t *client, int argc, cstring_t *argv);
+} ucmd_t;
+
+ucmd_t ucmds[] = {
+    { "new", SV_New_f },
+    { "configstrings", SV_Configstrings_f },
+    { "baselines", SV_Baselines_f },
+    { "playerinfo", SV_PlayerInfo_f },
+    { "begin", SV_Begin_f },
+    { "nodelta", SV_NoDelta_f },
+    { "disconnect", SV_Disconnect_f },
+    { "lobby_say", SV_LobbySayClient_f },
+    { "lobby_config", SV_LobbyConfigClient_f },
+    { "lobby_slot", SV_LobbySlotClient_f },
+    { "lobby_start_match", SV_LobbyStartMatchClient_f },
+    { NULL }
+};
+
+/* Lobby-mutating commands are accepted from the lobby host only (the lowest
+ * connected client - the in-process loopback client on a listen server). The
+ * browser game-setup screen relays these through clc_stringcmd. */
+static void SV_LobbyConfigClient_f(client_t *cl, int argc, cstring_t *argv) {
+    if (!SV_LobbyClientIsHost(cl)) {
+        fprintf(stderr, "SV_Lobby: ignoring lobby_config from non-host client %s\n", cl->name);
+        return;
+    }
+    SV_LobbyConfigCommand(argc, argv);
+}
+
+static void SV_LobbySlotClient_f(client_t *cl, int argc, cstring_t *argv) {
+    if (!SV_LobbyClientIsHost(cl)) {
+        /* Guests may edit only their own race/team/color. Structural fields,
+         * ownership and names stay server-authored even if a peer alters argv. */
+        uint32_t slotnum = argc >= 9 ? (uint32_t)atoi(argv[1]) : MAX_PLAYERS;
+        if (sv.state != ss_lobby || !svs.lobby.active || slotnum >= svs.lobby.slot_count ||
+            slotnum != cl->lobby_slot) return;
+        lobbySlot_t slot = svs.lobby.slots[slotnum];
+        if (!slot.occupied || slot.client >= svs.num_clients || &svs.clients[slot.client] != cl) return;
+        uint32_t race = (uint32_t)atoi(argv[5]), team = (uint32_t)atoi(argv[6]), color = (uint32_t)atoi(argv[7]);
+        if (race > kPlayerRaceNightElf || team >= MAX_PLAYERS || color >= MAX_CLIENTS) return;
+        slot.race = (playerRace_t)race;
+        mapInfo_t const *info = CM_GetMapInfo();
+        if (!info || !(info->flags & fixed_player_setting_for_custom_forces)) {
+            slot.team = team; slot.color = color;
+        }
+        SV_LobbySetSlot(slotnum, &slot);
+        SV_LobbyBroadcastSetup();
+        return;
+    }
+    SV_LobbySlotCommand(argc, argv);
+}
+
+static void SV_LobbyStartMatchClient_f(client_t *cl, int argc, cstring_t *argv) {
+    (void)argc;
+    (void)argv;
+
+    if (!SV_LobbyClientIsHost(cl)) {
+        fprintf(stderr, "SV_Lobby: ignoring start request from non-host client %s\n", cl->name);
+        return;
+    }
+    if (sv.state != ss_lobby || !svs.lobby.active || !svs.lobby.map_path[0]) {
+        fprintf(stderr, "SV_Lobby: start request ignored; no active lobby\n");
+        return;
+    }
+    fprintf(stderr, "SV_LobbyStartMatch: host %s starting match on %s\n", cl->name, svs.lobby.map_path);
+    SV_Map(svs.lobby.map_path);
+}
+
+void SV_ExecuteUserCommand(sizeBuf_t *msg, client_t *client) {
+    typedef char cmdarg_t[TOKEN_LEN];
+    static cmdarg_t args[MAX_CMDARGS];
+    static cstring_t argv[MAX_CMDARGS];
+    uint32_t argc = 0;
+    char command[2048];
+    uint32_t remaining;
+    uint8_t const *start, *end;
+    parser_t p = { 0 };
+    if (msg->readcount > msg->cursize) return;
+    remaining = msg->cursize - msg->readcount;
+    start = msg->data + msg->readcount;
+    end = memchr(start, 0, remaining);
+    if (!end) {
+        msg->readcount = msg->cursize;
+        return;
+    }
+    size_t const length = (size_t)(end - start);
+    msg->readcount += (uint32_t)length + 1;
+    if (length >= sizeof(command)) return;
+    memcpy(command, start, length);
+    command[length] = '\0';
+    p.tok = p.token;
+    p.str = command;
+    for (cstring_t tok = ParserGetToken(&p); tok && argc < MAX_CMDARGS; tok = ParserGetToken(&p)) {
+        strlcpy(args[argc], tok, sizeof(args[argc]));
+        argv[argc] = args[argc];
+        argc++;
+    }
+    if (p.error || argc == 0) {
+        return;
+    }
+    for (ucmd_t *u = ucmds; u->name; u++) {
+        if (!strcmp(argv[0], u->name)) {
+            u->func(client, (int)argc, argv);
+            return;
+        }
+    }
+    /* Map restart can leave a stringcmd queued before playerinfo assigns the edict. */
+    if (!client->edict) return;
+    ge->ClientCommand(client->edict, argc, argv);
+}

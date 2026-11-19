@@ -1,0 +1,24 @@
+{
+    admin off
+}
+
+https://localhost:8444 {
+    bind 127.0.0.1
+    tls internal
+    header {
+        Cross-Origin-Opener-Policy same-origin
+        Cross-Origin-Embedder-Policy require-corp
+        X-Content-Type-Options nosniff
+    }
+    handle /api/* {
+        reverse_proxy 127.0.0.1:18780
+    }
+    handle_path /play/gamedata/* {
+        root * {$WC3_LAN_ROOT}/data-current
+        file_server
+    }
+    handle {
+        root * {$WC3_LAN_ROOT}/www
+        file_server
+    }
+}

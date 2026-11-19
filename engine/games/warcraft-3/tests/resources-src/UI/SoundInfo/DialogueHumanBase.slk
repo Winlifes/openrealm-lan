@@ -1,0 +1,13 @@
+ID;PWXL;N;E
+B;X2;Y5;D0
+C;X1;Y1;K"DialogueLabel"
+C;X2;K"Filepath"
+C;X1;Y2;K"FootmanDeath1"
+C;X2;K"Units/Human/Footman/FootmanDeath.wav"
+C;X1;Y3;K"MilitiaWhat1"
+C;X2;K"Units/Human/Peasant/PeasantWhat1.wav"
+C;X1;Y4;K"ImportedVoice1"
+C;X2;K"Sound/Custom/AuthoredRecording.wav"
+C;X1;Y5;K"ImportedVoiceAlias1"
+C;X2;K"Sound/Custom/AuthoredRecording.wav"
+E

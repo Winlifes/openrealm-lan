@@ -1,0 +1,129 @@
+// Minimal named binding contract, without retail art or layout.
+Frame "FRAME" "SimpleInfoPanelUnitDetail" {
+    Frame "FRAME" "SimpleNameValue" {
+    }
+    Frame "FRAME" "SimpleHeroLevelBar" {
+    }
+    Frame "FRAME" "SimpleProgressIndicator" {
+    }
+    Frame "FRAME" "SimpleBuildTimeIndicator" {
+    }
+    Frame "FRAME" "SimpleBuildingActionLabel" {
+    }
+    Frame "FRAME" "SimpleUnitStatsPanel" {
+        Frame "FRAME" "SimpleClassValue" {
+        }
+    }
+}
+Frame "FRAME" "SimpleInfoPanelBuildingDetail" {
+    Frame "FRAME" "SimpleBuildingNameValue" {
+    }
+    Frame "FRAME" "SimpleBuildingDescriptionValue" {
+    }
+    Frame "FRAME" "SimpleBuildTimeIndicator" {
+    }
+    Frame "FRAME" "SimpleBuildingActionLabel" {
+    }
+    Frame "FRAME" "ARTWORK" {
+        Frame "FRAME" "SimpleBuildQueueBackdrop" {
+        }
+    }
+}
+Frame "FRAME" "SimpleInfoPanelItemDetail" {
+    Frame "FRAME" "SimpleItemNameValue" {
+    }
+    Frame "FRAME" "SimpleItemDescriptionValue" {
+    }
+}
+Frame "FRAME" "SimpleInfoPanelIconDamage" {
+    Frame "FRAME" "InfoPanelIconBackdrop" {
+    }
+    Frame "FRAME" "InfoPanelIconLevel" {
+    }
+    Frame "FRAME" "InfoPanelIconLabel" {
+    }
+    Frame "FRAME" "InfoPanelIconValue" {
+    }
+}
+Frame "FRAME" "SimpleInfoPanelIconArmor" {
+    Frame "FRAME" "InfoPanelIconBackdrop" {
+    }
+    Frame "FRAME" "InfoPanelIconLevel" {
+    }
+    Frame "FRAME" "InfoPanelIconLabel" {
+    }
+    Frame "FRAME" "InfoPanelIconValue" {
+    }
+}
+Frame "FRAME" "SimpleInfoPanelIconRank" {
+    Frame "FRAME" "InfoPanelIconBackdrop" {
+    }
+    Frame "FRAME" "InfoPanelIconLevel" {
+    }
+    Frame "FRAME" "InfoPanelIconLabel" {
+    }
+    Frame "FRAME" "InfoPanelIconValue" {
+    }
+}
+Frame "FRAME" "SimpleInfoPanelIconFood" {
+    Frame "FRAME" "InfoPanelIconBackdrop" {
+    }
+    Frame "FRAME" "InfoPanelIconLevel" {
+    }
+    Frame "FRAME" "InfoPanelIconLabel" {
+    }
+    Frame "FRAME" "InfoPanelIconValue" {
+    }
+}
+Frame "FRAME" "SimpleInfoPanelIconGold" {
+    Frame "FRAME" "InfoPanelIconBackdrop" {
+    }
+    Frame "FRAME" "InfoPanelIconLevel" {
+    }
+    Frame "FRAME" "InfoPanelIconLabel" {
+    }
+    Frame "FRAME" "InfoPanelIconValue" {
+    }
+}
+Frame "FRAME" "SimpleInfoPanelIconHero" {
+    Frame "FRAME" "InfoPanelIconHeroIcon" {
+    }
+    Frame "FRAME" "SimpleInfoPanelIconHeroText" {
+        Frame "FRAME" "InfoPanelIconHeroStrengthLabel" {
+        }
+        Frame "FRAME" "InfoPanelIconHeroStrengthValue" {
+        }
+        Frame "FRAME" "InfoPanelIconHeroAgilityLabel" {
+        }
+        Frame "FRAME" "InfoPanelIconHeroAgilityValue" {
+        }
+        Frame "FRAME" "InfoPanelIconHeroIntellectLabel" {
+        }
+        Frame "FRAME" "InfoPanelIconHeroIntellectValue" {
+        }
+    }
+}
+Frame "FRAME" "SimpleInfoPanelIconAlly" {
+    Frame "FRAME" "InfoPanelIconAllyTitle" {
+    }
+    Frame "FRAME" "InfoPanelIconAllyGoldIcon" {
+    }
+    Frame "FRAME" "InfoPanelIconAllyGoldValue" {
+    }
+    Frame "FRAME" "InfoPanelIconAllyWoodIcon" {
+    }
+    Frame "FRAME" "InfoPanelIconAllyWoodValue" {
+    }
+    Frame "FRAME" "InfoPanelIconAllyFoodIcon" {
+    }
+    Frame "FRAME" "InfoPanelIconAllyFoodValue" {
+    }
+    Frame "FRAME" "InfoPanelIconAllyUpkeep" {
+    }
+}
+Frame "FRAME" "SimpleInfoPanelCargoDetail" {
+    Frame "FRAME" "SimpleHoldNameValue" {
+    }
+    Frame "FRAME" "SimpleHoldDescriptionValue" {
+    }
+}

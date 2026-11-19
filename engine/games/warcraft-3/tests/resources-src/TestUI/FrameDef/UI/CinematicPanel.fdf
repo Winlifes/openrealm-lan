@@ -1,0 +1,20 @@
+// Project-authored fixture for the 3.0 SD/HD cinematic-frame hierarchy.
+Frame "FRAME" "CinematicPanel" {
+    SetAllPoints,
+    Frame "FRAME" "CinematicPanelControlFrame" {
+        Frame "BACKDROP" "HDCinematicBackground" { Width 0.8, Height 0.153, }
+        Frame "BACKDROP" "CinematicBottomBorder" { Width 0.8, Height 0.14, }
+        Frame "FRAME" "CinematicScenePanel" {
+            SetAllPoints,
+            Frame "BACKDROP" "CinematicPortraitContainer" {
+                Frame "BACKDROP" "CinematicPortraitBackground" { Width 0.116, Height 0.116, }
+                Frame "SPRITE" "CinematicPortrait" { Width 0.116, Height 0.116, }
+                Frame "BACKDROP" "CinematicPortraitCover" { Width 0.144, Height 0.144, }
+                Frame "BACKDROP" "HDCinematicPortraitCover" { Width 0.144, Height 0.144, }
+            }
+            Frame "TEXT" "CinematicSpeakerText" { }
+            Frame "TEXT" "CinematicDialogueText" { Width 0.6, }
+        }
+        Frame "BACKDROP" "CinematicTopBorder" { Width 0.8, Height 0.0275, }
+    }
+}

@@ -1,0 +1,108 @@
+# Hippogryph Couple (Mount / Pick up Archer / Dismount)
+
+## Contract
+
+`Acoa`, `Acoh`, and `Adec` are one mount/dismount system. They are **not**
+Defend (`Adef`), Raven Form, or cargo load. TFT class names:
+
+| Rawcode | Archive | Class | Parent | Role |
+| --- | --- | --- | --- | --- |
+| `Acoa` | ROC+TFT | `CAbilityCoupleArcher` | `Acou` | Archer mounts a partner unit |
+| `Acoh` | ROC+TFT | `CAbilityCoupleHippogryph` | `Acou` | Partner picks up an Archer |
+| `Adec` | TFT only | `CAbilityDecouple` | `AAsm` | Rider splits back into two units |
+
+`Acou` (`CAbilityCouple`) is an abstract parent with no AbilityData row. Do not
+register it.
+
+The trained `Acoh` command uses the authored 100-unit range to find the nearest
+living, friendly `DataA` Archer and picks it up without opening unit-target
+mode. The command remains unavailable until `Acoh` is present and research
+allows its use. Retail ability data authors `Requires=Reht` for both `Acoa`
+(Archer mounts) and `Acoh` (Hippogryph picks up Archer); the `Aco2`/`Aco3`
+instant variants carry the same requirement. `Reht` is Hippogryph Taming.
+Execution validates the research state as well as the command card, so direct
+target casts cannot bypass it. Dismount places the Hippogryph at the rider's
+location and the Archer at a nearby ground position so the companions do not
+overlap.
+
+Orders (Hive / `OrderIds`): `mounthippogryph` (`Acoa`), `loadarcher` (`Acoh`),
+`decouple` (`Adec`).
+
+### Authored fields (TFT)
+
+| Rawcode | DataA | DataB | UnitID | Rng | Cool | Cost |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `Acoa` | `ehip` (partner type) | — | `ehpr` (rider) | 100 | 0 | 0 |
+| `Acoh` | `earc` (partner type) | — | `ehpr` (rider) | 100 | 0 | 0 |
+| `Adec` | `earc` (companion 1) | `ehip` (companion 2) | — | 0 | 30 | 0 |
+
+ROC `AbilityData` keeps `Acoa`/`Acoh` string rows but leaves `DataA`/`UnitID`
+empty; `Adec` is absent. Empty UnitID must fail the mount (do not invent
+`ehpr`). Stock ubertips still say “cannot dismount”; that text predates TFT
+`Adec` on the rider.
+
+`targs` is empty (`_`). Companion gating is ability-owned: same-owner living
+unit whose `class_id` equals authored `DataA` (via `S_SpellDataId`).
+
+### Couple Instant
+
+`Aco2`/`Aco3` share `code=Acoi` (`CAbilityCoupleInstant`, parent `AAcs`):
+area auto-find, `DataB` move-to-partner flag, and large area. Their command
+buttons now select the nearest valid partner within authored `Area` without
+opening target mode. If the partner is farther than interaction distance, the
+caster walks to it and only creates the rider when close; replacing the Move
+order cancels the pending pickup. `Aco2` is the Archer button and searches for
+`DataA=ehip`; `Aco3` is the Hippogryph button and searches for `DataA=earc`.
+Both create the authored `UnitID=ehpr` rider. Keep them distinct from the
+targeted `Acoa`/`Acoh` abilities: the instant rows use `code=Acoi` and retain
+their own `DataA`.
+
+## Data Flow
+
+```text
+Acoa/Acoh AbilityData
+  -> DataA partner fourcc, UnitID rider fourcc, Rng
+CAbilityCoupleArcher / CAbilityCoupleHippogryph
+  -> A_VALIDATE: friend + alive + class_id == DataA + UnitID present
+  -> Acoh command: nearest valid Archer within authored Rng, then normal cast
+  -> A_EXECUTE: SP_SpawnAtLocationNoBirth(UnitID), G_FreeEdict both inputs
+Adec AbilityData
+  -> DataA/DataB companion fourccs
+CAbilityDecouple
+  -> A_EXECUTE: spawn DataB at rider origin, place DataA nearby, G_FreeEdict rider
+Aco2/Aco3 AbilityData (code=Acoi)
+  -> Aco2/Aco3 command: nearest valid DataA partner within authored Area
+  -> Move to partner, revalidate target, then spawn authored UnitID rider at interaction distance
+```
+
+Merge consumes **two edicts** and creates a **third** (Warsmash CoupleInstant /
+retail UnitID). Dismount is the inverse. Facing copies from the caster/rider.
+HP blending and selection-replacement polish are not required for the first
+contract.
+
+## Registry rows
+
+```c
+{ "Acoa", CAbilityCoupleArcher, AB_SPELL, SPELL_TARGET_UNIT },
+{ "Acoh", CAbilityCoupleHippogryph, AB_SPELL, SPELL_TARGET_UNIT },
+{ "Adec", CAbilityDecouple, AB_SPELL, SPELL_TARGET_NONE },
+```
+
+## Diagnostic Workflow
+
+```sh
+build/bin/ability_audit -data 'data/Warcraft III' -raw Acoa
+build/bin/ability_audit -data 'data/Warcraft III' -raw Acoh
+build/bin/ability_audit -data 'data/Warcraft III' -raw Adec
+```
+
+## Verification
+
+```sh
+make test-wc3-engine WC3_PATTERN='wc3_spell.hippogryph_couple*'
+```
+
+Focused tests cover procedure registration, authored DataA/UnitID/DataB
+mapping with non-stock fourccs, targeted mount, nearest-partner Acoa/Acoh and
+Aco3 command behavior, training gates, dismount placement, and rejects for
+enemy, dead, and wrong-type partners without mana spend.

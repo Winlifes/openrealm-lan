@@ -1,0 +1,826 @@
+#include "g_local.h"
+
+/* Warcraft III ability presentation art is selected by an effect-type enum.
+ * Keep the renderer/content boundary on the game side: gameplay chooses an
+ * ability/buff rawcode and effect slot, this module resolves the model path,
+ * and the shared engine only sees a registered model index on an ordinary
+ * game edict. */
+
+static umove_t wc3_effect_temp_birth;
+static umove_t wc3_effect_temp_stand;
+static umove_t wc3_effect_birth;
+static umove_t wc3_effect_stand;
+static umove_t wc3_effect_death;
+static uint32_t terrain_deformation_next_id;
+
+static void G_EffectEnterStand(edict_t *effect);
+static void G_EffectLoopStand(edict_t *effect);
+
+static umove_t wc3_effect_temp_birth = { "birth", NULL, G_FreeEdict };
+static umove_t wc3_effect_temp_stand = { "stand", NULL, G_FreeEdict };
+static umove_t wc3_effect_birth = { "birth", NULL, G_EffectEnterStand };
+static umove_t wc3_effect_stand = { "stand", NULL, G_EffectLoopStand };
+static umove_t wc3_effect_death = { "death", NULL, G_FreeEdict };
+
+/* Transient renderer command: one temp event per native call, never entity or save state. */
+uint32_t G_SendTerrainDeformation(terrainDeform_t const *deformation) {
+    terrainDeform_t descriptor;
+    vec3_t origin;
+    if (!deformation) return 0;
+    descriptor = *deformation;
+    descriptor.id = ++terrain_deformation_next_id;
+    if (!descriptor.id) descriptor.id = ++terrain_deformation_next_id;
+    origin = (vec3_t){ descriptor.origin.x, descriptor.origin.y, 0.0f };
+    gi.Write(PF_BYTE, &(int32_t){ svc_temp_entity });
+    gi.Write(PF_BYTE, &(int32_t){ TE_TERRAIN_DEFORM });
+    gi.Write(PF_LONG, &(int32_t){ (int32_t)descriptor.id });
+    gi.Write(PF_BYTE, &(int32_t){ descriptor.type });
+    FOR_LOOP(i, TERRAIN_DEFORM_FLOATS) gi.Write(PF_FLOAT, &descriptor.data[i]);
+    gi.Write(PF_LONG, &(int32_t){ (int32_t)descriptor.duration_ms });
+    gi.Write(PF_LONG, &(int32_t){ (int32_t)descriptor.count });
+    gi.Write(PF_LONG, &(int32_t){ (int32_t)descriptor.update_ms });
+    gi.Write(PF_BYTE, &(int32_t){ (int32_t)descriptor.flags });
+    gi.multicast(&origin, MULTICAST_ALL);
+    return descriptor.id;
+}
+
+void G_StopTerrainDeformation(uint32_t id, uint32_t fade_ms) {
+    vec3_t origin = { 0 };
+    if (!id) return;
+    gi.Write(PF_BYTE, &(int32_t){ svc_temp_entity });
+    gi.Write(PF_BYTE, &(int32_t){ TE_TERRAIN_DEFORM_STOP });
+    gi.Write(PF_LONG, &(int32_t){ (int32_t)id });
+    gi.Write(PF_LONG, &(int32_t){ (int32_t)fade_ms });
+    gi.multicast(&origin, MULTICAST_ALL);
+}
+
+void G_StopAllTerrainDeformations(void) {
+    vec3_t origin = { 0 };
+    gi.Write(PF_BYTE, &(int32_t){ svc_temp_entity });
+    gi.Write(PF_BYTE, &(int32_t){ TE_TERRAIN_DEFORM_STOP_ALL });
+    gi.multicast(&origin, MULTICAST_ALL);
+}
+
+static cstring_t G_EffectFieldName(wc3EffectType_t type, bool alternate) {
+    switch (type) {
+        case WC3_EFFECT_EFFECT:      return alternate ? "Effectart"     : "EffectArt";
+        case WC3_EFFECT_TARGET:      return alternate ? "Targetart"     : "TargetArt";
+        case WC3_EFFECT_CASTER:      return alternate ? "Casterart"     : "CasterArt";
+        case WC3_EFFECT_SPECIAL:     return alternate ? "Specialart"    : "SpecialArt";
+        case WC3_EFFECT_AREA_EFFECT: return alternate ? "Areaeffectart" : "AreaEffectArt";
+        case WC3_EFFECT_MISSILE:     return alternate ? "Missileart"    : "MissileArt";
+        default:                     return NULL;
+    }
+}
+
+/* The Healing Wave creep ability uses rawcode AChv but AbilityFunc spells its
+ * presentation section [AChV]. Preserve that data spelling for all authored
+ * ability presentation fields. */
+static void G_AbilityPresentationClassName(uint32_t ability_id, char classname[5]) {
+    if (ability_id == MAKEFOURCC('A','C','h','v')) {
+        memcpy(classname, "AChV", 5);
+    } else {
+        memcpy(classname, &ability_id, 4);
+        classname[4] = '\0';
+    }
+}
+
+static cstring_t G_BuffEffectValue(uint32_t buff_id, wc3EffectType_t type) {
+    AbilityBuffData_t const *row = G_AbilityBuffData(buff_id);
+    cstring_t value = NULL;
+
+    if (row->id != buff_id) return NULL;
+    switch (type) {
+        case WC3_EFFECT_EFFECT:  value = row->effectArt; break;
+        case WC3_EFFECT_TARGET:
+            /* Persistent buff models use EffectArt in AbilityFunc.txt even
+             * though the status owns and attaches them like TargetArt. */
+            value = row->targetArt && *row->targetArt && strcmp(row->targetArt, "-") &&
+                    strcmp(row->targetArt, "_") ? row->targetArt : row->effectArt;
+            break;
+        case WC3_EFFECT_SPECIAL: value = row->specialArt; break;
+        case WC3_EFFECT_MISSILE: value = row->missileArt; break;
+        default: break;
+    }
+    if (value && *value && strcmp(value, "-") && strcmp(value, "_")) return value;
+
+    if (row->code && row->code != buff_id) {
+        AbilityBuffData_t const *base = G_AbilityBuffData(row->code);
+        if (base->id == row->code) {
+            switch (type) {
+                case WC3_EFFECT_EFFECT:  return base->effectArt;
+                case WC3_EFFECT_TARGET:
+                    return base->targetArt && *base->targetArt && strcmp(base->targetArt, "-") &&
+                           strcmp(base->targetArt, "_") ? base->targetArt : base->effectArt;
+                case WC3_EFFECT_SPECIAL: return base->specialArt;
+                case WC3_EFFECT_MISSILE: return base->missileArt;
+                default: break;
+            }
+        }
+    }
+    return NULL;
+}
+
+static cstring_t G_EffectConfigValue(uint32_t ability_id, wc3EffectType_t type) {
+    char classname[5];
+    cstring_t field;
+    cstring_t value;
+    AbilityData_t const *row;
+
+    G_AbilityPresentationClassName(ability_id, classname);
+    field = G_EffectFieldName(type, false);
+    value = field ? FindConfigValue(classname, field) : NULL;
+    if (!value) {
+        field = G_EffectFieldName(type, true);
+        value = field ? FindConfigValue(classname, field) : NULL;
+    }
+    if (value) return value;
+
+    /* Custom aliases may inherit presentation from their base code. The SLK
+     * resolver already exposes that base rawcode, so use it only as a fallback
+     * after the alias's own Func entry has been checked. */
+    row = G_AbilityData(ability_id);
+    if (row->code && row->code != ability_id) {
+        memcpy(classname, &row->code, 4);
+        classname[4] = '\0';
+        field = G_EffectFieldName(type, false);
+        value = field ? FindConfigValue(classname, field) : NULL;
+        if (!value) {
+            field = G_EffectFieldName(type, true);
+            value = field ? FindConfigValue(classname, field) : NULL;
+        }
+        if (value) return value;
+    }
+    /* AbilityBuffFunc authors persistent status models as EffectArt, not
+     * TargetArt. Resolve that field only for an actual buff rawcode so an
+     * ability's unrelated cast/impact EffectArt is never treated as target art. */
+    if (type == WC3_EFFECT_TARGET) {
+        AbilityBuffData_t const *buff = G_AbilityBuffData(ability_id);
+        if (buff->id == ability_id) {
+            cstring_t effect_field = G_EffectFieldName(WC3_EFFECT_EFFECT, false);
+            memcpy(classname, &ability_id, 4);
+            classname[4] = '\0';
+            value = FindConfigValue(classname, effect_field);
+            if (!value) value = FindConfigValue(classname, G_EffectFieldName(WC3_EFFECT_EFFECT, true));
+            if (value && *value && strcmp(value, "-") && strcmp(value, "_")) return value;
+            if (buff->code && buff->code != ability_id) {
+                memcpy(classname, &buff->code, 4);
+                classname[4] = '\0';
+                value = FindConfigValue(classname, effect_field);
+                if (!value) value = FindConfigValue(classname, G_EffectFieldName(WC3_EFFECT_EFFECT, true));
+                if (value && *value && strcmp(value, "-") && strcmp(value, "_")) return value;
+            }
+        }
+    }
+    return G_BuffEffectValue(ability_id, type);
+}
+
+
+/* Resolve an optional presentation override before reading the authored ability row. */
+static cstring_t G_AbilityPresentationValue(uint32_t ability_id, cstring_t field) {
+    char classname[5];
+    cstring_t value;
+    AbilityData_t const *row;
+
+    if (!field) return NULL;
+    G_AbilityPresentationClassName(ability_id, classname);
+    value = FindConfigValue(classname, field);
+    if (value && *value && strcmp(value, "-") && strcmp(value, "_")) return value;
+
+    row = G_AbilityData(ability_id);
+    if (row->code && row->code != ability_id) {
+        memcpy(classname, &row->code, 4);
+        classname[4] = '\0';
+        value = FindConfigValue(classname, field);
+        if (value && *value && strcmp(value, "-") && strcmp(value, "_")) return value;
+    }
+    return NULL;
+}
+
+/* Select the indexed LightningEffect rawcode while preserving the last authored fallback. */
+uint32_t G_AbilityLightningId(uint32_t ability_id, uint32_t index) {
+    cstring_t list = G_AbilityPresentationValue(ability_id, "LightningEffect");
+    uint32_t selected = 0, count = 0;
+
+    if (!list || !*list) {
+#if BZ_COMPAT_WORKAROUNDS
+        /* TFT 1.07 omits Amls.LightningEffect, but both classic and current
+         * data sets contain the authored Magic Leash (LEAS) ribbon row. */
+        if (G_AbilityCode(ability_id) == MAKEFOURCC('A','m','l','s')) {
+            static bool warned_aerial_shackles;
+            if (!warned_aerial_shackles) {
+                fprintf(stderr, "WC3 compatibility: Amls has no LightningEffect; using LEAS row\n");
+                warned_aerial_shackles = true;
+            }
+            return index ? 0 : MAKEFOURCC('L','E','A','S');
+        }
+        /* RoC 1.0 omits AOcl's LightningEffect list; its data still has both
+         * primary and secondary Chain Lightning ribbon rows. */
+        if (G_AbilityCode(ability_id) == MAKEFOURCC('A','O','c','l')) {
+            static bool warned_roc_chain_lightning;
+            if (!warned_roc_chain_lightning) {
+                fprintf(stderr, "WC3 compatibility: RoC AOcl has no LightningEffect list; using CLPB/CLSB rows\n");
+                warned_roc_chain_lightning = true;
+            }
+            return index ? MAKEFOURCC('C','L','S','B') : MAKEFOURCC('C','L','P','B');
+        }
+        /* RoC 1.0 omits AEmb's LightningEffect field, while both data sets
+         * include the authored green Mana Burn ribbon row. */
+        if (G_AbilityCode(ability_id) == MAKEFOURCC('A','E','m','b'))
+            return index ? 0 : MAKEFOURCC('M','B','U','R');
+        /* TFT 1.07 omits ANfl's LightningEffect field; both data sets have
+         * the authored Forked Lightning ribbon in LightningData.slk. */
+        if (G_AbilityCode(ability_id) == MAKEFOURCC('A','N','f','l')) {
+            static bool warned_forked_lightning;
+            if (!warned_forked_lightning) {
+                fprintf(stderr, "WC3 compatibility: TFT ANfl has no LightningEffect; using FORK row\n");
+                warned_forked_lightning = true;
+            }
+            return index ? 0 : MAKEFOURCC('F','O','R','K');
+        }
+        /* TFT 1.07 omits the Healing Wave LightningEffect lists; retain the
+         * distinct primary and bounce ribbons authored in the later data. */
+        if (G_AbilityCode(ability_id) == MAKEFOURCC('A','O','h','w')) {
+            static bool warned_healing_wave;
+            if (!warned_healing_wave) {
+                fprintf(stderr, "WC3 compatibility: TFT Healing Wave has no LightningEffect; using HWPB/HWSB rows\n");
+                warned_healing_wave = true;
+            }
+            return index ? MAKEFOURCC('H','W','S','B') : MAKEFOURCC('H','W','P','B');
+        }
+#endif
+        return 0;
+    }
+    PARSE_LIST(list, lightning, parse_segment) {
+        if (!lightning || strlen(lightning) < 4 || !strcmp(lightning, "-") || !strcmp(lightning, "_")) continue;
+        selected = MAKEFOURCC(lightning[0], lightning[1], lightning[2], lightning[3]);
+        if (count++ == index) return selected;
+    }
+    return count ? selected : 0;
+}
+
+/* Resolve the ability's effect-class rawcode, including the documented RoC-only gap. */
+uint32_t G_AbilityEffectCode(uint32_t ability_id, uint32_t level) {
+    cstring_t effect_id = G_AbilityLevel(ability_id, level)->efctID;
+    if (effect_id && strlen(effect_id) >= 4) return FS_SLKKey(effect_id);
+#if BZ_COMPAT_WORKAROUNDS
+    /* TFT 1.07's ANrf row omits EfctID, while NeutralAbilityFunc still
+     * authors the impact art and sounds on XErf. */
+    if (G_AbilityCode(ability_id) == MAKEFOURCC('A','N','r','f')) {
+        static bool warned_classic_rain_of_fire;
+        if (!warned_classic_rain_of_fire) {
+            fprintf(stderr, "WC3 compatibility: 1.07 ANrf has no EfctID; using XErf impact art\n");
+            warned_classic_rain_of_fire = true;
+        }
+        return MAKEFOURCC('X','E','r','f');
+    }
+    /* TFT 1.07's Aclf row omits EfctID; HumanAbilityFunc still authors the
+     * persistent Cloud of Fog model and loop sound on Xclf. */
+    if (G_AbilityCode(ability_id) == MAKEFOURCC('A','c','l','f')) {
+        static bool warned_classic_cloud_of_fog;
+        if (!warned_classic_cloud_of_fog) {
+            fprintf(stderr, "WC3 compatibility: TFT Aclf has no EfctID; using Xclf cloud art\n");
+            warned_classic_cloud_of_fog = true;
+        }
+        return MAKEFOURCC('X','c','l','f');
+    }
+    /* HACK: RoC 1.0's AOeq AbilityData row has no EfctID column; its effect
+     * art is authored by the XOeq class in OrcAbilityFunc.txt. */
+    if (G_AbilityCode(ability_id) == MAKEFOURCC('A','O','e','q')) {
+        static bool warned_roc_earthquake;
+        if (!warned_roc_earthquake) {
+            fprintf(stderr, "WC3 compatibility: RoC AOeq has no EfctID column; using XOeq effect art\n");
+            warned_roc_earthquake = true;
+        }
+        return MAKEFOURCC('X','O','e','q');
+    }
+    /* HACK: RoC 1.0's AUdd row has no EfctID value; the channel's persistent
+     * ground art and looped sound are authored by XUdd in UndeadAbilityFunc.txt. */
+    if (G_AbilityCode(ability_id) == MAKEFOURCC('A','U','d','d')) {
+        static bool warned_roc_death_and_decay;
+        if (!warned_roc_death_and_decay) {
+            fprintf(stderr, "WC3 compatibility: RoC AUdd has no EfctID column; using XUdd effect art\n");
+            warned_roc_death_and_decay = true;
+        }
+        return MAKEFOURCC('X','U','d','d');
+    }
+    /* RoC 1.0's AEtq Tranquility row omits EfctID. The looping rain model
+     * and sound are authored on XEtq in NightElfAbilityFunc.txt. */
+    if (G_AbilityCode(ability_id) == MAKEFOURCC('A','E','t','q')) {
+        static bool warned_roc_tranquility;
+        if (!warned_roc_tranquility) {
+            fprintf(stderr, "WC3 compatibility: RoC AEtq has no EfctID column; using XEtq effect art\n");
+            warned_roc_tranquility = true;
+        }
+        return MAKEFOURCC('X','E','t','q');
+    }
+    /* RoC 1.0's AEsf row also omits EfctID. Its persistent starfall rain is
+     * authored as XEsf.EffectArt; later data links it through EfctID. */
+    if (G_AbilityCode(ability_id) == MAKEFOURCC('A','E','s','f')) {
+        static bool warned_roc_starfall;
+        if (!warned_roc_starfall) {
+            fprintf(stderr, "WC3 compatibility: RoC AEsf has no EfctID column; using XEsf effect art\n");
+            warned_roc_starfall = true;
+        }
+        return MAKEFOURCC('X','E','s','f');
+    }
+#endif
+    return ability_id;
+}
+
+/* Reject pointers outside the stable level registry before any native mutates a handle. */
+bool G_LightningValid(gLightning_t const *effect) {
+    uintptr_t pointer = (uintptr_t)effect, base = (uintptr_t)level.lightning_effects;
+    return effect && pointer >= base && pointer < base + sizeof(level.lightning_effects) &&
+        (pointer - base) % sizeof(*effect) == 0 && effect->inuse;
+}
+
+/* Allocate one save-stable lightning slot and initialize its presentation state. */
+gLightning_t *G_LightningAdd(lightningAddParams_t const *params) {
+    gLightning_t *effect = NULL;
+    uint32_t now;
+
+    if (!params || !params->effect_id || !params->source || !params->target) return NULL;
+    FOR_LOOP(i, MAX_LIGHTNING_EFFECTS) {
+        if (!level.lightning_effects[i].inuse) {
+            effect = level.lightning_effects + i;
+            break;
+        }
+    }
+    if (!effect) {
+        fprintf(stderr, "WC3 Lightning: presentation registry is full (%u slots)\n", (unsigned)MAX_LIGHTNING_EFFECTS);
+        return NULL;
+    }
+    memset(effect, 0, sizeof(*effect));
+    effect->inuse = true;
+    if (++level.next_lightning_id == 0) level.next_lightning_id = 1;
+    now = G_Time();
+    effect->state.handle = level.next_lightning_id;
+    effect->state.effect_id = params->effect_id;
+    effect->state.source = *params->source;
+    effect->state.target = *params->target;
+    effect->state.color = params->color;
+    effect->script_color[0] = BYTE2FLOAT(params->color.r); effect->script_color[1] = BYTE2FLOAT(params->color.g);
+    effect->script_color[2] = BYTE2FLOAT(params->color.b); effect->script_color[3] = BYTE2FLOAT(params->color.a);
+    effect->state.start_time = now;
+    effect->state.end_time = params->duration_ms ? now + params->duration_ms : 0;
+    return effect;
+}
+
+/* Replace explicit coordinates without changing an attached endpoint contract. */
+void G_LightningMove(gLightning_t *effect, vec3_t const *source, vec3_t const *target) {
+    if (!G_LightningValid(effect)) return;
+    if (source) effect->state.source = *source;
+    if (target) effect->state.target = *target;
+}
+
+/* Validate an endpoint's spawn generation before copying its current origin. */
+static bool G_LightningEntityValid(edict_t *entity, uint32_t spawn_time) {
+    return entity && entity->inuse && entity->spawn_time == spawn_time;
+}
+
+/* Refresh one endpoint or clear it when its edict was freed or reused. */
+static void G_LightningEndpoint(edict_t * *entity, uint32_t *spawn_time, vec3_t *position) {
+    if (!G_LightningEntityValid(*entity, *spawn_time)) {
+        *entity = NULL; *spawn_time = 0;
+        return;
+    }
+    *position = (*entity)->s.origin;
+    position->z += (*entity)->s.radius * 0.5f;
+}
+
+/* Attach a spell bolt to the units that own its two moving endpoints. */
+void G_LightningAttach(gLightning_t *effect, edict_t const *source, edict_t const *target) {
+    if (!G_LightningValid(effect)) return;
+    effect->source_entity = (edict_t *)source;
+    effect->source_spawn_time = source ? source->spawn_time : 0;
+    effect->target_entity = (edict_t *)target;
+    effect->target_spawn_time = target ? target->spawn_time : 0;
+    G_LightningUpdateAttached(effect);
+}
+
+/* Refresh both attached endpoints before the next client datagram is emitted. */
+void G_LightningUpdateAttached(gLightning_t *effect) {
+    if (!G_LightningValid(effect)) return;
+    G_LightningEndpoint(&effect->source_entity, &effect->source_spawn_time, &effect->state.source);
+    G_LightningEndpoint(&effect->target_entity, &effect->target_spawn_time, &effect->state.target);
+}
+
+/* Update the byte colour used by the renderer and the precise JASS colour cache. */
+void G_LightningColor(gLightning_t *effect, color32_t color) {
+    if (!G_LightningValid(effect)) return;
+    effect->state.color = color;
+    effect->script_color[0] = BYTE2FLOAT(color.r); effect->script_color[1] = BYTE2FLOAT(color.g);
+    effect->script_color[2] = BYTE2FLOAT(color.b); effect->script_color[3] = BYTE2FLOAT(color.a);
+}
+
+/* Store JASS's unclamped colour values alongside the wire-compatible bytes. */
+void G_LightningScriptColor(gLightning_t *effect, color32_t color, float const *precise) {
+    if (!G_LightningValid(effect)) return;
+    effect->state.color = color;
+    if (precise) memcpy(effect->script_color, precise, sizeof(effect->script_color));
+}
+
+/* Release a lightning slot so its stable registry ordinal can be reused. */
+void G_LightningRemove(gLightning_t *effect) {
+    if (!G_LightningValid(effect)) return;
+    memset(effect, 0, sizeof(*effect));
+}
+
+/* Resolve and attach one ability-selected bolt to its caster and target. */
+gLightning_t *G_SpawnAbilityLightning(abilityLightningParams_t const *params) {
+    vec3_t from, to;
+    uint32_t effect_id;
+
+    if (!params || !params->source || !params->target) return NULL;
+    effect_id = G_AbilityLightningId(params->ability_id, params->index);
+    if (!effect_id) return NULL;
+    from = params->source->s.origin;
+    to = params->target->s.origin;
+    /* Ability lightning connects unit bodies, not terrain.  A half-radius lift
+     * keeps the generic ribbon near the model centre without renderer-side WC3
+     * attachment knowledge. */
+    from.z += params->source->s.radius * 0.5f;
+    to.z += params->target->s.radius * 0.5f;
+    {
+        gLightning_t *effect = G_LightningAdd(&(lightningAddParams_t){
+            .effect_id = effect_id, .source = &from, .target = &to,
+            .color = COLOR32_WHITE, .duration_ms = params->duration_ms,
+        });
+        G_LightningAttach(effect, params->source, params->target);
+        return effect;
+    }
+}
+
+cstring_t G_AbilityEffectArt(uint32_t ability_id, wc3EffectType_t type, uint32_t index) {
+    static char selected[4][MAX_PATHLEN];
+    static uint32_t cursor;
+    char *out = selected[cursor++ & 3];
+    cstring_t list = G_EffectConfigValue(ability_id, type);
+    uint32_t count = 0;
+
+    out[0] = '\0';
+    if (!list || !*list || type == WC3_EFFECT_LIGHTNING) {
+        /* AEfk's original expansion archive supplies a separate caster burst
+         * and an animated knife missile burst. Some early ability-function
+         * tables do not name either effect; fall back to those stock models
+         * only when the field is ABSENT (not when a map clears it with '-'
+         * or '_'). Custom aliases inherit their AEfk base as usual. */
+        if (!list && (ability_id == MAKEFOURCC('A','E','f','k') ||
+                      G_AbilityCode(ability_id) == MAKEFOURCC('A','E','f','k'))) {
+            if (type == WC3_EFFECT_CASTER)
+                return "Abilities\\Spells\\NightElf\\FanOfKnives\\FanOfKnivesCaster.mdx";
+            if (type == WC3_EFFECT_MISSILE)
+                return "Abilities\\Spells\\NightElf\\FanOfKnives\\FanOfKnivesMissile.mdx";
+        }
+        /* Warcraft stores Unholy Frenzy's persistent target model on neither
+         * Auhf nor its AbilityBuffData row. Keep the stock asset as the final
+         * fallback for both TFT's BUhf and RoC's BUhf compatibility status. */
+        if (type == WC3_EFFECT_TARGET &&
+            (ability_id == MAKEFOURCC('B','U','h','f') || ability_id == MAKEFOURCC('B','u','h','f')))
+            return "Abilities\\Spells\\Undead\\UnholyFrenzy\\UnholyFrenzyTarget.mdx";
+        if (type == WC3_EFFECT_TARGET && ability_id == MAKEFOURCC('B','s','p','o'))
+            return "Abilities\\Weapons\\PoisonSting\\PoisonStingTarget.mdl";
+        /* Early RoC Cyclone data has no AbilityBuffData row (and its Acyc
+         * BuffID is empty), but ships CycloneTarget.mdx in War3.mpq. The
+         * status handler synthesizes Bcyc for this data generation, so keep
+         * that lifted-target visual when no authored buff art is available. */
+        if (type == WC3_EFFECT_TARGET &&
+            (ability_id == MAKEFOURCC('B','c','y','c') || ability_id == MAKEFOURCC('B','c','y','2')))
+            return "Abilities\\Spells\\NightElf\\Cyclone\\CycloneTarget.mdx";
+        return NULL;
+    }
+
+    PARSE_LIST(list, art, parse_segment) {
+        if (!art || !*art || !strcmp(art, "-") || !strcmp(art, "_")) continue;
+        strlcpy(out, art, MAX_PATHLEN);
+        if (count++ == index) return out;
+    }
+
+    /* Warsmash's AbilityUI selection falls back to the last configured art
+     * entry when an index exceeds the list. Preserve that useful data-driven
+     * behavior rather than turning an otherwise valid spell invisible. */
+    return count ? out : NULL;
+}
+
+cstring_t G_AbilityBuffArt(uint32_t buff_id) {
+    char name[5] = { 0 };
+    cstring_t art;
+    AbilityBuffData_t const *row = G_AbilityBuffData(buff_id);
+
+    memcpy(name, &buff_id, 4);
+    art = FindConfigValue(name, "Buffart");
+    if (art && *art && strcmp(art, "-") && strcmp(art, "_")) return art;
+    if (row->id == buff_id && row->buffArt && *row->buffArt &&
+        strcmp(row->buffArt, "-") && strcmp(row->buffArt, "_")) return row->buffArt;
+    /* AbilityBuffData names this row Buhf, while Auhf's TFT BuffID is BUhf. */
+    if (buff_id == MAKEFOURCC('B','U','h','f') || buff_id == MAKEFOURCC('B','u','h','f'))
+        return "ReplaceableTextures\\CommandButtons\\BTNUnholyFrenzy.blp";
+    /* RoC omits the Trueshot Aura buff row; keep its virtual recipient status
+     * icon available when the passive aura uses its compatibility BuffID. */
+    if (buff_id == MAKEFOURCC('B','E','a','r'))
+        return "ReplaceableTextures\\CommandButtons\\BTNTrueshotAura.blp";
+    if (buff_id == MAKEFOURCC('B','s','p','o'))
+        return "ReplaceableTextures\\CommandButtons\\BTNSlowPoison.blp";
+    /* Aerial Shackles' target buff is Bmlt. Some classic data sets omit the
+     * HumanAbilityFunc row from the HUD config lookup, despite the stock icon
+     * being present in the game archives. */
+    if (buff_id == MAKEFOURCC('B','m','l','t'))
+        return "ReplaceableTextures\\CommandButtons\\BTNMagicLariet.blp";
+    /* Bfro's Buffart is authored in CommonAbilityFunc.txt rather than the
+     * AbilityBuffData row. Keep its status icon available in data sets where
+     * the common function table is not exposed to the HUD lookup. */
+    if (buff_id == MAKEFOURCC('B','f','r','o'))
+        return "ReplaceableTextures\\CommandButtons\\BTNFrost.blp";
+    return NULL;
+}
+
+void G_EffectValidateTarget(edict_t *effect) {
+    if (!effect->goalentity || !effect->goalentity->inuse ||
+        effect->goalentity->spawn_time != effect->damage) {
+        effect->goalentity = NULL;
+        effect->movetype = MOVETYPE_NONE;
+        effect->think = G_FreeEdict;
+    }
+}
+
+void G_EffectThink(edict_t *effect) {
+    if (effect->summon_ability == MAKEFOURCC('A','p','t','s') &&
+        effect->spawn_time && G_Time() >= effect->spawn_time) {
+        G_FreeEdict(effect);
+        return;
+    }
+    if (effect->goalentity &&
+        (effect->status_effect_code == MAKEFOURCC('B','c','y','c') ||
+         effect->status_effect_code == MAKEFOURCC('B','c','y','2'))) {
+        /* CycloneTarget is centered on the ground under a lifted victim. The
+         * linked origin includes FlyHeight, so remove the current altitude
+         * every frame rather than using a creation-time offset. */
+        effect->s.origin.z -= effect->goalentity->s.ground_offset;
+    } else if (effect->goalentity && effect->wait != 0.0f) {
+        effect->s.origin.z += effect->wait;
+    }
+    M_MoveFrame(effect);
+}
+
+static void G_EffectLoopStand(edict_t *effect) {
+    if (effect->animation && (effect->animation->flags & 1u)) {
+        effect->s.frame = effect->animation->interval[1] > effect->animation->interval[0]
+            ? effect->animation->interval[1] - 1 : effect->animation->interval[0];
+        effect->aiflags |= AI_HOLD_FRAME;
+        /* Moon Well EffectArt is a static water plane with a finite Stand
+         * sequence. Its owner updates the water height continuously; keep the
+         * final authored frame visible and keep G_EffectThink running so the
+         * linked height offset is reapplied after MOVETYPE_LINK each tick. */
+        if (effect->summon_ability &&
+            (effect->summon_ability == MAKEFOURCC('A','m','b','t') ||
+             G_AbilityCode(effect->summon_ability) == MAKEFOURCC('A','m','b','t')))
+            return;
+        if (effect->status_effect_code == MAKEFOURCC('B','c','y','c') ||
+            effect->status_effect_code == MAKEFOURCC('B','c','y','2'))
+            return;
+        effect->s.renderfx |= RF_HIDDEN;
+        effect->think = NULL;
+        return;
+    }
+    unit_setmove(effect, &wc3_effect_stand);
+}
+
+static void G_EffectEnterStand(edict_t *effect) {
+    unit_setmove(effect, &wc3_effect_stand);
+    if (!effect->animation) {
+        effect->think = G_FreeEdict;
+        effect->currentmove = NULL;
+    }
+}
+
+static void G_EffectStartAnimation(edict_t *effect, bool temporary) {
+    unit_setmove(effect, temporary ? &wc3_effect_temp_birth : &wc3_effect_birth);
+    if (effect->animation) return;
+
+    unit_setmove(effect, temporary ? &wc3_effect_temp_stand : &wc3_effect_stand);
+    if (!effect->animation) {
+        if (temporary) {
+            /* No usable animation sequence means there is no deterministic
+             * lifetime to drive. A one-shot art with no animation should not
+             * leak an edict indefinitely. */
+            G_FreeEdict(effect);
+        } else {
+            /* A persistent effect with no animation sequences cannot drive its
+             * own lifetime.  Schedule an immediate free so the edict does not
+             * leak when the JASS caller omits DestroyEffect. */
+            effect->think = G_FreeEdict;
+            effect->currentmove = NULL;
+        }
+    }
+}
+
+static void G_EffectSetAttachment(edict_t *effect, edict_t *target, cstring_t attach_point) {
+    char socket[64];
+    size_t out = 0;
+    bool capitalize = true;
+    if (!effect || !target || !attach_point || !*attach_point ||
+        !strcasecmp(attach_point, "origin") || !strcasecmp(attach_point, "overhead")) return;
+    for (size_t i = 0; attach_point[i] && out + 1 < sizeof(socket); i++) {
+        unsigned char c = (unsigned char)attach_point[i];
+        if (c == ',') c = ' ';
+        if (isspace(c)) capitalize = true;
+        else if (capitalize) { c = (unsigned char)toupper(c); capitalize = false; }
+        socket[out++] = (char)c;
+    }
+    while (out && isspace((unsigned char)socket[out - 1])) out--;
+    socket[out] = '\0';
+    if (!out) return;
+    effect->s.flags |= EF_NAMED_ATTACHMENT;
+    effect->s.hover_value = target->s.number + 1;
+    effect->s.name = G_NameConfigstring(socket);
+}
+
+edict_t *G_SpawnModelEffect(cstring_t model, vec2_t const *point, edict_t *target,
+                           cstring_t attach_point, bool temporary) {
+    edict_t *effect;
+
+    if (!model || !*model || (!point && !target)) return NULL;
+    effect = G_Spawn();
+    if (!effect) return NULL;
+    /* JASS effect extends agent, not widget.  Special/spell effect art is
+     * presentation only and must never win world selection or right-click
+     * picking over the terrain/real widget beneath it.  The client maps this
+     * snapshot bit to RF_NOT_SELECTABLE, so the model still renders normally
+     * while TraceEntity/rectangle selection pass through it. */
+    effect->s.flags |= EF_NOT_SELECTABLE;
+    effect->s.model = G_RegisterModel(model);
+    if (!effect->s.model) {
+        G_FreeEdict(effect);
+        return NULL;
+    }
+
+    if (target) {
+        if (target->svflags & SVF_MONSTER) G_InheritUnitTeamColor(effect, target);
+        /* Ability target art can author tier-specific sequences through the
+         * target unit's Attachmentanimprops (for example Atol's Tree of Ages
+         * and Tree of Eternity glows). */
+        if (target->data.UnitProfile && target->data.UnitProfile->attachmentAnimProps &&
+            *target->data.UnitProfile->attachmentAnimProps)
+            effect->animation_props = G_InternAnimationName(target->data.UnitProfile->attachmentAnimProps);
+        effect->s.origin = target->s.origin;
+        effect->s.origin2 = target->s.origin2;
+        effect->s.angle = target->s.angle;
+        effect->goalentity = target;
+        effect->damage = target->spawn_time; /* target generation guard */
+        effect->movetype = MOVETYPE_LINK;
+        effect->prethink = G_EffectValidateTarget;
+        G_EffectSetAttachment(effect, target, attach_point);
+        if (attach_point && !strcasecmp(attach_point, "overhead")) {
+            effect->wait = target->s.radius * 2.5f;
+            effect->s.origin.z += effect->wait;
+        }
+    } else {
+        effect->s.origin2 = *point;
+        effect->s.origin.x = point->x;
+        effect->s.origin.y = point->y;
+        effect->s.origin.z = CM_GetHeightAtPoint(point->x, point->y);
+        effect->movetype = MOVETYPE_NONE;
+    }
+
+    effect->think = G_EffectThink;
+    G_EffectStartAnimation(effect, temporary);
+    return effect->inuse ? effect : NULL;
+}
+
+edict_t *G_SpawnAbilityEffectAtPoint(uint32_t ability_id, wc3EffectType_t type, uint32_t index,
+                                    vec2_t const *point, bool temporary) {
+    return G_SpawnModelEffect(G_AbilityEffectArt(ability_id, type, index), point, NULL, NULL, temporary);
+}
+
+edict_t *G_SpawnAbilityEffectTarget(uint32_t ability_id, wc3EffectType_t type, uint32_t index,
+                                   edict_t *target, cstring_t attach_point, bool temporary) {
+    return G_SpawnModelEffect(G_AbilityEffectArt(ability_id, type, index), NULL, target, attach_point, temporary);
+}
+
+/* Persistent buff/status visuals are presentation entities owned by the
+ * status identity, not by the casting ability. Keep one live target effect per
+ * status rawcode and target generation so refresh/reapplication cannot stack
+ * duplicate models. The tag is intentionally presentation-only: authoritative
+ * status state remains in abilstatus and can recreate the visual as needed. */
+edict_t *G_SpawnStatusEffectTarget(uint32_t status_id, edict_t *target, cstring_t attach_point) {
+    edict_t *effect = NULL;
+    char classname[5], key[32];
+    cstring_t count_value;
+    uint32_t art_id = status_id == MAKEFOURCC('B','s','t','u')
+        ? MAKEFOURCC('B','P','S','E') : status_id;
+    bool const ground_anchored = status_id == MAKEFOURCC('B','c','y','c') ||
+                                 status_id == MAKEFOURCC('B','c','y','2');
+    uint32_t count = 1;
+    uint32_t i;
+    if (!status_id || !target || !target->inuse) return NULL;
+    FILTER_EDICTS(existing, existing->status_effect_code == status_id &&
+                  existing->goalentity == target && existing->damage == target->spawn_time)
+        return existing;
+    memcpy(classname, &art_id, 4);
+    classname[4] = '\0';
+    count_value = FindConfigValue(classname, "Targetattachcount");
+    if (count_value && *count_value) count = (uint32_t)MAX(1, atoi(count_value));
+    count = MIN(count, 8u);
+    for (i = 0; i < count; i++) {
+        cstring_t authored_attach = NULL;
+        cstring_t selected_attach = attach_point;
+        if (ground_anchored) {
+            /* CycloneTarget is a ground-centered vortex. Its Bcyc attachment
+             * socket follows the victim's airborne model after lift. */
+            selected_attach = "origin";
+        } else {
+            if (i == 0) strlcpy(key, "Targetattach", sizeof(key));
+            else snprintf(key, sizeof(key), "Targetattach%u", i);
+            authored_attach = FindConfigValue(classname, key);
+            if (!authored_attach || !*authored_attach) {
+                if (i == 0) strlcpy(key, "Effectattach", sizeof(key));
+                else snprintf(key, sizeof(key), "Effectattach%u", i);
+                authored_attach = FindConfigValue(classname, key);
+            }
+            if (authored_attach && *authored_attach) selected_attach = authored_attach;
+        }
+        {
+            /* WC3 ability rows can pair one TargetArt model with each target
+             * attachment (Atol has a tree emitter followed by left/right hand
+             * glows). The art resolver repeats the final model when fewer
+             * entries than attachments are authored. */
+            edict_t *attached = G_SpawnAbilityEffectTarget(art_id, WC3_EFFECT_TARGET, i,
+                                                            target, selected_attach, false);
+            if (attached && ground_anchored)
+                attached->s.origin.z -= target->s.ground_offset;
+            if (!effect) effect = attached;
+            if (attached) attached->status_effect_code = status_id;
+        }
+    }
+    return effect;
+}
+
+void G_DestroyStatusEffectTarget(uint32_t status_id, edict_t *target) {
+    if (!status_id || !target) return;
+    for (;;) {
+        edict_t *found = NULL;
+        FILTER_EDICTS(effect, effect->status_effect_code == status_id &&
+                      effect->goalentity == target && effect->damage == target->spawn_time) {
+            found = effect;
+            break;
+        }
+        if (!found) return;
+        /* Clear the tag before the death animation so an immediate refresh can
+         * create the replacement instead of finding an effect already dying. */
+        found->status_effect_code = 0;
+        G_DestroyEffect(found);
+    }
+}
+
+
+edict_t *G_SpawnOwnedAbilityEffectTarget(edict_t *owner, uint32_t ability_id,
+                                        wc3EffectType_t type, uint32_t index,
+                                        edict_t *target, cstring_t attach_point) {
+    edict_t *effect = G_SpawnAbilityEffectTarget(ability_id, type, index, target, attach_point, false);
+    if (effect) effect->owner = owner;
+    return effect;
+}
+
+edict_t *G_SpawnOwnedAbilityEffectAtPoint(edict_t *owner, uint32_t ability_id,
+                                         wc3EffectType_t type, uint32_t index,
+                                         vec2_t const *point) {
+    edict_t *effect = G_SpawnAbilityEffectAtPoint(ability_id, type, index, point, false);
+    if (effect) effect->owner = owner;
+    return effect;
+}
+
+void G_DestroyOwnedEffects(edict_t *owner) {
+    edict_t *owned[32];
+    uint32_t count = 0;
+    if (!owner) return;
+    FILTER_EDICTS(effect, effect->owner == owner && (effect->s.flags & EF_NOT_SELECTABLE) &&
+                  (effect->s.model || effect->s.sound)) {
+        if (count < sizeof(owned) / sizeof(owned[0])) owned[count++] = effect;
+    }
+    FOR_LOOP(i, count) {
+        /* A retired owner's slot may be reused before the model finishes its
+         * Death animation.  Do not leave an obsolete owner pointer attached
+         * to that presentation-only entity. */
+        owned[i]->owner = NULL;
+        owned[i]->s.sound = 0;
+        if (owned[i]->s.model) G_DestroyEffect(owned[i]);
+        else G_FreeEdict(owned[i]);
+    }
+}
+
+void G_DestroyEffect(edict_t *effect) {
+    if (!effect || !effect->inuse) return;
+    if ((effect->aiflags & AI_HOLD_FRAME) && effect->currentmove == &wc3_effect_stand) {
+        G_FreeEdict(effect);
+        return;
+    }
+    effect->prethink = NULL;
+    effect->s.sound = 0;
+    effect->goalentity = NULL;
+    effect->movetype = MOVETYPE_NONE;
+    effect->wait = 0.0f;
+    effect->think = G_EffectThink;
+    unit_setmove(effect, &wc3_effect_death);
+    if (!effect->animation) G_FreeEdict(effect);
+}

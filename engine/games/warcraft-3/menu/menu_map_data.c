@@ -1,0 +1,435 @@
+/*
+ * menu_map_data.c - Warcraft III map browser data loaded inside menu.dll.
+ */
+
+#include "menu_local.h"
+#include "common/mpq.h"
+#include "common/mapinfo_read.h"
+
+#include <stdlib.h>
+
+#ifndef _WIN32
+#include <strings.h>
+#endif
+
+static bool UI_ReadInfoInto(handle_t archive,mapInfo_t *info) {
+    handle_t file;
+    if(!archive||!info||!SFileOpenFileEx(archive,"war3map.w3i",SFILE_OPEN_FROM_MPQ,&file))return false;
+    uint32_t size=SFileGetFileSize(file,NULL);void *data=mi.MemAlloc(size);
+    bool valid=SFileReadFile(file,data,size,NULL,NULL)&&MapInfo_ParseSetup(data,size,info,mi.MemAlloc,mi.MemFree,NULL);
+    mi.MemFree(data);SFileCloseFile(file);return valid;
+}
+
+static void UI_AppendTrigStringText(mapTrigStr_t *entry, cstring_t text) {
+    uint32_t len, add;
+
+    if (!entry || !text)
+        return;
+    len = (uint32_t)strlen(entry->text);
+    add = (uint32_t)strlen(text);
+    if (len + add >= sizeof(entry->text))
+        add = sizeof(entry->text) - len - 1;
+    if (add) {
+        memcpy(entry->text + len, text, add);
+        entry->text[len + add] = '\0';
+    }
+}
+
+static void UI_RemoveTrailingWhitespace(string_t text) {
+    size_t len = text ? strlen(text) : 0;
+
+    while (len > 0 && (text[len - 1] == '\r' || text[len - 1] == '\n' || text[len - 1] == '\t' ||
+                       text[len - 1] == ' ')) {
+        text[--len] = '\0';
+    }
+}
+
+static cstring_t UI_SkipSpace(cstring_t text) {
+    while (text && (*text == ' ' || *text == '\t' || *text == '\r'))
+        text++;
+    return text;
+}
+
+static void UI_ReadLine(cstring_t *cursor, string_t out, uint32_t out_size) {
+    uint32_t len = 0;
+    cstring_t p;
+
+    if (!cursor || !*cursor || !out || out_size == 0)
+        return;
+    p = *cursor;
+    while (*p && *p != '\n' && *p != '\r') {
+        if (len + 1 < out_size)
+            out[len++] = *p;
+        p++;
+    }
+    out[len] = '\0';
+    while (*p == '\n' || *p == '\r')
+        p++;
+    *cursor = p;
+}
+
+static void UI_MapRemoveBom(string_t buffer) {
+    unsigned char *bytes = (unsigned char *)buffer;
+
+    if (!bytes)
+        return;
+    if (bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        memmove(buffer, buffer + 3, strlen(buffer + 3) + 1);
+    /* Localized Blizzard maps carry the BOM re-encoded through CP1250 (C4 8F C2 BB C5 BC). */
+    else if (bytes[0] == 0xC4 && bytes[1] == 0x8F && bytes[2] == 0xC2 && bytes[3] == 0xBB &&
+             bytes[4] == 0xC5 && bytes[5] == 0xBC)
+        memmove(buffer, buffer + 6, strlen(buffer + 6) + 1);
+}
+
+/* Parse the body of a war3map.wts into info->strings. `buffer` is modified (BOM removed). */
+void UI_ParseTrigStrings(string_t buffer, mapInfo_t *info) {
+    cstring_t cursor;
+    mapTrigStr_t *entry = NULL;
+    bool reading_data = false;
+    char line[MAX_TRIGSTR_LENGTH];
+
+    UI_MapRemoveBom(buffer);
+    cursor = buffer;
+    while (*cursor) {
+        cstring_t trimmed;
+
+        UI_ReadLine(&cursor, line, sizeof(line));
+        trimmed = UI_SkipSpace(line);
+        UI_RemoveTrailingWhitespace(line);
+        if (!reading_data) {
+            if (!strncmp(trimmed, "STRING ", 7)) {
+                if (entry)
+                    mi.MemFree(entry);
+                entry = mi.MemAlloc(sizeof(*entry));
+                memset(entry, 0, sizeof(*entry));
+                entry->id = (uint32_t)strtoul(trimmed + 7, NULL, 10);
+            } else if (entry && *trimmed == '{') {
+                reading_data = true;
+            }
+            continue;
+        }
+        if (*trimmed == '}') {
+            ADD_TO_LIST(entry, info->strings);
+            entry = NULL;
+            reading_data = false;
+            continue;
+        }
+        UI_AppendTrigStringText(entry, line);
+    }
+    if (entry) {
+        if (reading_data) {
+            ADD_TO_LIST(entry, info->strings);
+        } else {
+            mi.MemFree(entry);
+        }
+    }
+}
+
+static void UI_ReadStringsInto(handle_t archive, mapInfo_t *info) {
+    handle_t file;
+    uint32_t size;
+    string_t buffer;
+
+    if (!archive || !info || !SFileOpenFileEx(archive, "war3map.wts", SFILE_OPEN_FROM_MPQ, &file))
+        return;
+    size = SFileGetFileSize(file, NULL);
+    buffer = mi.MemAlloc(size + 1);
+    if (!buffer) {
+        SFileCloseFile(file);
+        return;
+    }
+    SFileReadFile(file, buffer, size, NULL, NULL);
+    buffer[size] = '\0';
+    SFileCloseFile(file);
+
+    UI_ParseTrigStrings(buffer, info);
+    mi.MemFree(buffer);
+}
+
+static bool UI_OpenMapArchive(cstring_t mapFilename, handle_t *mapArchive, void **mapData,bool *metadata) {
+    int mapSize;
+
+    if (!mapFilename || !mapArchive || !mapData || !mi.FS_ReadFile || !mi.FS_FreeFile)
+        return false;
+    *mapArchive = NULL;
+    *mapData = NULL;
+    PATHSTR cache;snprintf(cache,sizeof(cache),"%s.ui.mpq",mapFilename);
+    mapSize=mi.FS_ReadFile(cache,mapData);
+    if(metadata)*metadata=mapSize>0&&*mapData;
+    if(mapSize<=0||!*mapData) {
+        if(*mapData)mi.FS_FreeFile(*mapData);
+        *mapData=NULL;mapSize=mi.FS_ReadFile(mapFilename,mapData);
+    }
+    if (!*mapData || mapSize <= 0)
+        return false;
+    if (!SFileOpenArchiveFromMemory(*mapData, (uint32_t)mapSize, 0, mapArchive)) {
+        fprintf(stderr, "[MAPINFO] archive open failed for '%s'\n", mapFilename);
+        mi.FS_FreeFile(*mapData);
+        *mapData = NULL;
+        return false;
+    }
+    return true;
+}
+
+bool UI_ReadMapInfo(cstring_t mapFilename, mapInfo_t *info) {
+    handle_t mapArchive;
+    void *mapData;
+
+    if (!info)
+        return false;
+    memset(info, 0, sizeof(*info));
+    if (!UI_OpenMapArchive(mapFilename, &mapArchive, &mapData,NULL))
+        return false;
+    if (!UI_ReadInfoInto(mapArchive, info)) {
+        SFileCloseArchive(mapArchive);
+        mi.FS_FreeFile(mapData);
+        UI_FreeMapInfo(info);
+        return false;
+    }
+    UI_ReadStringsInto(mapArchive, info);
+    SFileCloseArchive(mapArchive);
+    mi.FS_FreeFile(mapData);
+    return true;
+}
+
+bool UI_FindMapPreviewTexture(cstring_t mapFilename, string_t out, uint32_t out_size) {
+    static cstring_t candidates[] = { "war3mapPreview.tga", "war3mapMap.blp", "war3mapMap.tga", NULL };
+    handle_t mapArchive;
+    void *mapData;
+    bool found = false;
+    bool metadata=false;
+
+    if (!out || out_size == 0)
+        return false;
+    out[0] = '\0';
+    if (!UI_OpenMapArchive(mapFilename, &mapArchive, &mapData,&metadata))
+        return false;
+    for (uint32_t i = 0; candidates[i]; i++) {
+        handle_t file;
+
+        if (!SFileOpenFileEx(mapArchive, candidates[i], SFILE_OPEN_FROM_MPQ, &file))
+            continue;
+        SFileCloseFile(file);
+        snprintf(out, out_size, "%s%s\\%s", mapFilename,metadata?".ui.mpq":"",candidates[i]);
+        found = true;
+        break;
+    }
+    SFileCloseArchive(mapArchive);
+    mi.FS_FreeFile(mapData);
+    return found;
+}
+
+void UI_FreeMapInfo(mapInfo_t *mapInfo) {
+    mapTrigStr_t *string = mapInfo ? mapInfo->strings : NULL;
+
+    if (!mapInfo)
+        return;
+    FOR_LOOP(i, MAX_PLAYERS) SAFE_DELETE(mapInfo->players[i].playerName, mi.MemFree);
+    FOR_LOOP(i, mapInfo->num_teams) SAFE_DELETE(mapInfo->teams[i].name, mi.MemFree);
+    SAFE_DELETE(mapInfo->mapName, mi.MemFree);
+    SAFE_DELETE(mapInfo->mapAuthor, mi.MemFree);
+    SAFE_DELETE(mapInfo->mapDescription, mi.MemFree);
+    SAFE_DELETE(mapInfo->playersRecommended, mi.MemFree);
+    SAFE_DELETE(mapInfo->loadingScreenModel, mi.MemFree);
+    SAFE_DELETE(mapInfo->loadingScreenText, mi.MemFree);
+    SAFE_DELETE(mapInfo->loadingScreenTitle, mi.MemFree);
+    SAFE_DELETE(mapInfo->loadingScreenSubtitle, mi.MemFree);
+    SAFE_DELETE(mapInfo->prologueScreenModel, mi.MemFree);
+    SAFE_DELETE(mapInfo->prologueScreenText, mi.MemFree);
+    SAFE_DELETE(mapInfo->prologueScreenTitle, mi.MemFree);
+    SAFE_DELETE(mapInfo->prologueScreenSubtitle, mi.MemFree);
+    SAFE_DELETE(mapInfo->soundEnvironment, mi.MemFree);
+    SAFE_DELETE(mapInfo->teams, mi.MemFree);
+    while (string) {
+        mapTrigStr_t *next = string->next;
+        mi.MemFree(string);
+        string = next;
+    }
+    memset(mapInfo, 0, sizeof(*mapInfo));
+}
+
+static cstring_t UI_PathBaseFileName(cstring_t path) {
+    cstring_t base = path ? path : "";
+
+    for (cstring_t p = base; *p; p++) {
+        if (*p == '\\' || *p == '/')
+            base = p + 1;
+    }
+    return base;
+}
+
+void UI_DefaultMapName(cstring_t path, string_t out, uint32_t out_size) {
+    uint32_t len;
+
+    if (!out || out_size == 0)
+        return;
+    snprintf(out, out_size, "%s", UI_PathBaseFileName(path));
+    len = (uint32_t)strlen(out);
+    if (len > 4 && out[len - 4] == '.')
+        out[len - 4] = '\0';
+}
+
+void UI_ResolveMapInfoString(mapInfo_t const *info, cstring_t text, string_t out, uint32_t out_size) {
+    uint32_t id;
+
+    if (!out || out_size == 0)
+        return;
+    if (!text) {
+        out[0] = '\0';
+        return;
+    }
+    if (strncmp(text, "TRIGSTR_", 8)) {
+        snprintf(out, out_size, "%s", text);
+        return;
+    }
+    id = (uint32_t)strtoul(text + 8, NULL, 10);
+    for (mapTrigStr_t const *string = info ? info->strings : NULL; string; string = string->next) {
+        if (string->id == id) {
+            snprintf(out, out_size, "%s", string->text);
+            return;
+        }
+    }
+    snprintf(out, out_size, "%s", text);
+}
+
+bool UI_MapNameMatchesFile(cstring_t name, cstring_t path) {
+    PATHSTR base;
+    size_t len;
+
+    if (!name || !path || !*name)
+        return false;
+    snprintf(base, sizeof(base), "%s", UI_PathBaseFileName(path));
+    len = strlen(base);
+    if (len > 4 && (!strcasecmp(base + len - 4, ".w3m") || !strcasecmp(base + len - 4, ".w3x")))
+        base[len - 4] = '\0';
+    return !strcasecmp(name, base);
+}
+
+/* Map size and tileset labels live in UI\WorldEditGameStrings.txt ("KEY=value" lines, localized per client). */
+static char *world_edit_strings;
+
+void UI_ClearWorldEditStrings(void) {
+    if (world_edit_strings)
+        mi.MemFree(world_edit_strings);
+    world_edit_strings = NULL;
+}
+
+static bool UI_LoadWorldEditStrings(void) {
+    void *data = NULL;
+    int size;
+
+    if (world_edit_strings)
+        return true;
+    if (!mi.FS_ReadFile || !mi.FS_FreeFile || !mi.MemAlloc || !mi.MemFree)
+        return false;
+    size = mi.FS_ReadFile("UI\\WorldEditGameStrings.txt", &data);
+    if (!data || size <= 0)
+        return false;
+    world_edit_strings = mi.MemAlloc((size_t)size + 1);
+    if (!world_edit_strings) {
+        mi.FS_FreeFile(data);
+        return false;
+    }
+    memcpy(world_edit_strings, data, (size_t)size);
+    world_edit_strings[size] = '\0';
+    mi.FS_FreeFile(data);
+    UI_MapRemoveBom(world_edit_strings);
+    return true;
+}
+
+/* Copy the value of `key` into out; false when the table or the key is missing. */
+static bool UI_WorldEditString(cstring_t key, string_t out, uint32_t out_size) {
+    size_t const key_len = strlen(key);
+
+    if (!UI_LoadWorldEditStrings())
+        return false;
+    for (cstring_t line = world_edit_strings; *line;) {
+        cstring_t const end = line + strcspn(line, "\r\n");
+
+        if (!strncmp(line, key, key_len) && line[key_len] == '=') {
+            snprintf(out, out_size, "%.*s", (int)(end - (line + key_len + 1)), line + key_len + 1);
+            return true;
+        }
+        line = end;
+        while (*line == '\r' || *line == '\n')
+            line++;
+    }
+    return false;
+}
+
+/* Returns the localized label, or `fallback` when the string table has no such key. */
+static cstring_t UI_LocalizedMapLabel(cstring_t key, cstring_t fallback) {
+    static char labels[4][64];
+    static uint32_t cursor;
+    string_t out = labels[cursor++ & 3];
+
+    return UI_WorldEditString(key, out, sizeof(labels[0])) && out[0] ? out : fallback;
+}
+
+cstring_t UI_MapTilesetName(uint8_t tileset) {
+    switch (tileset) {
+        case 'A': return UI_LocalizedMapLabel("WESTRING_LOCALE_ASHENVALE", "Ashenvale");
+        case 'B': return UI_LocalizedMapLabel("WESTRING_LOCALE_BARRENS", "Barrens");
+        case 'C': return UI_LocalizedMapLabel("WESTRING_LOCALE_FELWOOD", "Felwood");
+        case 'D': return UI_LocalizedMapLabel("WESTRING_LOCALE_DUNGEON", "Dungeon");
+        case 'F': return UI_LocalizedMapLabel("WESTRING_LOCALE_LORDAERON_FALL", "Lordaeron Fall");
+        case 'G': return UI_LocalizedMapLabel("WESTRING_LOCALE_DUNGEON2", "Underground");
+        case 'I': return UI_LocalizedMapLabel("WESTRING_LOCALE_ICECROWN", "Icecrown Glacier");
+        case 'J': return UI_LocalizedMapLabel("WESTRING_LOCALE_DALARANRUINS", "Dalaran Ruins");
+        case 'K': return UI_LocalizedMapLabel("WESTRING_LOCALE_BLACKCITADEL", "Black Citadel");
+        case 'L': return UI_LocalizedMapLabel("WESTRING_LOCALE_LORDAERON_SUMMER", "Lordaeron Summer");
+        case 'N': return UI_LocalizedMapLabel("WESTRING_LOCALE_NORTHREND", "Northrend");
+        case 'O': return UI_LocalizedMapLabel("WESTRING_LOCALE_OUTLAND", "Outland");
+        case 'Q': return UI_LocalizedMapLabel("WESTRING_LOCALE_VILLAGEFALL", "Village Fall");
+        case 'V': return UI_LocalizedMapLabel("WESTRING_LOCALE_VILLAGE", "Village");
+        case 'W': return UI_LocalizedMapLabel("WESTRING_LOCALE_LORDAERON_WINTER", "Lordaeron Winter");
+        case 'X': return UI_LocalizedMapLabel("WESTRING_LOCALE_DALARAN", "Dalaran");
+        case 'Y': return UI_LocalizedMapLabel("WESTRING_LOCALE_CITYSCAPE", "Cityscape");
+        case 'Z': return UI_LocalizedMapLabel("WESTRING_LOCALE_RUINS", "Sunken Ruins");
+        default: return NULL;
+    }
+}
+
+/* Thresholds are the map areas (cells) of [MapSizes] in UI\WorldEditData.txt. */
+cstring_t UI_MapSizeName(uint32_t width, uint32_t height) {
+    uint64_t const area = (uint64_t)width * height;
+
+    if (area <= 7500)
+        return UI_LocalizedMapLabel("WESTRING_MAPSIZE_TINY", "Tiny");
+    if (area <= 13500)
+        return UI_LocalizedMapLabel("WESTRING_MAPSIZE_SMALL", "Small");
+    if (area <= 22000)
+        return UI_LocalizedMapLabel("WESTRING_MAPSIZE_MEDIUM", "Medium");
+    if (area <= 32500)
+        return UI_LocalizedMapLabel("WESTRING_MAPSIZE_LARGE", "Large");
+    if (area <= 45000)
+        return UI_LocalizedMapLabel("WESTRING_MAPSIZE_HUGE", "Huge");
+    return UI_LocalizedMapLabel("WESTRING_MAPSIZE_EPIC", "Epic");
+}
+
+void UI_SanitizeMapListField(string_t text) {
+    if (!text)
+        return;
+    for (string_t p = text; *p; p++) {
+        if (*p == '\n' || *p == '\r' || *p == '\t')
+            *p = ' ';
+    }
+}
+
+void UI_SanitizeMapInfoText(string_t text) {
+    string_t out = text;
+    bool after_cr = false;
+
+    if (!text)
+        return;
+    for (cstring_t p = text; *p; p++) {
+        bool const skip = *p == '\n' && after_cr;
+
+        after_cr = *p == '\r';
+        if (skip)
+            continue;
+        /* CRLF collapses to one break; a stray CR renders as a missing glyph. */
+        *out++ = *p == '\t' ? ' ' : *p == '\r' ? '\n' : *p;
+    }
+    *out = '\0';
+}

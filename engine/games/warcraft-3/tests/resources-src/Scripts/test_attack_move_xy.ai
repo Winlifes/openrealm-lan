@@ -1,0 +1,8 @@
+function Retarget takes nothing returns nothing
+    call AttackMoveXY(-64,768)
+endfunction
+
+function main takes nothing returns nothing
+    call AttackMoveXY(512,256)
+    call Sleep(1000.0)
+endfunction

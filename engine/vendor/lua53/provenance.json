@@ -1,0 +1,251 @@
+{
+  "source": "https://www.lua.org/ftp/lua-5.3.4.tar.gz",
+  "archiveSha256": "f681aa518233bc407e23acf0f5887c884f17436f000d453b2491a9f11a52400c",
+  "originalFiles": [
+    {
+      "path": "src/lapi.c",
+      "sha256": "0dce97eab429a00c8c9ce1647bd23e5a7d75d57ddf87ae3bd7ba5c587d663913"
+    },
+    {
+      "path": "src/lapi.h",
+      "sha256": "68e3d4387ad4c63f148a3c26c4d8c8476a507cd81b6ef56536234ce6a525c9b0"
+    },
+    {
+      "path": "src/lauxlib.c",
+      "sha256": "e114db168280678ceb1c55358e9542d3b19bab2d55c3946a75e9f261cff05f5a"
+    },
+    {
+      "path": "src/lauxlib.h",
+      "sha256": "9b613daa702d789d59edb38d319c214072088fc70416977406110e44ad8224ff"
+    },
+    {
+      "path": "src/lbaselib.c",
+      "sha256": "1f194c10f0cfc029467d0a0fde68899baa577044fcb927f8bebfe75057c7319e"
+    },
+    {
+      "path": "src/lbitlib.c",
+      "sha256": "1b13bac505e9d0d2c269ea4ada036e61de1bcbeaee262cb8f6f7abcce8ab6a60"
+    },
+    {
+      "path": "src/lcode.c",
+      "sha256": "615e6eb4802e7fdb2f163990775776ce26fcc11fe53da1124bfed46ce4c06934"
+    },
+    {
+      "path": "src/lcode.h",
+      "sha256": "e7a9628798166d99435688ddc47a3a23a97a686e5676703d99b05380d9486552"
+    },
+    {
+      "path": "src/lcorolib.c",
+      "sha256": "95be9ae4ab5dcc80770266318985241f02616ed4169e713640679fe61b719980"
+    },
+    {
+      "path": "src/lctype.c",
+      "sha256": "f62c5146d2b6062f5b414760d89000231c80b3606a4380b593335dff46286548"
+    },
+    {
+      "path": "src/lctype.h",
+      "sha256": "dac2372f033f8085b570281f0a50ef5df6d5de6201e36fa152955d73795a91ff"
+    },
+    {
+      "path": "src/ldblib.c",
+      "sha256": "b9cd527c355627f7bec91e9af67cf6ce57d5dee73613bf7c18b10749b30238c8"
+    },
+    {
+      "path": "src/ldebug.c",
+      "sha256": "5b03f25f6fb27c7e78be134161a7598117186ff1c9afbff4e82b90a6bf641662"
+    },
+    {
+      "path": "src/ldebug.h",
+      "sha256": "838727b1eed72e7e142aae3c5755fb8bde79ee6925715cb307f813173b035701"
+    },
+    {
+      "path": "src/ldo.c",
+      "sha256": "cbc777a33c7f72abd32d8c1984b665427c25a9b24e148831f291af4d0dfc5926"
+    },
+    {
+      "path": "src/ldo.h",
+      "sha256": "5450c84a3235da416b49bc6ef7a1a6c19af10da4331996b782e72793fabdae66"
+    },
+    {
+      "path": "src/ldump.c",
+      "sha256": "028101b3b250500d0000271a5180d1d4c2c286f49bf5d2c915b7073a179c9030"
+    },
+    {
+      "path": "src/lfunc.c",
+      "sha256": "d94ea1b0518de473a655029ff06b4f94044d6abab1a164cbeb760f1cc3076db1"
+    },
+    {
+      "path": "src/lfunc.h",
+      "sha256": "a59ef76882f64d1c1628c7896a22a1e0b7721bf2b25d8f2159abae2aa8a3c0a8"
+    },
+    {
+      "path": "src/lgc.c",
+      "sha256": "9ec15ddf03193bc5d82a83a3a57194ff78eac25d3fd22e9ee72ec3bbb7fe1d5a"
+    },
+    {
+      "path": "src/lgc.h",
+      "sha256": "1e4f52c3a5a3a109ee41d504aa75b78e48fa2124f5c5f3ff55bbec47ddb39b79"
+    },
+    {
+      "path": "src/linit.c",
+      "sha256": "d60e42fd6cc47f44dc5a3a2a66da34e70b1571c4fb24d91d6f724672213866ca"
+    },
+    {
+      "path": "src/liolib.c",
+      "sha256": "e7efbe3de0fbbc739c61dd0be7b11e0881d66eea6803ecdfda43d56f6c018f6c"
+    },
+    {
+      "path": "src/llex.c",
+      "sha256": "e77221f45b05aadc4f34c74edc24d4debc108c32a3d1c2fd8b37b252f024e868"
+    },
+    {
+      "path": "src/llex.h",
+      "sha256": "693ffc15a33b625f8d943f66d0a9cd9cf1c9cdf753752b195fc687032e6f6b11"
+    },
+    {
+      "path": "src/llimits.h",
+      "sha256": "d98a545fb12851e0b92e54394d0b3c83ae2c2401b81f6269c1386d6b4bbe0fb4"
+    },
+    {
+      "path": "src/lmathlib.c",
+      "sha256": "adb358049c9980c0fe0aa0295c863d668d2f400ff5f070b9f667fa17774dba83"
+    },
+    {
+      "path": "src/lmem.c",
+      "sha256": "e01fd27bc42ec5bdb1e5d4dde2d6c7f45c3054704f7e7857326745928c65b13d"
+    },
+    {
+      "path": "src/lmem.h",
+      "sha256": "1031ba3e583b55ef8d33b987bd551a681375e1370baee68ad9667519dbc88bec"
+    },
+    {
+      "path": "src/loadlib.c",
+      "sha256": "4f1ba0e3fe6d6d3272220e2ce36f0d7890cc446365257501b5d546dea472f9e7"
+    },
+    {
+      "path": "src/lobject.c",
+      "sha256": "d933ee02a99d74e40fc3935956296460e37ca5dd36a25e9f11231ecd515672f4"
+    },
+    {
+      "path": "src/lobject.h",
+      "sha256": "6617aa5170ecf910a496c671c67cfd8f4a2098be35e8d6d2013c8de3789fe71c"
+    },
+    {
+      "path": "src/lopcodes.c",
+      "sha256": "a1359a9935470687931a2d5c7a40337d1f3b16dc2c730961f093e79e9b245d3b"
+    },
+    {
+      "path": "src/lopcodes.h",
+      "sha256": "1deb3f2f72a917bfe97c95ed0caac7da9190f6e55c9c58f2a35a1936bd81c3fc"
+    },
+    {
+      "path": "src/loslib.c",
+      "sha256": "457703756feac14c91bed3a5ec90f77496d33960a36b490fce99b87cb8bf614e"
+    },
+    {
+      "path": "src/lparser.c",
+      "sha256": "610ace868a88f57509aeb9fa2cdbb92fae3cc9831750870d5cee24c59801f1ca"
+    },
+    {
+      "path": "src/lparser.h",
+      "sha256": "38b33dd42af0626fc80d8bf0bd4e4335505d0fd1793783cbcf3826f1b19d650e"
+    },
+    {
+      "path": "src/lprefix.h",
+      "sha256": "dc73dab6052a5e0c183737db275a49500cc9ad46478047e3a0f7c3042ad3320c"
+    },
+    {
+      "path": "src/lstate.c",
+      "sha256": "9a7c5a0aebd982d94839fbb8dbc7d8b8511146d9e5bd4f385dd17f1f794715fa"
+    },
+    {
+      "path": "src/lstate.h",
+      "sha256": "4881a251412047865643c17c746197dec7523e0ad03096eb08548a00eef78167"
+    },
+    {
+      "path": "src/lstring.c",
+      "sha256": "42037b93e275124470125ca75d13ad1bfac34d51c2a1b440a3e760194f191347"
+    },
+    {
+      "path": "src/lstring.h",
+      "sha256": "803534ebae6260052956833295a1a9971df3fbcdbe35e0e1c2a4730f7f624dbc"
+    },
+    {
+      "path": "src/lstrlib.c",
+      "sha256": "48ce4839814fe11c4d322f03fb202e2008ebfb35a52947f95df92b08f7fea185"
+    },
+    {
+      "path": "src/ltable.c",
+      "sha256": "e81cc07151e534f9f48c0f1a149680f195fe08d51bba98116d7e63ffa0986eba"
+    },
+    {
+      "path": "src/ltable.h",
+      "sha256": "0690c0abe07a83311511cdab02f541f711723b64e8edb3c72b1baa761ddef9a7"
+    },
+    {
+      "path": "src/ltablib.c",
+      "sha256": "c492d2c160ad502afc9201327faf900e30ec2fee8dc9d8ed85ba6bddf5eb014e"
+    },
+    {
+      "path": "src/ltm.c",
+      "sha256": "6b29fb7474caf76293d63619039d86b9699a8924a0973c9584e2d89f49a3448f"
+    },
+    {
+      "path": "src/ltm.h",
+      "sha256": "04e67367a52887c5ffeff558ea9a0920a9fb1d361f656a5d6a343d66dfe77c68"
+    },
+    {
+      "path": "src/lua.c",
+      "sha256": "6ca07a5010588fa1d2e7ff65bf196dec137d844f7672fa7fcdfd9562d8ced962"
+    },
+    {
+      "path": "src/lua.h",
+      "sha256": "818fd58f067404757b12c3cb1afe0f739fefe568cbc0b3cebee36dca022315bf"
+    },
+    {
+      "path": "src/luac.c",
+      "sha256": "6a275e43513172385ad76d93fde88d22cefad2695f3c163f845d8c8cfc82bd38"
+    },
+    {
+      "path": "src/luaconf.h",
+      "sha256": "04b73ae3c7f9b08b95da069615da7f0664e5edc53bc09afda73160f0c3967342"
+    },
+    {
+      "path": "src/lualib.h",
+      "sha256": "04f4579bc74efe75f5ba090301b449ef73b8d91564bda9bf392366a3f30f87d8"
+    },
+    {
+      "path": "src/lundump.c",
+      "sha256": "c10c5d924758e5e05d5969282637519783a90bc051e9bcb44c0803442e66dcb3"
+    },
+    {
+      "path": "src/lundump.h",
+      "sha256": "7f1cc40133e5712fec6753f56f196430d57b2380defac70dc80350c49b9afc4c"
+    },
+    {
+      "path": "src/lutf8lib.c",
+      "sha256": "0e80f8c5df6d295a386be64d21011d883a47498240e21440e0c573b9a87aa0af"
+    },
+    {
+      "path": "src/lvm.c",
+      "sha256": "4bef1d6b86248cefe49fa08c520b8c206a0b676c327677d72d282ae0d3949464"
+    },
+    {
+      "path": "src/lvm.h",
+      "sha256": "5c89d7087f6cdcc331087d9ac4ac3b4123fe15868046c053a4a15a0edc8300a9"
+    },
+    {
+      "path": "src/lzio.c",
+      "sha256": "b76aa099cbaeb7b3ec157d08fb6d9d036ddf4f7e8d6a8dd777fa8dd7fb01992b"
+    },
+    {
+      "path": "src/lzio.h",
+      "sha256": "563246bb7daf30286cdb64c2c059f3ea61e2f14189aa3c016d92757f465d4b57"
+    }
+  ],
+  "localChanges": [
+    "Appended upstream Eris permanent-function accessors to five standard-library files",
+    "Namespaced 316 external Lua/Eris symbols through namespace.h",
+    "Equivalent explicit string-index pointer in lundump.c for current Clang diagnostics"
+  ]
+}

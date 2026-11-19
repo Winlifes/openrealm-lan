@@ -1,0 +1,13 @@
+{
+  "source": "https://github.com/Panakotta00/eris",
+  "commit": "9d328c612a825ca10f1c495595acd96f27f5e288",
+  "files": {
+    "eris.c": "051048718c522b1e70fbedc2f303aa7af914e63d00d39777f5bb7ff12780d0e8",
+    "eris.h": "3abf2bf0437250d27053f020d9dc9571cc1f8a7686127fcbe620566143d07e71"
+  },
+  "localChanges": [
+    "Private strict W53 revision 1 header; prior ERIS and different layouts rejected",
+    "C continuation context encoded as int64_t instead of int",
+    "Zero-status C frames retain continuation payload; only base_ci is excluded"
+  ]
+}

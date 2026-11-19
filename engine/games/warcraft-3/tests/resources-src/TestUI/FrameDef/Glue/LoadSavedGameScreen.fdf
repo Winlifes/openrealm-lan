@@ -1,0 +1,21 @@
+// Synthetic fixture: original frame identities, independent test geometry.
+Frame "FRAME" "LoadSavedGameScreen" {
+    SetAllPoints,
+    Frame "FRAME" "GameSettingsPanel" {
+        Frame "TEXT" "LoadSavedGameTitle" { Text "Saved games", }
+        Frame "FRAME" "FileListFrame" { Width 0.31, Height 0.27, }
+    }
+    Frame "FRAME" "MapInfoPaneContainer" { Width 0.23, Height 0.19, }
+    Frame "BACKDROP" "OKBackdrop" {
+        Frame "GLUETEXTBUTTON" "OKButton" {
+            ButtonText "OKButtonText",
+            Frame "TEXT" "OKButtonText" { Text "Load", }
+        }
+    }
+    Frame "BACKDROP" "CancelBackdrop" {
+        Frame "GLUETEXTBUTTON" "CancelButton" {
+            ButtonText "CancelButtonText",
+            Frame "TEXT" "CancelButtonText" { Text "Back", }
+        }
+    }
+}

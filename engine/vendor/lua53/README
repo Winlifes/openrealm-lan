@@ -1,0 +1,21 @@
+Lua 5.3.4 (Warcraft III map-runtime dependency)
+
+Source: https://www.lua.org/ftp/lua-5.3.4.tar.gz
+SHA-256: f681aa518233bc407e23acf0f5887c884f17436f000d453b2491a9f11a52400c
+The supplied 3.0.1.24371 retail executable embeds the Lua 5.3.4 version identity.
+This is independent of the existing Lua 5.4.8 WoW UI runtime.
+
+provenance.json records original source hashes and local changes. Five standard
+library files append the permanent-function accessors from Eris commit
+9d328c612a825ca10f1c495595acd96f27f5e288. lundump.c uses an equivalent explicit
+string-index pointer to avoid a current Clang diagnostic. The VM semantics and
+standard bytecode layout are otherwise unchanged.
+
+namespace.h maps all 316 external Lua/Eris symbols to bz53_* names. Every
+translation unit using this runtime must include namespace.h before Lua headers.
+The build force-includes it for the library; consumers include it explicitly.
+Regenerate/check with tools/lua53_namespace.py. Drivers lua.c and luac.c are
+retained as upstream input but excluded from the archive.
+
+The SDK and heap serializer are covered by make test-lua53. This dependency
+alone does not implement Warcraft map loading, native bindings or world saves.
