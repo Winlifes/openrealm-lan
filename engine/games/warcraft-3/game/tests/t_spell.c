@@ -7478,26 +7478,39 @@ TEST(wc3_spell, death_coil_uses_projectile_and_rejects_self_or_full_health_ally)
     G_SetSLKRows("AbilityData", old); free_slk_rows(rows);
 }
 
-typedef struct { edict_t *caster, *attacker; slkTestData_t *rows, *old; } shieldSourcesFixture_t;
-static shieldSourcesFixture_t shield_sources_setup(void) {
+typedef struct {
+    edict_t *caster, *attacker;
+    slkTestData_t *rows, *old;
+    char *table;
+    stbIniCache_t old_misc;
+} shieldSourcesFixture_t;
+static shieldSourcesFixture_t shield_sources_setup_config(float data_cancel, bool map_cancel) {
     static char const source[] =
-        "ID;PWXL;N;EBB;Y6;X7\n"
+        "ID;PWXL;N;EBB;Y7;X8\n"
         "C;Y1;X1;K\"alias\"\nC;Y1;X2;K\"code\"\nC;Y1;X3;K\"Cost1\"\n"
-        "C;Y1;X4;K\"Cool1\"\nC;Y1;X5;K\"Dur1\"\nC;Y1;X6;K\"HeroDur1\"\nC;Y1;X7;K\"BuffID1\"\n"
+        "C;Y1;X4;K\"Cool1\"\nC;Y1;X5;K\"Dur1\"\nC;Y1;X6;K\"HeroDur1\"\nC;Y1;X7;K\"BuffID1\"\nC;Y1;X8;K\"DataA1\"\n"
         "C;Y2;X1;K\"AHds\"\nC;Y2;X2;K\"AHds\"\nC;Y2;X3;K0\nC;Y2;X4;K0\n"
-        "C;Y2;X5;K2\nC;Y2;X6;K2\nC;Y2;X7;K\"BHds\"\n"
+        "C;Y2;X5;K2\nC;Y2;X6;K2\nC;Y2;X7;K\"BHds\"\nC;Y2;X8;K%g\n"
         "C;Y3;X1;K\"Ad01\"\nC;Y3;X2;K\"AHds\"\nC;Y3;X3;K0\nC;Y3;X4;K0\n"
-        "C;Y3;X5;K3\nC;Y3;X6;K3\nC;Y3;X7;K\"Bd01\"\n"
+        "C;Y3;X5;K3\nC;Y3;X6;K3\nC;Y3;X7;K\"Bd01\"\nC;Y3;X8;K%g\n"
         "C;Y4;X1;K\"Ad02\"\nC;Y4;X2;K\"AHds\"\nC;Y4;X3;K17\nC;Y4;X4;K7\n"
-        "C;Y4;X5;K5\nC;Y4;X6;K5\nC;Y4;X7;K\"Bd01\"\n"
+        "C;Y4;X5;K5\nC;Y4;X6;K5\nC;Y4;X7;K\"Bd01\"\nC;Y4;X8;K%g\n"
         "C;Y5;X1;K\"Apsh\"\nC;Y5;X2;K\"Apsh\"\nC;Y5;X3;K0\nC;Y5;X4;K0\n"
         "C;Y5;X5;K4\nC;Y5;X6;K4\nC;Y5;X7;K\"Bpsh\"\n"
         "C;Y6;X1;K\"AIvu\"\nC;Y6;X2;K\"AIvu\"\nC;Y6;X3;K0\nC;Y6;X4;K0\n"
-        "C;Y6;X5;K4\nC;Y6;X6;K4\nC;Y6;X7;K\"Bvul\"\nE\n";
+        "C;Y6;X5;K4\nC;Y6;X6;K4\nC;Y6;X7;K\"Bvul\"\n"
+        "C;Y7;X1;K\"ACds\"\nC;Y7;X2;K\"ACds\"\nC;Y7;X3;K17\nC;Y7;X4;K7\n"
+        "C;Y7;X5;K5\nC;Y7;X6;K5\nC;Y7;X7;K\"BHds\"\nC;Y7;X8;K%g\nE\n";
     static UnitAbilities_t const abilities = { .abilList = "AHds,Ad01,Ad02,Apsh" };
-    shieldSourcesFixture_t f = { .rows = parse_slk_string(source) };
+    /* The SLK fixture borrows its text after this setup function returns. */
+    shieldSourcesFixture_t f = { .table = malloc(sizeof(source) + 96) };
+    T_NOT_NULL(f.table);
+    snprintf(f.table, sizeof(source) + 96, source, data_cancel, data_cancel, data_cancel, data_cancel);
+    f.rows = parse_slk_string(f.table);
     reset_entities(); setup_test_world();
     T_ASSERT(run_test_jass("function main takes nothing returns nothing\nendfunction\n"));
+    f.old_misc = game.config.misc; game.config.misc = (stbIniCache_t){ 0 };
+    T_ASSERT(Stb_IniCacheLoadBuffer(&game.config.misc, map_cancel ? "[Misc]\nCanDeactivateDivineShield=1\n" : "[Misc]\nCanDeactivateDivineShield=0\n"));
     f.old = G_SetSLKRows("AbilityData", f.rows);
     f.caster = make_hero(MAKEFOURCC('H','p','a','l'), 500, 200, 64, 64);
     f.attacker = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 128, 64);
@@ -7506,8 +7519,13 @@ static shieldSourcesFixture_t shield_sources_setup(void) {
     level.started = true; level.scriptsStarted = true;
     return f;
 }
+static shieldSourcesFixture_t shield_sources_setup(void) { return shield_sources_setup_config(0, false); }
 static void shield_sources_done(shieldSourcesFixture_t *f) {
-    G_SetSLKRows("AbilityData", f->old); free_slk_rows(f->rows);
+    G_SetSLKRows("AbilityData", f->old); free_slk_rows(f->rows); free(f->table);
+    Stb_IniCacheFree(&game.config.misc); game.config.misc = f->old_misc;
+}
+static shieldSourcesFixture_t shield_cancel_setup(void) {
+    return shield_sources_setup_config(1, true);
 }
 static void shield_sources_frame(uint32_t time) { level.time = time; globals.RunFrame(); }
 static void shield_sources_damage(shieldSourcesFixture_t const *f, bool blocked) {
@@ -7607,6 +7625,199 @@ TEST(wc3_spell, divine_shield_scripted_source_survives_save_load_and_expiry) {
     shield_sources_frame(2100); shield_sources_damage(&f, true);
     G_SetUnitFlag(f.caster, UNIT_FLAG_INVULNERABLE, false);
     shield_sources_damage(&f, false);
+    shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_cancel_ignores_empty_mana_and_keeps_original_cooldown) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    uint32_t code = FS_SLKKey("Ad02");
+    T_ASSERT(S_CastNoTargetSpell(f.caster, code));
+    float cooldown = S_SpellCooldownRemaining(f.caster, code);
+    T_ASSERT(cooldown > 0);
+    f.caster->mana.value = 0;
+    T_ASSERT(S_CastNoTargetSpell(f.caster, code));
+    T_ASSERT(!S_UnitInvulnerable(f.caster));
+    T_FEQ(f.caster->mana.value, 0, 0.001f);
+    T_FEQ(S_SpellCooldownRemaining(f.caster, code), cooldown, 0.001f);
+    shield_sources_damage(&f, false);
+    T_ASSERT(!S_CastNoTargetSpell(f.caster, code));
+    shield_sources_done(&f);
+}
+
+static void shield_cancel_denied_case(float data_cancel, bool map_cancel) {
+    shieldSourcesFixture_t f = shield_sources_setup_config(data_cancel, map_cancel);
+    abilityitem_t item = S_AbilityItem(FS_SLKKey("Ad02"));
+    abilityCall_t query = { .item = &item };
+    T_ASSERT(S_CastNoTargetSpell(f.caster, item.code));
+    T_ASSERT(!S_AbilityMessage(f.caster, A_TOGGLE_ON, &query));
+    f.caster->mana.value = 0;
+    T_ASSERT(!S_CastNoTargetSpell(f.caster, item.code));
+    shield_sources_damage(&f, true);
+    shield_sources_done(&f);
+}
+TEST(wc3_spell, divine_shield_cancel_respects_disabled_map_constant) { shield_cancel_denied_case(1, false); }
+TEST(wc3_spell, divine_shield_cancel_respects_disabled_ability_data) { shield_cancel_denied_case(0, true); }
+
+TEST(wc3_spell, divine_shield_cancel_accepts_nonzero_data_and_rejects_missing_map_key) {
+    shieldSourcesFixture_t f = shield_sources_setup_config(0.25f, true);
+    uint32_t const code = FS_SLKKey("Ad02");
+    abilityitem_t item = S_AbilityItem(code);
+    abilityCall_t query = { .item = &item };
+    T_ASSERT(S_CastNoTargetSpell(f.caster, code));
+    T_ASSERT(S_AbilityMessage(f.caster, A_TOGGLE_ON, &query));
+    Stb_IniCacheFree(&game.config.misc);
+    game.config.misc = (stbIniCache_t){ 0 };
+    T_ASSERT(!S_AbilityMessage(f.caster, A_TOGGLE_ON, &query));
+    f.caster->mana.value = 0;
+    T_ASSERT(!S_CastNoTargetSpell(f.caster, code));
+    shield_sources_damage(&f, true);
+    shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_off_order_finds_active_alias_beside_inactive_base) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    uint32_t const code = FS_SLKKey("Ad02");
+    T_ASSERT(S_CastNoTargetSpell(f.caster, code));
+    float cooldown = S_SpellCooldownRemaining(f.caster, code);
+    f.caster->mana.value = 0;
+    T_ASSERT(unit_issueimmediateorder(f.caster, G_OrderId2String(852091)));
+    T_EQ(G_UnitStatusLevel(f.caster, FS_SLKKey("Bd01")), 0);
+    T_FEQ(S_SpellCooldownRemaining(f.caster, code), cooldown, 0.001f);
+    shield_sources_damage(&f, false);
+    T_ASSERT(!unit_issueimmediateorder(f.caster, G_OrderId2String(852091)));
+    shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_off_order_finds_creep_ability_class) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    static UnitAbilities_t const abilities = { .abilList = "ACds" };
+    f.caster->data.UnitAbilities = &abilities;
+    T_ASSERT(unit_issueimmediateorder(f.caster, "divineshield"));
+    shield_sources_damage(&f, true);
+    f.caster->mana.value = 0;
+    T_ASSERT(unit_issueimmediateorder(f.caster, "undivineshield"));
+    shield_sources_damage(&f, false);
+    shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_off_order_visits_learned_hero_skill) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    static UnitAbilities_t const abilities = { 0 };
+    uint32_t const code = FS_SLKKey("AHds");
+    f.caster->data.UnitAbilities = &abilities;
+    f.caster->unit_state->ranks[0] = (heroability_t){ .code = code, .level = 1 };
+    T_EQ(G_UnitAbilityLevel(f.caster, code), 1u);
+    T_ASSERT(unit_issueimmediateorder(f.caster, "divineshield"));
+    T_ASSERT(unit_issueimmediateorder(f.caster, "undivineshield"));
+    shield_sources_damage(&f, false);
+    f.caster->unit_state->ranks[0].level = 0;
+    T_ASSERT(!unit_issueimmediateorder(f.caster, "undivineshield"));
+    shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_removing_runtime_ability_releases_only_its_status) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    static UnitAbilities_t const abilities = { .abilList = "Apsh" };
+    uint32_t const code = FS_SLKKey("Ad02");
+    f.caster->data.UnitAbilities = &abilities;
+    T_ASSERT(G_ActorAddSkill(f.caster, code));
+    T_ASSERT(S_CastNoTargetSpell(f.caster, code));
+    T_ASSERT(S_CastNoTargetSpell(f.caster, FS_SLKKey("Apsh")));
+    T_ASSERT(G_ActorRemoveSkill(f.caster, code));
+    T_EQ(G_UnitStatusLevel(f.caster, FS_SLKKey("Bd01")), 0);
+    shield_sources_damage(&f, true);
+    shield_sources_frame(4100); shield_sources_damage(&f, false);
+    shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_cancel_works_with_full_status_capacity) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    T_ASSERT(S_CastNoTargetSpell(f.caster, FS_SLKKey("Ad02")));
+    FOR_LOOP(i, MAX_UNIT_STATUSES - 1) {
+        char buff[5]; snprintf(buff, sizeof(buff), "B%03u", i);
+        T_ASSERT(unit_addtimedstatus(f.caster, buff, 1, 10));
+    }
+    f.caster->mana.value = 0;
+    T_ASSERT(S_CastNoTargetSpell(f.caster, FS_SLKKey("Ad02")));
+    T_EQ(G_UnitStatusLevel(f.caster, FS_SLKKey("Bd01")), 0);
+    shield_sources_damage(&f, false);
+    shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_cancel_preserves_other_invulnerability_sources) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    abilityitem_t potion = S_AbilityItem(FS_SLKKey("AIvu"));
+    abilityCall_t use = { .item = &potion };
+    T_ASSERT(S_CastNoTargetSpell(f.caster, FS_SLKKey("AHds")));
+    T_ASSERT(S_AbilityMessage(f.caster, A_ITEM_USE, &use));
+    G_SetUnitFlag(f.caster, UNIT_FLAG_INVULNERABLE, true);
+    T_ASSERT(S_CastNoTargetSpell(f.caster, FS_SLKKey("AHds")));
+    T_EQ(G_UnitStatusLevel(f.caster, FS_SLKKey("BHds")), 0);
+    G_SetUnitFlag(f.caster, UNIT_FLAG_INVULNERABLE, false);
+    shield_sources_damage(&f, true);
+    shield_sources_frame(4100); shield_sources_damage(&f, false);
+    shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_explicit_on_off_order_ids_do_not_invert_state_requests) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    T_EQ(G_OrderId("divineshield"), 852090u);
+    T_EQ(G_OrderId("undivineshield"), 852091u);
+    T_STREQ(G_OrderId2String(852091), "undivineshield");
+    T_ASSERT(!unit_issueimmediateorder(f.attacker, "undivineshield"));
+    T_ASSERT(!unit_issueimmediateorder(f.caster, "undivineshield"));
+    T_ASSERT(unit_issueimmediateorder(f.caster, "divineshield"));
+    shield_sources_damage(&f, true);
+    T_ASSERT(!unit_issueimmediateorder(f.caster, "divineshield"));
+    shield_sources_damage(&f, true);
+    T_ASSERT(unit_issueimmediateorder(f.caster, G_OrderId2String(852091)));
+    shield_sources_damage(&f, false);
+    T_ASSERT(!unit_issueimmediateorder(f.caster, "undivineshield"));
+    shield_sources_damage(&f, false);
+    shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_active_button_shows_cancel_without_mana_or_cooldown_overlay) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    gameCommandButton_t buttons[16], *button = NULL;
+    T_ASSERT(G_TestPushAbilityConfig("[Ad02]\nArt=ReplaceableTextures\\CommandButtons\\BTNDivineShield.blp\n"
+        "Tip=Raise Shield\nUntip=Cancel Shield\nUbertip=Become invulnerable\nUnubertip=End shield\nHotkey=D\n"));
+    T_ASSERT(S_CastNoTargetSpell(f.caster, FS_SLKKey("Ad02")));
+    f.caster->mana.value = 0;
+    uint8_t count = G_GetCommandButtons(f.caster, buttons, sizeof(buttons) / sizeof(*buttons));
+    FOR_LOOP(i, count) if (!strcmp(buttons[i].command, "Ad02")) button = &buttons[i];
+    T_NOT_NULL(button);
+    if (button) {
+        T_EQ(button->engaged, 1); T_EQ(button->disabled, 0);
+        T_FEQ(button->manacost, 0, 0.001f);
+        T_FEQ(button->cooldown, 0, 0.001f); T_EQ(button->cooldown_end_time, 0);
+        T_STREQ(button->tooltip, "Cancel Shield");
+    }
+    T_ASSERT(S_CastNoTargetSpell(f.caster, FS_SLKKey("Ad02")));
+    button = NULL; count = G_GetCommandButtons(f.caster, buttons, sizeof(buttons) / sizeof(*buttons));
+    FOR_LOOP(i, count) if (!strcmp(buttons[i].command, "Ad02")) button = &buttons[i];
+    T_NOT_NULL(button);
+    if (button) {
+        T_EQ(button->engaged, 0); T_FEQ(button->manacost, 17, 0.001f);
+        T_ASSERT(button->cooldown > 0); T_ASSERT(button->cooldown_end_time > 0);
+        T_STREQ(button->tooltip, "Raise Shield");
+    }
+    G_TestPopAbilityConfig(); shield_sources_done(&f);
+}
+
+TEST(wc3_spell, divine_shield_saved_active_status_can_cancel_after_reload) {
+    shieldSourcesFixture_t f = shield_cancel_setup();
+    static UnitAbilities_t const ordinary = { .abilList = "AInv" };
+    PATHSTR path; strlcpy(path, Test_TempPath("shield-cancel.bin"), sizeof(path));
+    f.caster->data.UnitAbilities = &ordinary;
+    T_ASSERT(G_ActorAddSkill(f.caster, FS_SLKKey("Ad02")));
+    T_ASSERT(S_CastNoTargetSpell(f.caster, FS_SLKKey("Ad02")));
+    T_ASSERT(WriteGame(path)); T_ASSERT(ReadGame(path)); unlink(path);
+    f.caster->mana.value = 0;
+    T_ASSERT(G_UnitAbilityLevel(f.caster, FS_SLKKey("Ad02")) > 0);
+    T_ASSERT(S_CastNoTargetSpell(f.caster, FS_SLKKey("Ad02")));
+    shield_sources_damage(&f, false);
+    T_ASSERT(!S_SpellCooldownReady(f.caster, FS_SLKKey("Ad02")));
     shield_sources_done(&f);
 }
 

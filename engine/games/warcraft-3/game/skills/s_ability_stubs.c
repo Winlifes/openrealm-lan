@@ -438,9 +438,43 @@ static status_application_t divine_shield_application(edict_t *caster, abilityit
         .source = caster, .rank = level };
 }
 
+/* A concrete ability may cancel only the live status it owns. */
+static heroabilitystatus_t *divine_shield_owned_status(edict_t *unit, uint32_t code) {
+    FOR_LOOP(i, unit && unit->unit_state ? MAX_UNIT_STATUSES : 0) {
+        heroabilitystatus_t *status = unit->unit_state->statuses + i;
+        if (status->level && status->source_ability == code &&
+            (!status->timestamp || status->timestamp > G_Time())) return status;
+    }
+    return NULL;
+}
+
+/* Both authored policies must permit the optional cancellation command. */
+static bool divine_shield_can_cancel(edict_t *unit, abilityitem_t const *item) {
+    if (!item || !item->ability || !(item->ability->flags & AB_TOGGLE_CAST_ON)) return false;
+    cstring_t value = Stb_IniCacheFind(&game.config.misc, "Misc", "CanDeactivateDivineShield");
+    return value && atoi(value) != 0 && S_SpellData(item->code, S_SpellLevel(unit, item->code), 1) != 0.0f;
+}
+
 /* The native buff contributes one independent state owner; it does not own
  * SetUnitInvulnerable's explicit flag. Custom BuffID values share this rule. */
 BZ_ABILITY_PROC(CAbilityDivineShield) {
+    uint32_t code = call && call->item ? call->item->code : 0;
+    bool toggle = call && call->item && call->item->ability && (call->item->ability->flags & AB_TOGGLE_CAST_ON);
+    heroabilitystatus_t *owned = code ? divine_shield_owned_status(ent, code) : NULL;
+    bool can_cancel = toggle && divine_shield_can_cancel(ent, call->item);
+    if (msg == A_TOGGLE_ON) return can_cancel && owned;
+    if (msg == A_ORDER && toggle) {
+        if (!ent || !code || !call->order || !G_UnitAbilityLevel(ent, code)) return false;
+        if (!strcmp(call->order, "divineshield")) return !(can_cancel && owned) && S_CastNoTargetSpell(ent, code);
+        if (!strcmp(call->order, "undivineshield")) return can_cancel && owned && S_CastNoTargetSpell(ent, code);
+        return false;
+    }
+    if (msg == A_STATUS_REMOVE && toggle) { G_InvalidateUnitCommands(ent); return false; }
+    if ((msg == A_DISABLE && toggle) || (msg == A_EXECUTE && can_cancel && owned)) {
+        if (owned) unit_removestatus(ent, owned, STATUS_REMOVE_SCRIPT);
+        G_InvalidateUnitCommands(ent);
+        return true;
+    }
     if ((msg == A_VALIDATE || msg == A_EXECUTE) && call && call->item) {
         status_application_t app = divine_shield_application(ent, call->item);
         if (msg == A_VALIDATE) {
@@ -455,6 +489,7 @@ BZ_ABILITY_PROC(CAbilityDivineShield) {
             thinker->think = divine_shield_think;
         }
         unit_status_enabletargetart(ent, status, "origin");
+        if (toggle) G_InvalidateUnitCommands(ent);
         return true;
     }
     return CAbilitySimpleSpell(ent, msg, call);

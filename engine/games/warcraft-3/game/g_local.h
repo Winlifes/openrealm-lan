@@ -876,6 +876,7 @@ typedef enum {
 #define AB_ENGINE_EVENTS (1u << 12) // bit 12; engine-wide lifecycle/order notifications reach this ability
 #define AB_QUEUEABLE    (1u << 13) // bit 13; the command button accepts the generic Shift queue modifier
 #define AB_POWERUP      (1u << 14) // bit 14; item ability consumed on pickup without an inventory slot
+#define AB_TOGGLE_CAST_ON (1u << 15) // bit 15; normal on cast, free owner off action; orders[0]/orders[1] name on/off requests
 #define AB_SEPARATE_OFF (1u << 16) // bit 16; preserves the existing explicit off-button policy; used in ability flags
 
 /* Spell target types: maps to WarSmash's unit-target / point-target / no-target

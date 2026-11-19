@@ -13,6 +13,7 @@ cstring_t const raven_orders[] = { "ravenform", "unravenform", NULL };
 cstring_t const ancient_root_orders[] = { "root", "unroot", NULL };
 static cstring_t const mana_shield_orders[] = { "manashieldon", "manashieldoff", NULL };
 static cstring_t const mana_flare_orders[] = { "manaflareon", "manaflareoff", NULL };
+static cstring_t const divine_shield_orders[] = { "divineshield", "undivineshield", NULL };
 static cstring_t const replenish_life_orders[] = { "replenishlifeon", "replenishlifeoff", NULL };
 static cstring_t const replenish_mana_orders[] = { "replenishmanaon", "replenishmanaoff", NULL };
 static cstring_t const build_orders[] = { "build", NULL };
@@ -151,7 +152,7 @@ static ability_t abilitylist[] = {
     { "AHbh", CAbilityPassive, AB_PASSIVE },  /* Bash */
     { "AHav", CAbilityAvatar, AB_SPELL },  /* Avatar */
     { "AHhb", CAbilityHolyBolt, AB_SPELL, SPELL_TARGET_UNIT },  /* Holy Light */
-    { "AHds", CAbilityDivineShield, AB_SPELL },  /* Divine Shield */
+    { "AHds", CAbilityDivineShield, AB_SPELL | AB_TOGGLE | AB_TOGGLE_CAST_ON | AB_STATUS_EVENTS, SPELL_TARGET_NONE, divine_shield_orders },  /* Divine Shield */
     { "AHad", CAbilityAuraDevotion, AB_PASSIVE },  /* Devotion Aura */
     { "AHre", CAbilityResurrection, AB_SPELL, SPELL_TARGET_NONE },  /* Resurrection */
     { "Amil", CAbilityMilitia, AB_COMMAND },  /* Call to Arms */
@@ -488,7 +489,7 @@ static ability_t abilitylist[] = {
 
     /* NightElfAbilityStrings.txt */
     { "Avng", CAbilityVengeance, AB_SPELL | AB_AUTOCAST, SPELL_TARGET_UNIT },  /* Spirit of Vengeance */
-    { "Amfl", CAbilityManaFlare, AB_SPELL | AB_TOGGLE | AB_UPDATE | AB_STATUS_EVENTS, SPELL_TARGET_NONE, mana_flare_orders },  /* Mana Flare */
+    { "Amfl", CAbilityManaFlare, AB_SPELL | AB_TOGGLE | AB_TOGGLE_CAST_ON | AB_UPDATE | AB_STATUS_EVENTS, SPELL_TARGET_NONE, mana_flare_orders },  /* Mana Flare */
     { "Apsh", CAbilityPhaseShift, AB_SPELL | AB_AUTOCAST },  /* Phase Shift */
     { "Aetl", CAbilityEthereal, AB_PASSIVE },  /* Ethereal */
     { "Agra", CAbilityGrabTree, AB_SPELL, SPELL_TARGET_POINT, grabtree_orders },  /* War Club */
@@ -623,7 +624,7 @@ static ability_t abilitylist[] = {
     { "ACde", CAbilityDispelMagic, AB_SPELL, SPELL_TARGET_POINT },  /* Devour Magic (creep) */
     { "ACdm", CAbilityAbolishMagic, AB_SPELL, SPELL_TARGET_POINT },  /* Abolish Magic (Creep) */
     { "ACdr", CAbilityDrainNeutral, AB_SPELL | AB_CHANNEL, SPELL_TARGET_UNIT },  /* Drain Life (Creep) */
-    { "ACds", CAbilityDivineShield, AB_SPELL },  /* Divine Shield (creep) */
+    { "ACds", CAbilityDivineShield, AB_SPELL | AB_TOGGLE | AB_TOGGLE_CAST_ON | AB_STATUS_EVENTS, SPELL_TARGET_NONE, divine_shield_orders },  /* Divine Shield (creep) */
     { "ACen", CAbilityEnsnare, AB_SPELL | AB_UPDATE, SPELL_TARGET_UNIT },  /* Ensnare (Creep) */
     { "ACes", CAbilityCreepAura, AB_PASSIVE },  /* Evasion (creep 100%) */
     { "ACev", CAbilityCreepAura, AB_PASSIVE },  /* Evasion (creep) */
@@ -1265,8 +1266,8 @@ bool S_UnitAbilityMessage(edict_t *ent, abilityMsg_t msg, abilityCall_t const *c
         FOR_LOOP(k, count) if (seen[k] == code) { duplicate = true; break; } \
         if (code && !duplicate && count < sizeof(seen) / sizeof(seen[0])) { \
             seen[count++] = code; \
-            char name[5] = {0}; memcpy(name, &code, 4); \
-            if (G_ActorHasSkill(ent, name)) { \
+            /* Learned ranks need not appear in the static or added list. */ \
+            if (G_UnitAbilityLevel(ent, code)) { \
                 abilityitem_t item = S_AbilityItem(code); \
                 if (item.ability) { \
                     abilityCall_t invoke = call ? *call : MAKE(abilityCall_t, 0); \

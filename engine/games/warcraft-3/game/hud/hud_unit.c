@@ -61,6 +61,12 @@ static bool G_IsRepairDiagnosticRawcode(cstring_t rawcode) {
 static void G_SetCommandCooldown(commandCooldownParams_t const *params) {
     abilityCooldownWindow_t window;
     if (!params || !params->button) return;
+    abilityitem_t item = S_AbilityItem(params->code);
+    if (params->button->engaged && item.ability && (item.ability->flags & AB_TOGGLE_CAST_ON)) {
+        params->button->cooldown = 0;
+        params->button->cooldown_start_time = params->button->cooldown_end_time = 0;
+        return;
+    }
     params->button->cooldown = S_SpellCooldownFraction(params->ent, params->code, params->level);
     if (!S_SpellCooldownWindow(params->ent, params->code, &window)) {
         params->button->cooldown_start_time = 0;
@@ -315,8 +321,9 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     memset(button, 0, sizeof(*button));
     ability = FindAbilityForCommand(code);
     if (strlen(code) == 4) {
-        ability_code = G_AbilityCodeName(code);
-        base_code = GetClassName(ability_code);
+        /* State, cost and learned rank belong to the concrete map ability. */
+        ability_code = FS_SLKKey(code);
+        base_code = GetClassName(G_AbilityCode(ability_code));
         upgrade_research = research && G_UpgradeData(ability_code)->id == ability_code;
     } else {
         base_code = code;
@@ -470,6 +477,7 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     }
     if (ability_code) {
         button->manacost = S_SpellNumber(ability_code, ABILITY_NUMBER_COST, text_level);
+        if (toggle_on && ability && (ability->flags & AB_TOGGLE_CAST_ON)) button->manacost = 0;
     }
     if (!button->art[0]) {
         fprintf(stderr,

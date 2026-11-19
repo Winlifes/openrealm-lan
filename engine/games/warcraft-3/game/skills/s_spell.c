@@ -1487,11 +1487,9 @@ bool S_CastNoTargetSpell(edict_t *caster, uint32_t code) {
                     (unsigned)(spell && S_AbilityHasCommand(spell)));
         return false;
     }
-    /* A running Mana Flare is a cancellable stance, not a new cast. It must
-     * remain possible to turn it off while the original cooldown is active
-     * or current mana is insufficient. Do not publish a spell event, break
-     * channels or run spell_commit for the deactivation. */
-    if (spell->proc == CAbilityManaFlare && S_ManaFlareActive(caster)) {
+    /* The owning procedure decides whether this casting toggle currently
+     * offers a free off action. Deactivation cannot commit a second spell. */
+    if ((spell->flags & AB_TOGGLE_CAST_ON) && spell_message(caster, A_TOGGLE_ON, &item, NULL)) {
         if (!S_SpellIsAliveTarget(caster)) return false;
         return spell_message(caster, A_EXECUTE, &item, &target) != 0;
     }
@@ -2133,7 +2131,7 @@ void spell_cmd(edict_t *clent) {
     if ((spell->flags & AB_TOGGLE) && code != MAKEFOURCC('A','f','a','k') &&
         spell->proc != CAbilityFlamingArrows &&
         spell->proc != CAbilityColdArrows && spell->proc != CAbilityBlackArrow &&
-        (spell->proc != CAbilityManaFlare || S_AbilityMessage(caster, A_TOGGLE_ON, &toggle_call))) {
+        (!(spell->flags & AB_TOGGLE_CAST_ON) || S_AbilityMessage(caster, A_TOGGLE_ON, &toggle_call))) {
         spellTarget_t target = { .type = SPELL_TARGET_NONE };
         spell_message(caster, A_EXECUTE, &item, &target);
         Get_Commands_f(clent);

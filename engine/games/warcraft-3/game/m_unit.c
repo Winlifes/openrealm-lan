@@ -690,6 +690,7 @@ static unitOrderDef_t const unit_order_defs[] = {
     { "avatar", 852086, MAKEFOURCC('A','H','a','v') },
     { "blizzard", 852089, MAKEFOURCC('A','H','b','z') },
     { "divineshield", 852090, MAKEFOURCC('A','H','d','s') },
+    { "undivineshield", 852091, MAKEFOURCC('A','H','d','s') },
     { "holybolt", 852092, MAKEFOURCC('A','H','h','b') },
     { "massteleport", 852093, MAKEFOURCC('A','H','m','t') },
     { "resurrection", 852094, MAKEFOURCC('A','H','r','e') },
@@ -1583,17 +1584,19 @@ bool unit_issueimmediateorder(edict_t *self, cstring_t order) {
     }
     ability_t const *ability = FindAbilityByOrder(order);
     if (ability) {
-        /* Mana Flare remains the only permitted command while its status is
-         * active. Pass the concrete ability code so S_AbilityMessage's
-         * active-status gate does not mistake its on/off orders for another
-         * ability (an order-only item previously had code == 0). */
-        uint32_t code = (ability->proc == CAbilityManaFlare ||
+        /* Resolve concrete spell data before dispatching registered orders. */
+        uint32_t code = ((ability->flags & AB_TOGGLE_CAST_ON) ||
                          ability->proc == CAbilityReplenishLife ||
                          ability->proc == CAbilityReplenishMana) ?
             unit_spell_code_for_order(self, order) : 0;
         abilityitem_t item = MAKE(abilityitem_t, .code = code, .ability = ability);
         abilityCall_t call = MAKE(abilityCall_t, .item = &item, .order = order);
-        bool const accepted = S_AbilityMessage(self, A_ORDER, &call);
+        /* A shared off order belongs to its live concrete owner, which can
+         * follow an inactive base skill or use another registered class.
+         * Keep on requests on the existing deterministic selected ability. */
+        bool const visit_owners = (ability->flags & AB_TOGGLE_CAST_ON) &&
+            (!code || (ability->orders && ability->orders[1] && !strcmp(order, ability->orders[1])));
+        bool const accepted = visit_owners ? S_UnitAbilityMessage(self, A_ORDER, &call) : S_AbilityMessage(self, A_ORDER, &call);
         if (accepted) {
             G_CreepGuardExplicitOrder(self);
             S_UnitAbilityOrderAccepted(self, order);
@@ -1601,6 +1604,9 @@ bool unit_issueimmediateorder(edict_t *self, cstring_t order) {
             G_PublishIssuedImmediateOrder(self, G_OrderId(order), self->s.player, order);
             return true;
         }
+        /* Casting toggles own their explicit state requests. A rejected on
+         * order must not fall through to the HUD's toggle-off operation. */
+        if (ability->flags & AB_TOGGLE_CAST_ON) return false;
     }
     {
         uint32_t const spell_code = unit_spell_code_for_order(self, order);
