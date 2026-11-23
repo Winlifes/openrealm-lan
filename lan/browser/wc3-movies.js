@@ -26,6 +26,13 @@
   video.addEventListener('click', () => finish('skipped'));
   window.loadMovieCatalog = async function () {
     const response = await fetch('movies/index.json?v=' + encodeURIComponent(window.__BUILD));
+    // The LAN build may intentionally omit the large optional movie assets.
+    // Keep startup independent from that package so the playable maps can use
+    // the smaller selected data mirror.
+    if (response.status === 404) {
+      Module.WC3_MOVIES = new Map();
+      return;
+    }
     if (!response.ok) throw Error('过场视频目录不可用');
     const catalog = await response.json();
     if (catalog.version !== 1 || !catalog.movies || Array.isArray(catalog.movies))
@@ -41,7 +48,6 @@
         throw Error('字幕路径无效: ' + name);
       movies.set(name, entry);
     }
-    if (!movies.size) throw Error('过场视频目录为空');
     Module.WC3_MOVIES = movies;
   };
   window.__moviePlay = function (path) {
