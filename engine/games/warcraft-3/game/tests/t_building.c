@@ -1431,6 +1431,33 @@ TEST(wc3_building, building_upgrade_completion_morphs_in_place_and_preserves_hea
     building_restore_morph_data(rows);
 }
 
+TEST(wc3_building, authored_mobile_upgrade_completes_in_place) {
+    uint32_t const target = MAKEFOURCC('h','f','o','o');
+    UnitProfile_t profile = { .upgrade = "hfoo" };
+
+    reset_entities();
+    setup_test_world();
+    gameClient_t *client = &game.clients[0];
+    client->ps.stats[PLAYERSTATE_RESOURCE_GOLD] = 1000;
+    client->ps.stats[PLAYERSTATE_RESOURCE_LUMBER] = 1000;
+    client->ps.stats[PLAYERSTATE_RESOURCE_FOOD_CAP] = 20;
+    edict_t *unit = alloc_test_unit(MAKEFOURCC('h','p','e','a'), 64, 64);
+    unit->data.UnitProfile = &profile;
+
+    T_ASSERT(!G_UnitIsStructure(unit));
+    T_ASSERT(!G_UnitIsBuilding(target));
+    T_ASSERT(G_ProducerCanUpgrade(unit, target));
+    bool const started = G_StartBuildingUpgrade(unit, target);
+    T_ASSERT(started);
+    if (!started) return;
+    T_ASSERT(G_BuildingUpgradeActive(unit));
+    G_GetResearch(unit)->progress = G_GetResearch(unit)->duration;
+    G_RunBuildingUpgradeFrame(unit);
+    T_EQ(unit->class_id, target);
+    T_ASSERT(!G_BuildingUpgradeActive(unit));
+    T_EQ(G_GetPlayerTechInProgress(client, target), 0);
+}
+
 /* When an upgrade grows the authored pathing footprint, multiple adjacent
  * units must get distinct legal exits after the in-place morph. */
 TEST(wc3_building, building_upgrade_growth_displaces_multiple_occupants) {

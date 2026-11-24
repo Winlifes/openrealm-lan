@@ -980,16 +980,17 @@ bool G_ProducerCanResearch(edict_t *producer, uint32_t upgrade_id) {
 bool G_ProducerCanUpgrade(edict_t *producer, uint32_t unit_id) {
     return producer && producer->data.UnitProfile &&
         (!S_AncientHasRootAbility(producer) || S_AncientIsRooted(producer)) &&
-        G_UnitIsBuilding(unit_id) &&
+        G_UnitBalance(unit_id)->id == unit_id &&
         G_ProducerContains(producer->data.UnitProfile->upgrade, unit_id);
 }
 
 bool G_BuildingUpgradeActive(edict_t const *building) {
     research_t *study = G_GetResearch(building);
-    return building && building->inuse && study && !G_UnitHasFlag(building, UNIT_FLAG_TRAINING) &&
-        study->upgrade != 0 &&
-        G_UnitIsStructure(building) &&
-        G_UnitIsBuilding(study->upgrade);
+    /* Custom maps also author Upgrade entries on mobile units. Use the
+     * producer's allowed targets to identify its in-place upgrade. */
+    return building && building->inuse && building->data.UnitProfile && study &&
+        !G_UnitHasFlag(building, UNIT_FLAG_TRAINING) &&
+        G_ProducerContains(building->data.UnitProfile->upgrade, study->upgrade);
 }
 
 bool G_BuildingIsUnsummoning(edict_t const *building) {
@@ -1612,7 +1613,7 @@ static bool G_CompleteBuildingUpgrade(edict_t *building) {
      * (Town Hall tiers and Tree of Ages). Clear any mobile units the new
      * footprint now overlaps, using the same sequential exit placement as
      * construction start so nearby units cannot choose the same exit. */
-    G_TeleportBuildingOccupants(building, NULL);
+    if (G_UnitIsStructure(building)) G_TeleportBuildingOccupants(building, NULL);
     building->aiflags &= ~AI_HOLD_FRAME;
     if (building->stand) building->stand(building);
     G_PublishEvent(building, EVENT_PLAYER_UNIT_UPGRADE_FINISH);
