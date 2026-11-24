@@ -53,6 +53,8 @@ If the server hosts a trimmed data mirror, pass `--asset-index /path/to/served-a
 
 For high-latency links, `--preload-index /path/to/preload.index.json` takes a JSON `lobby` array of shared asset paths and a `maps` object keyed by playable map path. Each value lists the successful game-data requests observed when starting that map. The browser fetches the selected assets in parallel before joining the lobby and keeps their bytes available until the first game frame. During gameplay or loading, a loose file that still needs to be fetched suspends the engine stack and lets the page continue to paint. The loading bar starts when the server accepts the start command and advances through the engine's registration stages.
 
+Caddy can serve optional `.gz` sidecars for measured preload files. Keep their uncompressed originals in the served mirror.
+
 For a browser-only update that has been tested against the running native version, stage the release with `--server-build CURRENT_NATIVE_BUILD`. The browser then uses that build ID during the WebSocket handshake while the launcher points to the new browser release directory.
 
 Use `performance.getEntriesByType('mark')` in the browser to inspect the `wc3-resources-start` through `wc3-resources-mounted` interval and the later `wc3-match-loading` through `wc3-match-ready` interval. In the corresponding `development/room-logs/<room-id>.log`, `SV_LobbyStartMatch:` and `Server initialized.` mark the server's world load. The browser's match interval also includes game sign-on and scene registration.

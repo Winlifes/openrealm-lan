@@ -16,7 +16,9 @@ https://localhost:8444 {
     handle_path /play/gamedata/* {
         header Cache-Control "public, max-age=300"
         root * {$WC3_LAN_ROOT}/data-current
-        file_server
+        file_server {
+            precompressed gzip
+        }
     }
     handle /play/releases/* {
         header Cache-Control "public, max-age=31536000, immutable"
