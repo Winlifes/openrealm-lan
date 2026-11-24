@@ -2,7 +2,7 @@
 
 This archive preserves the Warcraft III browser and LAN work from an OpenRealm deployment. It includes the engine source, WebAssembly build scripts, room UI, native room launcher, WebSocket to UDP bridge, and tools for preparing your own game data.
 
-- `main` preserves the R93 LAN source checkpoint.
+- `main` includes the public and LAN room service and browser fixes built on the archived R93 checkpoint.
 - `candidate/r94` preserves the later Divine Shield cancellation candidate. In the two-client Edge check, a map-created ability lacked its inherited icon and the command did not appear.
 - [Archived build records](ARCHIVED-BUILDS.json) identify the original revisions and validation runs. The project supports experimental LAN matches. Some gameplay and stability checks are still open.
 

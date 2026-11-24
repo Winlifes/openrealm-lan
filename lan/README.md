@@ -1,6 +1,10 @@
 # Run a LAN room server
 
-The native process runs the match. Each browser connects over WebSocket to the room service, which relays UDP datagrams to that process. Use one release name for the native executable and browser build. The service binds its HTTP API to loopback. Put Caddy in front of it to serve a single HTTPS origin for the room page, game assets and WebSockets.
+The native process runs the match. Each browser connects over WebSocket to the room service, which relays UDP datagrams to that process. Publish matching native and browser builds. The service binds its HTTP API to loopback. Put Caddy in front of it to serve a single HTTPS origin for the room page, game assets and WebSockets.
+
+The room service starts the dedicated engine with `+lobby_start <map>`. The room loads its lobby metadata at that point. The host's Start command loads the world and runs its game scripts. The browser reports `Ping` next to FPS and Drawcalls using recent acknowledgements from the game connection.
+
+The room service uses 8 KiB sign-on datagrams on its loopback UDP hop. Larger batches reduce the number of WebSocket round trips needed to initialize the map.
 
 ## Prepare the runtime directory
 
@@ -45,6 +49,16 @@ python3 lan/stage-browser-release.py "$WC3_RELEASE" \
 python3 lan/stage-lan-site.py "$WC3_RELEASE"
 ```
 
+If the server hosts a trimmed data mirror, pass `--asset-index /path/to/served-assets.txt` when staging the browser release. Generate the list from the actual server directory with lowercase paths relative to `data-current`, one per line. This keeps the browser from requesting files omitted from the mirror. The browser loads the bootstrap and the room's selected archive in parallel with the client engine, then loads other assets on demand.
+
+For high-latency links, `--preload-index /path/to/preload.index.json` takes a JSON `lobby` array of shared asset paths and a `maps` object keyed by playable map path. Each value lists the successful game-data requests observed when starting that map. The browser fetches shared assets before joining the lobby and downloads the selected map's assets in the background. It keeps their bytes available until the first game frame. During gameplay or loading, a loose file that still needs to be fetched suspends the engine stack and lets the page continue to paint. The loading bar starts when the server accepts the start command and advances through downloads and registration.
+
+Caddy can serve optional `.gz` sidecars for measured preload files. Keep their uncompressed originals in the served mirror.
+
+For a browser-only update that has been tested against the running native version, stage the release with `--server-build CURRENT_NATIVE_BUILD`. The browser then uses that build ID during the WebSocket handshake while the launcher points to the new browser release directory.
+
+Use `performance.getEntriesByType('mark')` in the browser to inspect the `wc3-resources-start` through `wc3-resources-mounted` interval and the later `wc3-match-loading` through `wc3-match-ready` interval. In the corresponding `development/room-logs/<room-id>.log`, `SV_LobbyStartMatch:` and `Server initialized.` mark the server's world load. The browser's match interval also includes game sign-on and scene registration.
+
 For Linux builds, pass the absolute libmenu shared library path with `--library` to `build-room-catalog.py` and set `WC3_MPQ_LIBRARY` to the same path for `build-browser-bootstrap.py`.
 
 In separate terminals with the runtime environment above:
@@ -59,5 +73,9 @@ caddy run --config lan/Caddyfile.example --adapter caddyfile
 ```
 
 The example listens on loopback and uses Caddy's internal TLS issuer. Open `https://localhost:8444/rooms.html` with a browser that supports cross-origin isolation and WebAssembly MEMORY64. For use on the LAN, set the Caddy site address, bind address, TLS certificate, and `WC3_ORIGIN` to the LAN origin. Make the certificate trusted on the clients and limit site access to your LAN.
+
+To use both a LAN origin and a public HTTPS site under `/wc3/`, set `WC3_PUBLIC_ORIGIN` to the public origin (scheme and host only) and `WC3_PUBLIC_PREFIX=/wc3` in the room service. The public proxy strips `/wc3` before forwarding and preserves the public `Host` header. Serve the launcher, release assets and `/api` on that same public origin. Forward WebSocket upgrades and keep the cross-origin isolation headers on the game page. Both entrances then share the room catalog and game processes.
+
+The public edge can redirect the versioned `bootstrap.mpq`, `openwarcraft3.wasm`, and `openwarcraft3.data` downloads to object storage. Verify the stored bytes against `release-manifest.json`, allow CORS for the public site, and serve the Wasm object as `application/wasm`. Keep the launcher and engine script available from the game origin for cross-origin isolation.
 
 The bridge validates that room clients use the server's build name. Its R90 backpressure policy drops UDP datagrams for a congested connection while allowing the engine's own acknowledgements and retransmission to recover. Room transport checking uses `npm --prefix lan/server test`.

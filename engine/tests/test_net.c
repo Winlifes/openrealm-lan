@@ -97,6 +97,7 @@ void test_client_stubs_clear_cvars(void);
 extern uint32_t test_fow_upload_calls;
 extern uint32_t test_cursor_draw_calls;
 extern uint32_t test_client_realtime, test_cursor_time;
+extern int test_client_ping;
 extern color32_t test_cursor_tint;
 extern char test_forwarded_command[128];
 extern char test_menu_action[32];
@@ -3541,6 +3542,35 @@ TEST(net, camera_prediction_preserves_terrain_offsets) {
     T_FEQ(cl.viewDef.camerastate[0].origin.z, 25, 0.001f);
 }
 
+TEST(net, delayed_snapshot_keeps_pending_camera_focus) {
+    uint8_t buf[256];
+    sizeBuf_t msg = make_msg_buf(buf, sizeof(buf));
+    player_t from = {0}, to = { .number = 1, .client_ui_state = CLIENT_UI_GAME, .vieworigin = {100, 0, 0} };
+    test_client_stubs_init();
+    SZ_Init(&cls.netchan.message, cls.netchan.message_buf, sizeof(cls.netchan.message_buf));
+    test_client_realtime = 1000;
+    test_client_ping = 480;
+    cl.time = 8200;
+    CL_SetCameraPosition((vec2_t){200, 0});
+
+    /* CL_ParseFrame can rebase presentation time to a snapshot dispatched before the input. */
+    cl.time = 8100;
+    test_client_realtime = 1480;
+    MSG_WriteByte(&msg, svc_playerinfo); MSG_WriteDeltaPlayerState(&msg, &from, &to);
+    CL_ParseServerMessage(&msg);
+    T_ASSERT(cl.camera_prediction.active);
+    T_FEQ(cl.playerstate.vieworigin.x, 100, 0.001f);
+    FOR_LOOP(i, 2) T_FEQ(cl.viewDef.camerastate[i].origin.x, 200, 0.001f);
+
+    test_client_realtime = 1700;
+    msg = make_msg_buf(buf, sizeof(buf));
+    MSG_WriteByte(&msg, svc_playerinfo); MSG_WriteDeltaPlayerState(&msg, &to, &to);
+    CL_ParseServerMessage(&msg);
+    T_ASSERT(!cl.camera_prediction.active);
+    T_FEQ(cl.viewDef.camerastate[0].origin.x, 100, 0.001f);
+    test_client_stubs_init();
+}
+
 TEST(net, camera_prediction_reconciles_to_server_clamped_bound) {
     uint8_t buf[256];
     sizeBuf_t sb = make_msg_buf(buf, sizeof(buf));
@@ -5065,9 +5095,9 @@ TEST(net, orbit_prediction_expires_and_yields_to_scripted_camera) {
     player_t from = {0}, to = { .number = 1, .client_ui_state = CLIENT_UI_GAME, .viewangles = {18, 0, 0},
         .vieworigin = {10, 20, 40}, .distance = 8, .fov = 45, .znear = 0.1f, .zfar = 1000 };
     test_client_stubs_init();
-    cl.time = 100;
+    test_client_realtime = 100;
     cl.camera_prediction.view = true;
-    cl.camera_prediction.view_ms = cl.time;
+    cl.camera_prediction.view_ms = CL_RealTime();
     cl.camera_prediction.angles = (vec3_t){25, 0, 90};
     cl.camera_prediction.distance = 12;
     MSG_WriteByte(&msg, svc_playerinfo); MSG_WriteDeltaPlayerState(&msg, &from, &to);
@@ -5076,14 +5106,14 @@ TEST(net, orbit_prediction_expires_and_yields_to_scripted_camera) {
     T_FEQ(cl.viewDef.camerastate[0].viewangles.z, 90, 0.001f);
     T_FEQ(cl.viewDef.camerastate[0].distance, 12, 0.001f);
     T_FEQ(cl.viewDef.camerastate[0].origin.z, 40, 0.001f);
-    cl.time += BZ_INPUT_MAX_MSEC + 1;
+    test_client_realtime += 251;
     from = to;
     SZ_Clear(&msg); msg.readcount = 0;
     MSG_WriteByte(&msg, svc_playerinfo); MSG_WriteDeltaPlayerState(&msg, &from, &to);
     CL_ParseServerMessage(&msg);
     T_ASSERT(!cl.camera_prediction.view);
     T_FEQ(cl.viewDef.camerastate[0].distance, 8, 0.001f);
-    cl.camera_prediction.view = true; cl.camera_prediction.view_ms = cl.time;
+    cl.camera_prediction.view = true; cl.camera_prediction.view_ms = CL_RealTime();
     to.client_ui_state = CLIENT_UI_CINEMATIC; to.distance = 20;
     SZ_Clear(&msg); msg.readcount = 0;
     MSG_WriteByte(&msg, svc_playerinfo); MSG_WriteDeltaPlayerState(&msg, &from, &to);

@@ -99,7 +99,10 @@ ifeq ($(EMSCRIPTEN),1)
     NET_LIBS  :=
     EM_FS     ?= node
 ifeq ($(EM_FS),browser)
-    EM_FS_FLAGS := -sEXIT_RUNTIME=0 -lwebsocket.js -lidbfs.js "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','FS','ENV','addRunDependency','removeRunDependency']"
+    CFLAGS    += -DBZ_WEB_ASYNC_ASSETS
+    EM_FS_FLAGS := -sEXIT_RUNTIME=0 -lwebsocket.js -lidbfs.js \
+                   -sASYNCIFY=1 -sASYNCIFY_IMPORTS=WC3_FetchRemoteFile -sASYNCIFY_STACK_SIZE=1048576 \
+                   "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','FS','ENV','addRunDependency','removeRunDependency']"
 else ifeq ($(EM_FS),node-async)
     EM_FS_FLAGS := -sASYNCIFY=1 -sASYNCIFY_IGNORE_INDIRECT=1 -sASYNCIFY_STACK_SIZE=4194304 -sNODERAWFS=1
 else

@@ -1219,6 +1219,18 @@ bool FS_FileExists(cstring_t fileName) {
 }
 
 #ifdef __EMSCRIPTEN__
+#ifdef BZ_WEB_ASYNC_ASSETS
+/* The LAN launcher supplies loose bytes. Cache hits and absent paths return
+ * immediately. Only outstanding downloads suspend the engine stack. */
+EM_JS(int, WC3_FetchRemoteFile, (const char *diskPathC, const char *relNameC), {
+    if (!Module.WC3_FetchAsset) return 0;
+    return Asyncify.handleSleep(function(wakeUp) {
+        var result = Module.WC3_FetchAsset(UTF8ToString(Number(diskPathC)), UTF8ToString(Number(relNameC)));
+        if (typeof result === 'number') wakeUp(result);
+        else result.then(wakeUp, function() { wakeUp(0); });
+    });
+});
+#else
 /* Fetch-on-demand: map archives (Maps\\*.w3m/.w3x) live on the web host as a
  * served mirror instead of the preloaded MEMFS (the full catalog is ~90 MB and
  * grows with custom-map packs).  When a map path is missing locally, pull it
@@ -1306,6 +1318,7 @@ EM_JS(int, WC3_FetchRemoteFile, (const char *diskPathC, const char *relNameC), {
     }
     return n;
 });
+#endif
 
 /* Ensure a map file is present with real content: probes each game dir; when
  * the file is absent or a zero-byte placeholder (seeded catalog), fetch the

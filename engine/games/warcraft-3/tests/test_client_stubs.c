@@ -24,7 +24,9 @@ mouseEvent_t mouse;
 uint32_t test_fow_upload_calls;
 uint32_t test_cursor_draw_calls;
 uint32_t test_client_realtime, test_cursor_time;
+int test_client_ping = -1;
 uint32_t CL_RealTime(void) { return test_client_realtime; }
+int CL_NetworkPing(void) { return test_client_ping; }
 void CL_RequestSignon(cstring_t command) {
     if (!command) return;
     MSG_WriteByte(&cls.netchan.message, clc_stringcmd);
@@ -230,6 +232,7 @@ void test_client_stubs_init(void) {
     test_cursor_draw_calls = 0;
     test_mouse_captured = false;
     test_client_realtime = test_cursor_time = 0;
+    test_client_ping = -1;
     test_cursor_tint = COLOR32_WHITE;
     test_forwarded_command[0] = '\0';
     test_menu_action[0] = '\0';

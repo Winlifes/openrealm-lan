@@ -43,6 +43,7 @@ struct client_state cl;
 #define CL_TIMEOUT_CHECK_FRAMES 6 // consecutive expired frames; platform receive callbacks may follow the first resumed frame
 #define CL_LOADING_PUMP_MSEC 16 // milliseconds; one 60 Hz platform pump; bounds checkpoint overhead during loading
 #define CL_SIGNON_RETRY_MSEC 1000 // milliseconds; repeat the current paged request until its continuation arrives
+#define CL_PING_MAX_AGE_MSEC 5000
 
 typedef struct { cstring_t name; xcommand_t call; } clMenuCommand_t;
 static clMenuCommand_t cl_menu_commands[128];
@@ -63,6 +64,36 @@ static uint32_t cl_timeout_checks;
 static uint32_t cl_connect_started, cl_connect_retry;
 
 uint32_t CL_RealTime(void) { return cl_realtime; }
+
+static void CL_RecordPacketSend(uint32_t sequence, uint32_t now) {
+    size_t slot = sequence % (sizeof(cls.net_ping.sent) / sizeof(*cls.net_ping.sent));
+    cls.net_ping.sent[slot].sequence = sequence;
+    cls.net_ping.sent[slot].sent_at = now;
+}
+
+static void CL_RecordPacketAck(uint32_t sequence, uint32_t now) {
+    size_t slot = sequence % (sizeof(cls.net_ping.sent) / sizeof(*cls.net_ping.sent));
+    if (!sequence || cls.net_ping.sent[slot].sequence != sequence) return;
+    unsigned elapsed = now - cls.net_ping.sent[slot].sent_at;
+    cls.net_ping.sent[slot].sequence = 0;
+    if (elapsed > CL_PING_MAX_AGE_MSEC) return;
+    if (cls.net_ping.valid && now - cls.net_ping.updated_at <= CL_PING_MAX_AGE_MSEC)
+        elapsed = (3 * cls.net_ping.msec + elapsed + 2) / 4;
+    cls.net_ping.msec = elapsed;
+    cls.net_ping.updated_at = now;
+    cls.net_ping.valid = true;
+}
+
+int CL_NetworkPing(void) {
+    if (!cls.net_ping.valid || SDL_GetTicks() - cls.net_ping.updated_at > CL_PING_MAX_AGE_MSEC)
+        return -1;
+    return (int)cls.net_ping.msec;
+}
+
+static void CL_ResetNetchan(void) {
+    Netchan_Reset(&cls.netchan);
+    memset(&cls.net_ping, 0, sizeof(cls.net_ping));
+}
 
 typedef enum {
     CL_MENU_ACTION_NONE,
@@ -159,7 +190,7 @@ void CL_ClearState(void) {
     /* A cleared session starts a new netchan session too. On client_connect the server has just restarted the slot's
      * netchan (SV_Map rebuilds lobby slots, SV_DirectConnect a same-port reconnect); keeping the old sequence numbers
      * made each side drop the other's packets as stale and deadlocked the UDP lobby-to-game start. */
-    Netchan_Reset(&cls.netchan);
+    CL_ResetNetchan();
     cl_timeout_checks = 0;
     memset(&cl_signon, 0, sizeof(cl_signon));
 }
@@ -596,6 +627,8 @@ void CL_SetLoadingProgress(float progress) {
 }
 
 void CL_BeginLoadingMap(cstring_t mapName) {
+    cl.loading_progress = 0.0f;
+    Sys_UpdateLoadingPresentation(true, cl.loading_progress, false);
     /* Release glue-owned caches before the renderer registers a different world. */
     CL_SuspendMenu();
     /* Per-map input conveniences must never retain entity numbers into the
@@ -611,12 +644,10 @@ void CL_BeginLoadingMap(cstring_t mapName) {
      * so PrepRefresh sends it again and CL_ParseFrame can end the plaque. */
     CL_RestartRefresh();
     CL_MapLoadDebugBegin();
-    cl.loading_progress = 0.0f;
     cl.precache_ready = false;
     cl.playerstate.client_ui_state = CLIENT_UI_LOADING;
     cls.state = ca_connected;
     CL_SetGameplayInput();
-    Sys_UpdateLoadingPresentation(true, cl.loading_progress, false);
     SCR_BeginLoadingPlaque();
     /* New map baselines repopulate the compact active-entity list; drop any
      * stale entries from the previous map before they arrive. */
@@ -1523,11 +1554,36 @@ static void CL_ReadPacketMessage(netadr_t const *from, sizeBuf_t *msg, int lengt
     if (Netchan_IsSequenced(&cls.netchan)) {
         /* Q2 netchan: only the connected server's sequenced packets count, and stale or duplicated ones are dropped. */
         if (!NET_CompareAdr(from, &cls.netchan.remote_address) || !Netchan_Process(&cls.netchan, msg)) return;
+        CL_RecordPacketAck(cls.netchan.incoming_acknowledged, SDL_GetTicks());
     }
     CL_ParseServerMessage(msg);
 }
 
 #ifdef BZ_TESTS
+TEST(client_session, latency_uses_fresh_acknowledged_packets) {
+    struct client_static old_cls = cls;
+    CL_ResetNetchan();
+    uint32_t now = SDL_GetTicks();
+    CL_RecordPacketSend(10, now - 80);
+    CL_RecordPacketSend(11, now - 20);
+    CL_RecordPacketAck(9, now);
+    T_EQ(CL_NetworkPing(), -1);
+    CL_RecordPacketAck(10, now);
+    T_EQ(CL_NetworkPing(), 80);
+    CL_RecordPacketAck(10, now + 400);
+    T_EQ(CL_NetworkPing(), 80);
+    CL_RecordPacketAck(11, now);
+    T_EQ(CL_NetworkPing(), 65);
+    cls.net_ping.updated_at = now - CL_PING_MAX_AGE_MSEC - 1;
+    T_EQ(CL_NetworkPing(), -1);
+    CL_RecordPacketSend(42, now - 20);
+    CL_RecordPacketAck(42, now);
+    T_EQ(CL_NetworkPing(), 20);
+    CL_ResetNetchan();
+    T_EQ(CL_NetworkPing(), -1);
+    cls = old_cls;
+}
+
 TEST(client_session, lan_discovery_survives_leaving_online_but_foreign_host_packets_are_rejected) {
     struct client_static old_cls = cls;
     uint32_t old_count = cl_num_lan_servers, old_time = cl_last_packet_time;
@@ -1595,7 +1651,11 @@ void CL_SendCmd(void) {
     if (cls.state == ca_disconnected || cls.state == ca_connecting) {
         return;
     }
-    Netchan_Transmit(NS_CLIENT, &cls.netchan);
+    uint32_t previous = cls.netchan.outgoing_sequence;
+    if (Netchan_Transmit(NS_CLIENT, &cls.netchan) && Netchan_IsSequenced(&cls.netchan)) {
+        uint32_t now = SDL_GetTicks();
+        while (previous != cls.netchan.outgoing_sequence) CL_RecordPacketSend(++previous, now);
+    }
 }
 
 static void CL_CheckTimeout(void) {
@@ -1680,7 +1740,7 @@ void CL_Connect(cstring_t host, unsigned short port) {
     }
     cls.netchan.remote_address = adr;
     SZ_Init(&cls.netchan.message, cls.netchan.message_buf, MAX_MSGLEN);
-    Netchan_Reset(&cls.netchan);
+    CL_ResetNetchan();
     CL_ResetFrameHistory();
     Cbuf_CopyToDefer();
     cls.state = ca_connecting;

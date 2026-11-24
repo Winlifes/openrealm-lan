@@ -17,12 +17,16 @@ if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', args.release):
 
 root = args.root.resolve()
 release = root/'browser-releases'/args.release
-native = root/'engine-releases'/args.release/'bin/openwarcraft3'
+version = json.loads((release/'version.json').read_text())
+server_build = version['build']
+if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', server_build):
+    raise SystemExit('Invalid server build in browser release')
+native = root/'engine-releases'/server_build/'bin/openwarcraft3'
 web = root/'www'
 linked_releases = web/'play/releases'
-if (json.loads((release/'version.json').read_text())['build'] != args.release or
+if (version.get('release', server_build) != args.release or
         not native.is_file() or linked_releases.resolve() != release.parent.resolve()):
-    raise SystemExit('Stage the native and browser runtimes under the same release name first')
+    raise SystemExit('Stage the browser release and its matching native build first')
 
 game = web/'play/game'
 game.mkdir(parents=True, exist_ok=True)
@@ -31,10 +35,10 @@ for path in (Path(__file__).resolve().parent/'site').iterdir():
         shutil.copy2(path, web/path.name)
 (web/'index.html').write_text(
     '<!doctype html><meta charset="utf-8"><title>OpenRealm LAN</title>'
-    '<meta http-equiv="refresh" content="0;url=/rooms.html">'
-    '<a href="/rooms.html">Open multiplayer rooms</a>\n', encoding='utf-8')
+    '<meta http-equiv="refresh" content="0;url=rooms.html">'
+    '<a href="rooms.html">Open multiplayer rooms</a>\n', encoding='utf-8')
 (game/'index.html').write_text(
     '<!doctype html><meta charset="utf-8"><title>OpenRealm LAN</title>'
-    f'<script>location.replace("/play/releases/{args.release}/"+location.search+location.hash)</script>'
+    f'<script>location.replace("../releases/{args.release}/"+location.search+location.hash)</script>'
     '<p>Loading multiplayer client…</p>\n', encoding='utf-8')
 print(web/'rooms.html')

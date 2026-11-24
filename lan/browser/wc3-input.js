@@ -55,6 +55,70 @@
   /* ---------- touch ---------- */
   var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   var touchOn = params.get('touch') === '1' || (coarse && params.get('touch') !== '0');
+
+  const container = document.getElementById('game-container');
+  const fullscreenButton = document.getElementById('fullscreen-button');
+  const lockButton = document.getElementById('pointer-lock-button');
+  const displayStatus = document.getElementById('display-status');
+  let statusTimeout;
+  function showDisplayStatus(message, temporary = false) {
+    clearTimeout(statusTimeout);
+    displayStatus.textContent = message;
+    if (temporary) statusTimeout = setTimeout(() => { displayStatus.textContent = ''; }, 3500);
+  }
+
+  function isFullscreen() {
+    return (document.fullscreenElement || document.webkitFullscreenElement) === container;
+  }
+  function syncFullscreen() {
+    const active = isFullscreen();
+    container.classList.toggle('is-fullscreen', active);
+    fullscreenButton.textContent = active ? '退出全屏' : '全屏';
+    fullscreenButton.setAttribute('aria-pressed', String(active));
+  }
+  fullscreenButton.addEventListener('click', async () => {
+    try {
+      const target = isFullscreen() ? document : container;
+      const toggle = isFullscreen() ? document.exitFullscreen || document.webkitExitFullscreen :
+        container.requestFullscreen || container.webkitRequestFullscreen;
+      if (!toggle) throw new Error('Fullscreen unavailable');
+      await toggle.call(target);
+      canvas.focus();
+    } catch (_) {
+      showDisplayStatus('当前浏览器无法切换全屏', true);
+    }
+  });
+  document.addEventListener('fullscreenchange', syncFullscreen);
+  document.addEventListener('webkitfullscreenchange', syncFullscreen);
+
+  if (!touchOn && canvas.requestPointerLock) {
+    lockButton.hidden = false;
+    lockButton.addEventListener('click', async () => {
+      try {
+        canvas.focus();
+        const rect = canvas.getBoundingClientRect();
+        dispatchMouse('mousemove', rect.left + rect.width / 2, rect.top + rect.height / 2, 0);
+        // SDL applies relative motion to its absolute cursor and clamps to the canvas.
+        await canvas.requestPointerLock();
+      } catch (_) {
+        showDisplayStatus('当前浏览器无法锁定鼠标', true);
+      }
+    });
+    document.addEventListener('pointerlockerror', () => showDisplayStatus('当前浏览器无法锁定鼠标', true));
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || document.pointerLockElement !== canvas) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      document.exitPointerLock();
+    }, true);
+    document.addEventListener('pointerlockchange', () => {
+      const locked = document.pointerLockElement === canvas;
+      container.classList.toggle('is-pointer-locked', locked);
+      lockButton.setAttribute('aria-pressed', String(locked));
+      showDisplayStatus(locked ? 'Esc 释放鼠标' : '');
+    });
+  }
+
   var LONG_MS = 450, MOVE_THRESHOLD = 12, TAP_MS = 260;
 
   if (touchOn) {
