@@ -2838,6 +2838,21 @@ TEST(wc3_api, localized_string_resolves_fdf_and_preserves_unknown_text) {
         "endfunction\n"));
 }
 
+TEST(wc3_api, player_name_resolves_map_string_before_script_and_hud_reads) {
+    mapTrigStr_t row = { .id = 4227, .text = "西方军团" };
+    mapInfo_t info = { .strings = &row };
+    mapInfo_t const *saved = level.mapinfo;
+    level.mapinfo = &info;
+
+    T_ASSERT(run_test_jass(
+        "function main takes nothing returns nothing\n"
+        "  call SetPlayerName(Player(0), \"TRIGSTR_4227\")\n"
+        "  call BJassAssert(GetPlayerName(Player(0)) == \"西方军团\", \"resolved player name\")\n"
+        "endfunction\n"));
+    T_STREQ(game.clients[0].ps.name, "西方军团");
+    level.mapinfo = saved;
+}
+
 TEST(wc3_api, localized_string_wts_composition_reaches_texttag) {
     mapTrigStr_t row = { .id = 2779, .text = "测试商店" };
     mapInfo_t info = { .strings = &row };
@@ -11247,6 +11262,43 @@ TEST(wc3_api, dota_hero_attr_ability_level_and_order) {
         "  call BJassAssert(not IsUnitType(u, ConvertUnitType(10)), \"script type cleared\")\n"
         "  call SetPlayerAbilityAvailable(Player(0), 'AHhb', false)\n"
         "  call SetPlayerAbilityAvailable(Player(0), 'AHhb', true)\n"
+        "endfunction\n"));
+}
+
+TEST(wc3_api, unit_type_melee_and_ranged_follow_enabled_weapons) {
+    UnitWeapons_t one = { .attacksEnabled = 1 };
+    UnitWeapons_t two = { .attacksEnabled = 3 };
+    UnitWeapons_t none = { 0 };
+    edict_t *melee = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 64, 64);
+    edict_t *mixed = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 128, 64);
+    edict_t *unarmed = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 192, 64);
+    edict_t *units[] = { melee, mixed, unarmed };
+    UnitWeapons_t const *weapons[] = { &one, &two, &none };
+    FOR_LOOP(i, 3) {
+        units[i]->s.player = i;
+        units[i]->svflags |= SVF_MONSTER;
+        units[i]->data.UnitWeapons = weapons[i];
+        units[i]->unit_state->attack1 = (unitAttack_t){ .type = ATK_NORMAL, .weapon = WPN_NORMAL, .range = 90 };
+        units[i]->unit_state->attack2 = (unitAttack_t){ .type = ATK_PIERCE, .weapon = WPN_INSTANT, .range = 600 };
+    }
+
+    T_ASSERT(run_test_jass(
+        "function firstOwned takes player p returns unit\n"
+        "  local group units = CreateGroup()\n"
+        "  local unit first\n"
+        "  call GroupEnumUnitsOfPlayer(units, p, null)\n"
+        "  set first = FirstOfGroup(units)\n"
+        "  call DestroyGroup(units)\n"
+        "  return first\n"
+        "endfunction\n"
+        "function main takes nothing returns nothing\n"
+        "  local unittype melee = ConvertUnitType(7)\n"
+        "  local unittype ranged = ConvertUnitType(8)\n"
+        "  call BJassAssert(IsUnitType(firstOwned(Player(0)), melee), \"inactive ranged slot keeps melee\")\n"
+        "  call BJassAssert(not IsUnitType(firstOwned(Player(0)), ranged), \"inactive ranged slot\")\n"
+        "  call BJassAssert(IsUnitType(firstOwned(Player(1)), ranged), \"enabled ranged slot\")\n"
+        "  call BJassAssert(not IsUnitType(firstOwned(Player(1)), melee), \"mixed unit counts as ranged\")\n"
+        "  call BJassAssert(not IsUnitType(firstOwned(Player(2)), melee), \"unarmed unit\")\n"
         "endfunction\n"));
 }
 

@@ -1510,6 +1510,8 @@ typedef struct {
 #define UNIT_BALANCE_PERMANENT_INVISIBLE 0x2 // bit; cached Apiv classification for hot per-viewer FOW checks
 #define UNIT_BALANCE_GHOST_INVISIBLE 0x4 // bit; Agho persistent invisibility; detection reveals without breaking it
 #define WC3_UNIT_TYPE_STRUCTURE 2 // handle value; Warcraft structure type; used by IsUnitType
+#define WC3_UNIT_TYPE_MELEE_ATTACKER 7
+#define WC3_UNIT_TYPE_RANGED_ATTACKER 8
 #define WC3_UNIT_TYPE_GIANT 9
 #define WC3_UNIT_TYPE_ANCIENT 19
 #define WC3_UNIT_TYPE_GROUND 4 // handle value; authored ground movement class; used by IsUnitType

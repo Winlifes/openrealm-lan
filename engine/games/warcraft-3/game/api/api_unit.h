@@ -1057,6 +1057,20 @@ uint32_t IsUnitType(jass_t *j) {
         return jass_pushboolean(j, G_UnitIsStructure(whichUnit));
     if (*whichUnitType < 32 && (whichUnit->script_unit_types & (1u << *whichUnitType)))
         return jass_pushboolean(j, 1);
+    if (*whichUnitType == WC3_UNIT_TYPE_MELEE_ATTACKER || *whichUnitType == WC3_UNIT_TYPE_RANGED_ATTACKER) {
+        bool armed = false;
+        bool ranged = false;
+
+        if (whichUnit->unit_state) {
+            unitAttack_t const *attacks[] = { &whichUnit->unit_state->attack1, &whichUnit->unit_state->attack2 };
+            FOR_LOOP(i, 2) {
+                if (!S_UnitAttackSlotEnabled(whichUnit, i) || attacks[i]->type == ATK_NONE) continue;
+                armed = true;
+                if (!S_AttackProfileIsMelee(attacks[i])) ranged = true;
+            }
+        }
+        return jass_pushboolean(j, *whichUnitType == WC3_UNIT_TYPE_RANGED_ATTACKER ? ranged : armed && !ranged);
+    }
     if (*whichUnitType == WC3_UNIT_TYPE_GROUND)
         return jass_pushboolean(j, !(whichUnit->aiflags & AI_FLYING));
     if (*whichUnitType == 0) /* UNIT_TYPE_HERO */

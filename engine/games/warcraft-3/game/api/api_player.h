@@ -103,7 +103,8 @@ uint32_t SetPlayerName(jass_t *j) {
     player_t *player = jass_checkhandle(j, 1, "player");
     if (player) {
         gameClient_t *client = PLAYER_CLIENT(player);
-        strlcpy(client->jass.name, jass_checkstring(j, 2), sizeof(client->jass.name));
+        cstring_t name = G_LevelString(jass_checkstring(j, 2));
+        strlcpy(client->jass.name, name ? name : "", sizeof(client->jass.name));
         client->ps.name = client->jass.name;
     }
     return 0;

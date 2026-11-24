@@ -111,6 +111,8 @@ not load or show the score modal. Values and names survive unloading because
 the frozen snapshot is not tied to live edicts; the snapshot and selected tabs
 are NOT written to zone saves.
 
+Scripted `SetPlayerName()` resolves map WTS tokens before copying the name into player state. This gives the same localized name to `GetPlayerName()` and the later score snapshot. The JASS regression is `player_name_resolves_map_string_before_script_and_hud_reads`.
+
 At the end of the frame, the Warcraft game module loads the retail
 `UI\FrameDef\Glue\ScoreScreen.fdf` and binds its `ScoreScreenFrame` root.
 It authors a `svc_window` with a unique score ID, modal input and the standard
