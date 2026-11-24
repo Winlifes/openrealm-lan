@@ -2353,18 +2353,15 @@ uint32_t SetUbersplatRender(jass_t *j) { jassUbersplat_t *u = jass_checkhandle(j
 uint32_t SetUbersplatRenderAlways(jass_t *j) { jassUbersplat_t *u = jass_checkhandle(j, 1, "ubersplat"); if (u) u->render_always = jass_checkboolean(j, 2); return 0; }
 
 uint32_t VersionGet(jass_t *j) {
-    API_ALLOC(uint32_t, version);
-    *version = 0;
-    return 1;
+    return JassPushEnumHandle(j, "version", G_GameDataVersion());
 }
 /* Version enums are typed handles from ConvertVersion, not integer arguments. */
 uint32_t VersionCompatible(jass_t *j) {
-    uint32_t *version = jass_checkhandle(j, 1, "version");
-    return jass_pushboolean(j, version && *version == 0);
+    uint32_t const *version = jass_checkhandle(j, 1, "version");
+    return jass_pushboolean(j, version && *version <= G_GameDataVersion());
 }
 uint32_t VersionSupported(jass_t *j) {
-    uint32_t *version = jass_checkhandle(j, 1, "version");
-    return jass_pushboolean(j, version && *version == 0);
+    return VersionCompatible(j);
 }
 uint32_t ReloadGameCachesFromDisk(jass_t *j) {
     (void)j;

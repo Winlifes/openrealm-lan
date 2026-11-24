@@ -4034,6 +4034,7 @@ void ShutdownUnitData(void);
 void G_SetMapUnitOverrides(mapInfo_t const *);
 void G_SetMapAbilityOverrides(mapInfo_t const *);
 bool G_IsReignOfChaosMap(mapInfo_t const *);
+uint32_t G_GameDataVersion(void);
 uint32_t G_MapGameDataSet(mapInfo_t const *);
 void G_MapGameDataPrefix(wc3MapGameDataPrefixParams_t const *params);
 void G_ApplyTilesetWaterHeight(mapInfo_t const *info);

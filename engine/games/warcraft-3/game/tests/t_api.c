@@ -1686,14 +1686,47 @@ TEST(wc3_api, leaderboard_changes_dirty_stacked_multiboard_for_assigned_client) 
     T_EQ(level.player_leaderboards[0], -1);
 }
 
-TEST(wc3_api, version_queries_accept_typed_handles) {
-    T_ASSERT(run_test_jass(
+static bool test_expansion_data;
+
+static cstring_t version_data_cvar(cstring_t name, cstring_t fallback) {
+    if (strcmp(name, "fs_expansion")) return fallback;
+    return test_expansion_data ? "1" : "0";
+}
+
+static bool run_version_queries(cstring_t body) {
+    char script[1400];
+    snprintf(script, sizeof(script),
+        "type version extends handle\n"
+        "constant native ConvertVersion takes integer i returns version\n"
+        "native VersionGet takes nothing returns version\n"
         "function main takes nothing returns nothing\n"
+        "%s"
+        "endfunction\n", body);
+    return run_test_jass(script);
+}
+
+TEST(wc3_api, version_queries_accept_typed_handles) {
+    cstring_t (*saved_cvar)(cstring_t, cstring_t) = gi.CvarString;
+    gi.CvarString = version_data_cvar;
+    test_expansion_data = false;
+    bool const classic = run_version_queries(
+        "  local version loaded = VersionGet()\n"
+        "  call BJassAssert(loaded == ConvertVersion(0), \"reported classic mode\")\n"
         "  call BJassAssert(VersionCompatible(ConvertVersion(0)), \"ROC compatible\")\n"
         "  call BJassAssert(VersionSupported(ConvertVersion(0)), \"ROC supported\")\n"
-        "  call BJassAssert(not VersionCompatible(ConvertVersion(1)), \"current compatibility policy\")\n"
-        "  call BJassAssert(not VersionSupported(ConvertVersion(1)), \"current support policy\")\n"
-        "endfunction\n"));
+        "  call BJassAssert(not VersionCompatible(ConvertVersion(1)), \"TFT unavailable\")\n"
+        "  call BJassAssert(not VersionSupported(ConvertVersion(1)), \"TFT not supported\")\n");
+    test_expansion_data = true;
+    bool const expansion = run_version_queries(
+        "  local version loaded = VersionGet()\n"
+        "  call BJassAssert(loaded == ConvertVersion(1), \"reported expansion mode\")\n"
+        "  call BJassAssert(VersionCompatible(ConvertVersion(0)), \"base data still compatible\")\n"
+        "  call BJassAssert(VersionSupported(ConvertVersion(1)), \"expansion data supported\")\n"
+        "  call BJassAssert(VersionCompatible(ConvertVersion(1)), \"expansion data compatible\")\n"
+        "  call BJassAssert(not VersionSupported(ConvertVersion(2)), \"unknown version\")\n");
+    gi.CvarString = saved_cvar;
+    T_ASSERT(classic);
+    T_ASSERT(expansion);
 }
 
 TEST(wc3_api, unit_type_ground_uses_authored_foot_movement) {

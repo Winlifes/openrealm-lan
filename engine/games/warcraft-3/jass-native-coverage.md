@@ -601,9 +601,10 @@ allocates that typed handle; it is not an integer argument. Retail TFT `common.a
 `G_BotRunFrame`; a bounded local lobby reproduced a valid version handle containing 1 immediately before the
 assertion. Both natives now consume `jass_checkhandle(..., "version")`.
 
-`wc3_api.version_queries_accept_typed_handles` exercises both converted versions through both native callbacks.
-This correction preserves the existing RoC-only version-reporting policy (`VersionGet` returns 0); expansion-aware
-version reporting remains a separate conformance gap.
+`wc3_api.version_queries_accept_typed_handles` exercises the version queries with base and expansion data enabled.
+`VersionGet` reports the same configured data mode used by map data selection. The expansion mode makes both
+base and expansion data available to version queries. Map scripts use the reported version to select starting
+resources and computer-player options.
 
 After the handle correction, the bounded Twisted Meadows lobby reached gameplay. `MeleeDifficulty` is now registered
 for the AI VM and returns `MELEE_NORMAL` (`2`). The lobby does not model per-slot AI difficulty, so `GetAIDifficulty`

@@ -1042,11 +1042,14 @@ static void InitConstants(void) {
  * Example:
  *   openwarcraft3 -data <dir> +set jass_test games/warcraft-3/tests/fixtures/test_jass_assertions.j
  * ------------------------------------------------------------------------- */
+uint32_t G_GameDataVersion(void) {
+    return gi.CvarString && atoi(gi.CvarString("fs_expansion", "0")) != 0 ? 1u : 0u;
+}
+
 static void G_ApplyMapGameDataSet(mapInfo_t const *mapinfo) {
     char prefix[sizeof(game.data_prefix)];
-    uint32_t game_version = atoi(gi.CvarString("fs_expansion", "0")) != 0 ? 1u : 0u;
     wc3MapGameDataPrefixParams_t params = {
-        .info = mapinfo, .version = game_version, .out = prefix, .size = sizeof(prefix)
+        .info = mapinfo, .version = G_GameDataVersion(), .out = prefix, .size = sizeof(prefix)
     };
 
     G_MapGameDataPrefix(&params);
