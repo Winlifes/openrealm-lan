@@ -340,6 +340,11 @@ enum {
     WC3_TARGET_FLAG_DEBRIS     = 256u,
     WC3_TARGET_FLAG_DECORATION = 512u,
     WC3_TARGET_FLAG_BRIDGE     = 1024u,
+    WC3_TARGET_FLAG_PLAYER    = 1u << 13,
+    WC3_TARGET_FLAG_ALLIED    = 1u << 14,
+    WC3_TARGET_FLAG_ENEMY     = 1u << 16,
+    WC3_TARGET_FLAG_VULNERABLE = 1u << 20,
+    WC3_TARGET_FLAG_INVULNERABLE = 1u << 21,
 };
 
 /* Physics movement mode selecting missile, ground or other simulation integration. */
@@ -1505,6 +1510,8 @@ typedef struct {
 #define UNIT_BALANCE_PERMANENT_INVISIBLE 0x2 // bit; cached Apiv classification for hot per-viewer FOW checks
 #define UNIT_BALANCE_GHOST_INVISIBLE 0x4 // bit; Agho persistent invisibility; detection reveals without breaking it
 #define WC3_UNIT_TYPE_STRUCTURE 2 // handle value; Warcraft structure type; used by IsUnitType
+#define WC3_UNIT_TYPE_GIANT 9
+#define WC3_UNIT_TYPE_ANCIENT 19
 #define WC3_UNIT_TYPE_GROUND 4 // handle value; authored ground movement class; used by IsUnitType
 #define WC3_UNIT_TYPE_POLYMORPHED 22 // handle value; Warcraft Polymorphed type; used by IsUnitType
 #define WC3_UNIT_STATE_LIFE 0 // handle value; UNIT_STATE_LIFE
@@ -2465,7 +2472,7 @@ struct edict_s {
     float velocity;
     unitState_t *unit_state; /* unit-owned combat, progression, skills, statuses and cooldowns */
     uint32_t unit_flags; /* independent entity gameplay switches; unitFlags_t */
-    uint32_t script_unit_types; /* UnitAddType/UnitRemoveType bitmask; bit N = UNIT_TYPE N */
+    uint32_t script_unit_types; /* Unit classifications and UnitAddType/UnitRemoveType overrides; bit N = UNIT_TYPE N */
     uint32_t unit_color;   // WC3_UNIT_COLOR_OVERRIDE_FLAG | playercolor; zero uses owner color
     int32_t user_data;     /* SetUnitUserData script scratch; no gameplay consumer reads it yet */
     bool reposition_pending; /* a script moved it; re-check pathing after the script ends */

@@ -221,29 +221,64 @@ bool S_UnitAttackSlotEnabled(edict_t const *attacker, uint32_t slot) {
     return (enabled & (1u << slot)) != 0;
 }
 
+static bool weapon_target_matches(edict_t const *attacker, edict_t const *target, uint32_t allowed,
+                                  uint32_t category) {
+    uint32_t const units = WC3_TARGET_FLAG_GROUND | WC3_TARGET_FLAG_AIR |
+        WC3_TARGET_FLAG_STRUCTURE | WC3_TARGET_FLAG_WARD;
+    uint32_t const categories = units | WC3_TARGET_FLAG_NONE | WC3_TARGET_FLAG_ITEM |
+        WC3_TARGET_FLAG_TREE | WC3_TARGET_FLAG_WALL | WC3_TARGET_FLAG_DEBRIS |
+        WC3_TARGET_FLAG_DECORATION | WC3_TARGET_FLAG_BRIDGE;
+    uint32_t const relation = allowed & (WC3_TARGET_FLAG_PLAYER | WC3_TARGET_FLAG_ALLIED | WC3_TARGET_FLAG_ENEMY);
+    uint32_t const vulnerability = allowed & (WC3_TARGET_FLAG_VULNERABLE | WC3_TARGET_FLAG_INVULNERABLE);
+
+    /* A relationship or vulnerability filter can also be the entire map-authored list. */
+    if (!(allowed & category) && ((allowed & categories) || !(relation || vulnerability) || !(category & units)))
+        return false;
+    if (relation) {
+        uint32_t const owner = attacker->s.player == target->s.player ? WC3_TARGET_FLAG_PLAYER :
+            G_PlayerTreatsPlayerAsAlly(attacker->s.player, target->s.player) ? WC3_TARGET_FLAG_ALLIED :
+            WC3_TARGET_FLAG_ENEMY;
+        if (!(relation & owner)) return false;
+    }
+    if (vulnerability) {
+        bool const immune = G_UnitHasFlag(target, UNIT_FLAG_INVULNERABLE) ||
+            unit_hasstatusstate(target, WC3_STATUS_STATE_INVULNERABLE);
+        if (!(vulnerability & (immune ? WC3_TARGET_FLAG_INVULNERABLE : WC3_TARGET_FLAG_VULNERABLE))) return false;
+    }
+    return true;
+}
+
+static bool attack_slot_matches(unitAttack_t const *attack, edict_t const *attacker, edict_t const *target,
+                                uint32_t category, bool ethereal) {
+    return attack->type != ATK_NONE && (!ethereal || attack->type == ATK_MAGIC) &&
+        weapon_target_matches(attacker, target, attack->targetsAllowed, category);
+}
+
 /* Attack 1/2 remain the authored runtime copies. Select the compatible slot
  * from the target whenever attack behavior reads a profile. */
 static unitAttack_t const *attack_profile(edict_t const *attacker, edict_t const *target) {
-    uint32_t flag = target ? G_TargetFlagForType(G_UnitTargetType(target)) : 0;
-    uint32_t retaliation = S_AncientIsRooted(attacker) ? S_AncientRetaliationAttackMask(attacker) : 0;
-    if (attacker && target && G_GetDestructable(target) && target->targtype == TARG_TREE) {
-        if (attacker->unit_state->attack1.type != ATK_NONE && S_UnitAttackSlotEnabled(attacker, 0)) return &attacker->unit_state->attack1;
-        if (attacker->unit_state->attack2.type != ATK_NONE && S_UnitAttackSlotEnabled(attacker, 1)) return &attacker->unit_state->attack2;
+    if (!attacker) return NULL;
+    unitAttack_t const *one = &attacker->unit_state->attack1;
+    unitAttack_t const *two = &attacker->unit_state->attack2;
+    if (!target) return one;
+    uint32_t const flag = G_TargetFlagForType(G_UnitTargetType(target));
+    uint32_t const retaliation = S_AncientIsRooted(attacker) ? S_AncientRetaliationAttackMask(attacker) : 0;
+    bool const first_enabled = S_UnitAttackSlotEnabled(attacker, 0);
+    bool const second_enabled = S_UnitAttackSlotEnabled(attacker, 1);
+    if (G_GetDestructable(target) && target->targtype == TARG_TREE) {
+        if (one->type != ATK_NONE && first_enabled) return one;
+        if (two->type != ATK_NONE && second_enabled) return two;
     }
     /* Target eligibility and active weapon selection must agree for Ethereal
      * victims, including dual-weapon units and rooted Ancient retaliation. */
-    if (attacker && target && flag && unit_hasstatusstate(target, WC3_STATUS_STATE_ETHEREAL)) {
-        if (attacker->unit_state->attack1.type == ATK_MAGIC && (attacker->unit_state->attack1.targetsAllowed & flag) &&
-            (S_UnitAttackSlotEnabled(attacker, 0) || (retaliation & 1u))) return &attacker->unit_state->attack1;
-        if (attacker->unit_state->attack2.type == ATK_MAGIC && (attacker->unit_state->attack2.targetsAllowed & flag) &&
-            (S_UnitAttackSlotEnabled(attacker, 1) || (retaliation & 2u))) return &attacker->unit_state->attack2;
-        return &attacker->unit_state->attack1; /* Callers reject unqualified targets. */
+    if (unit_hasstatusstate(target, WC3_STATUS_STATE_ETHEREAL)) {
+        if ((first_enabled || (retaliation & 1u)) && attack_slot_matches(one, attacker, target, flag, true)) return one;
+        if ((second_enabled || (retaliation & 2u)) && attack_slot_matches(two, attacker, target, flag, true)) return two;
+        return one; /* Callers reject unqualified targets. */
     }
-    if (attacker && flag && attacker->unit_state->attack1.type != ATK_NONE && S_UnitAttackSlotEnabled(attacker, 0) &&
-        (attacker->unit_state->attack1.targetsAllowed & flag)) return &attacker->unit_state->attack1;
-    if (attacker && flag && attacker->unit_state->attack2.type != ATK_NONE && S_UnitAttackSlotEnabled(attacker, 1) &&
-        (attacker->unit_state->attack2.targetsAllowed & flag)) return &attacker->unit_state->attack2;
-    if (attacker && flag == WC3_TARGET_FLAG_AIR && S_UnitAttackSlotEnabled(attacker, 0)) {
+    if (first_enabled && attack_slot_matches(one, attacker, target, flag, false)) return one;
+    if (second_enabled && attack_slot_matches(two, attacker, target, flag, false)) return two;
+    if (flag == WC3_TARGET_FLAG_AIR && first_enabled) {
         unitAttack_t const *venom = venom_air_attack(attacker);
         if (venom) return venom;
         unitAttack_t const *slow_orb = slow_orb_air_attack(attacker);
@@ -252,11 +287,9 @@ static unitAttack_t const *attack_profile(edict_t const *attacker, edict_t const
     /* Rooted Ancients may retaliate with their weapon profile even when Root's
      * authored mask disables player-issued attacks; explicit orders are still
      * validated by S_AttackCanTarget before this profile is selected. */
-    if (attacker && flag && retaliation && attacker->unit_state->attack1.type != ATK_NONE && (retaliation & 1u) &&
-        (attacker->unit_state->attack1.targetsAllowed & flag)) return &attacker->unit_state->attack1;
-    if (attacker && flag && retaliation && attacker->unit_state->attack2.type != ATK_NONE && (retaliation & 2u) &&
-        (attacker->unit_state->attack2.targetsAllowed & flag)) return &attacker->unit_state->attack2;
-    return attacker ? &attacker->unit_state->attack1 : NULL;
+    if ((retaliation & 1u) && attack_slot_matches(one, attacker, target, flag, false)) return one;
+    if ((retaliation & 2u) && attack_slot_matches(two, attacker, target, flag, false)) return two;
+    return one;
 }
 
 bool S_AttackProfileIsMelee(unitAttack_t const *attack) {
@@ -454,26 +487,21 @@ static bool can_attack(edict_t const *ent) {
  * destructables.  UnitData.targetType supplies the target category while
  * UnitWeapons.targs1/ua1g supplies the attacker's allowed categories. */
 static bool attack_can_target_mask(edict_t const *attacker, edict_t const *target, uint32_t mask) {
-    uint32_t flag;
     if (!attacker || S_UnitPolymorphed(attacker) || S_LavaSpawnIsSplitting(attacker) ||
         S_UnitIsFreezingBreathFrozen(attacker) || G_BuildingIsUnsummoning(attacker) ||
         !target || !target->inuse || attacker == target ||
         !attack_mask_has_weapon(attacker, mask) || S_UnitIsCycloned(target) ||
         (S_ImpaleIsAirborne(target) && !S_ImpaleAirborneVulnerable(target)) ||
-        unit_hasstatusstate(attacker, WC3_STATUS_STATE_ETHEREAL) ||
-        (unit_hasstatusstate(target, WC3_STATUS_STATE_ETHEREAL) &&
-         !(((mask & 1u) && attacker->unit_state->attack1.type == ATK_MAGIC &&
-             (attacker->unit_state->attack1.targetsAllowed & G_TargetFlagForType(G_UnitTargetType(target)))) ||
-           ((mask & 2u) && attacker->unit_state->attack2.type == ATK_MAGIC &&
-             (attacker->unit_state->attack2.targetsAllowed & G_TargetFlagForType(G_UnitTargetType(target))))))) return false;
+        unit_hasstatusstate(attacker, WC3_STATUS_STATE_ETHEREAL)) return false;
     if (S_UnitIsHiddenFromPlayer(target, attacker->s.player)) return false;
     if (G_GetDestructable(target)) return G_DestructableCanBeAttackedBy(attacker, target);
     if (M_IsDead((edict_t *)target)) return false;
-    flag = G_TargetFlagForType(G_UnitTargetType(target));
-    return flag && (((mask & 1u) && attacker->unit_state->attack1.type != ATK_NONE && (attacker->unit_state->attack1.targetsAllowed & flag)) ||
-                    ((mask & 2u) && attacker->unit_state->attack2.type != ATK_NONE && (attacker->unit_state->attack2.targetsAllowed & flag)) ||
-                    (flag == WC3_TARGET_FLAG_AIR && (mask & 1u) &&
-                     (venom_air_attack(attacker) || slow_orb_air_attack(attacker))));
+    uint32_t const flag = G_TargetFlagForType(G_UnitTargetType(target));
+    bool const ethereal = unit_hasstatusstate(target, WC3_STATUS_STATE_ETHEREAL);
+    return ((mask & 1u) && attack_slot_matches(&attacker->unit_state->attack1, attacker, target, flag, ethereal)) ||
+           ((mask & 2u) && attack_slot_matches(&attacker->unit_state->attack2, attacker, target, flag, ethereal)) ||
+           (!ethereal && flag == WC3_TARGET_FLAG_AIR && (mask & 1u) &&
+            (venom_air_attack(attacker) || slow_orb_air_attack(attacker)));
 }
 
 bool S_AttackCanTarget(edict_t const *attacker, edict_t const *target) {
@@ -928,12 +956,9 @@ float S_LocustAttackHit(edict_t *locust, edict_t *target) {
 }
 
 static bool artillery_splash_target_allowed(edict_t *attacker, edict_t *target, uint32_t mask, uint32_t targets_allowed) {
-    uint32_t flag;
-
     if (!attacker || !target || !target->inuse || target == attacker || M_IsDead(target)) return false;
-    if (!mask) mask = targets_allowed;
-    flag = G_TargetFlagForType(G_UnitTargetType(target));
-    return flag && (mask & flag) != 0;
+    return weapon_target_matches(attacker, target, mask ? mask : targets_allowed,
+                                 G_TargetFlagForType(G_UnitTargetType(target)));
 }
 
 /* Artillery snapshots an impact point, while Missile Splash resolves around a

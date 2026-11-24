@@ -424,6 +424,10 @@ void SP_SpawnUnit(edict_t *self) {
     UnitWeapons_t const *w = self->data.UnitWeapons;
     cstring_t uber_splat = ui->groundTexture;
     cstring_t path_tex = d->pathingTexture;
+    /* Attach authored classifications so the JASS natives can query and change them. */
+    self->script_unit_types &= ~((1u << WC3_UNIT_TYPE_GIANT) | (1u << WC3_UNIT_TYPE_ANCIENT));
+    if (G_UnitHasClassification(self, "giant")) self->script_unit_types |= 1u << WC3_UNIT_TYPE_GIANT;
+    if (G_UnitHasClassification(self, "ancient")) self->script_unit_types |= 1u << WC3_UNIT_TYPE_ANCIENT;
     self->s.flags |= EF_UNIT;
     self->runtime.flags = (unit_spawn_aiflags(self->class_id) & AI_IMMOBILE) ? UNIT_BALANCE_BUILDING : 0;
     if (G_UnitIsBuilding(self->class_id)) self->s.flags |= EF_BUILDING;

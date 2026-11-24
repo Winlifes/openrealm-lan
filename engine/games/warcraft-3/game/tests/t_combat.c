@@ -567,6 +567,32 @@ TEST(wc3_combat, attack_target_mask_rejects_air_until_air_is_allowed) {
     T_ASSERT(attacker->goalentity == target);
 }
 
+TEST(wc3_combat, weapon_target_mask_can_specify_only_enemy_and_vulnerable) {
+    setup_test_world();
+    edict_t *attacker = make_combat_unit(MAKEFOURCC('h','f','o','o'), 420.0f, 0.0f, 0.0f);
+    edict_t *target = make_combat_unit(MAKEFOURCC('h','f','o','o'), 400.0f, 64.0f, 0.0f);
+    attacker->s.player = 0;
+    target->s.player = 1;
+    target->targtype = TARG_STRUCTURE;
+    attacker->unit_state->attack1.type = ATK_PIERCE;
+    /* UnitWeapons targs1 "enemies,vulnerable" in its ua1g representation. */
+    uint32_t const enemy_vulnerable = 65536u | 1048576u;
+    attacker->unit_state->attack1.targetsAllowed = enemy_vulnerable;
+    T_ASSERT(S_AttackCanAutoAcquire(attacker, target));
+    T_ASSERT(S_OrderAttack(attacker, target));
+
+    G_SetUnitFlag(target, UNIT_FLAG_INVULNERABLE, true);
+    T_ASSERT(!S_AttackCanTarget(attacker, target));
+    G_SetUnitFlag(target, UNIT_FLAG_INVULNERABLE, false);
+    G_SetPlayerAlliance(G_GetPlayerByNumber(0), G_GetPlayerByNumber(1), ALLIANCE_PASSIVE, true);
+    T_ASSERT(!S_AttackCanTarget(attacker, target));
+    G_SetPlayerAlliance(G_GetPlayerByNumber(0), G_GetPlayerByNumber(1), ALLIANCE_PASSIVE, false);
+    attacker->unit_state->attack1.targetsAllowed = enemy_vulnerable | WC3_TARGET_FLAG_GROUND;
+    T_ASSERT(!S_AttackCanTarget(attacker, target));
+    target->targtype = TARG_GROUND;
+    T_ASSERT(S_AttackCanTarget(attacker, target));
+}
+
 TEST(wc3_combat, automatic_acquisition_skips_disallowed_nearer_target) {
     edict_t *attacker, *air, *ground;
 

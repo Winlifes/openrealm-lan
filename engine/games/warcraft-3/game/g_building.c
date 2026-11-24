@@ -981,6 +981,7 @@ bool G_ProducerCanUpgrade(edict_t *producer, uint32_t unit_id) {
     return producer && producer->data.UnitProfile &&
         (!S_AncientHasRootAbility(producer) || S_AncientIsRooted(producer)) &&
         G_UnitBalance(unit_id)->id == unit_id &&
+        G_UnitIsBuilding(producer->class_id) == G_UnitIsBuilding(unit_id) &&
         G_ProducerContains(producer->data.UnitProfile->upgrade, unit_id);
 }
 

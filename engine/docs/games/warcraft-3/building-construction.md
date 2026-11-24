@@ -106,6 +106,8 @@ Completion generalizes `G_TransformUnitType()` from mobile->mobile morphs to sam
 
 This same data-driven path covers defensive structure upgrades such as Ziggurat -> Spirit Tower when the mounted Warcraft data exposes that `uupt` target and its prerequisites. The source building's Food Made contribution remains active during the upgrade; completion replaces it with the target unit's authored Food Made value. Ordinary attacks/idle acquisition are suppressed while `G_BuildingUpgradeActive()` is true, and the completed target receives its authored weapon/target-mask state through the normal unit transform/spawn path. Dynamic Ziggurat/Spirit Tower Blight growth is a separate unresolved terrain mechanic; see [Race Mechanics](race-mechanics.md).
 
+Mobile units can also use `Upgrade` to select a new unit type in place. They use the same progress and finish event without footprint eviction. The `authored_mobile_upgrade_completes_in_place` test covers that command. `SP_SpawnUnit()` initializes the scripted `Ancient` and `Giant` classifications from TFT `UnitBalance.type` or ROC `UnitData.type`. Legion TD uses `IsUnitType()` with those classifications to register finished defenders and manage their combat forms.
+
 The current implementation intentionally does not attempt a separate target-model construction overlay or retail-specific upgrade dust/effect layer; it drives the source building's authored `Birth` sequence by authoritative progress. Those presentation details should be added only after their exact data/retail contract is established.
 
 ## Status-panel progress transport

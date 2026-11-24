@@ -11250,6 +11250,49 @@ TEST(wc3_api, dota_hero_attr_ability_level_and_order) {
         "endfunction\n"));
 }
 
+TEST(wc3_api, unit_type_reads_authored_ancient_and_giant_classifications) {
+    cstring_t balance_slk =
+        "ID;PWXL;N;E\n"
+        "C;Y1;X1;K\"unitBalanceID\"\nC;Y1;X2;K\"type\"\nC;Y1;X3;K\"HP\"\n"
+        "C;Y2;X1;K\"hfoo\"\nC;Y2;X2;K\"Mechanical,Ancient\"\nC;Y2;X3;K100\n"
+        "C;Y3;X1;K\"hpea\"\nC;Y3;X3;K100\nE\n";
+    cstring_t data_slk =
+        "ID;PWXL;N;E\n"
+        "C;Y1;X1;K\"unitID\"\nC;Y1;X2;K\"type\"\n"
+        "C;Y2;X1;K\"hpea\"\nC;Y2;X2;K\"giant\"\nE\n";
+    cstring_t ui_slk =
+        "ID;PWXL;N;E\n"
+        "C;Y1;X1;K\"unitUIID\"\nC;Y1;X2;K\"file\"\n"
+        "C;Y2;X1;K\"hfoo\"\nC;Y2;X2;K\"TestUI\\\\Models\\\\quad_sprite.mdx\"\n"
+        "C;Y3;X1;K\"hpea\"\nC;Y3;X2;K\"TestUI\\\\Models\\\\quad_sprite.mdx\"\nE\n";
+    slkTestData_t *ui_rows = parse_slk_string(ui_slk);
+    slkTestData_t *balance_rows = parse_slk_string(balance_slk);
+    slkTestData_t *data_rows = parse_slk_string(data_slk);
+    slkTestData_t *old_ui = G_SetSLKRows("UnitUI", ui_rows);
+    slkTestData_t *old_balance = G_SetSLKRows("UnitBalance", balance_rows);
+    slkTestData_t *old_data = G_SetSLKRows("UnitData", data_rows);
+
+    T_ASSERT(run_test_jass(
+        "function main takes nothing returns nothing\n"
+        "  local unit tft = CreateUnit(Player(0), 'hfoo', 64.0, 64.0, 0.0)\n"
+        "  local unit roc = CreateUnit(Player(0), 'hpea', 128.0, 128.0, 0.0)\n"
+        "  call BJassAssert(tft != null and roc != null, \"fixture units created\")\n"
+        "  call BJassAssert(IsUnitType(tft, ConvertUnitType(19)), \"UnitBalance ancient\")\n"
+        "  call BJassAssert(not IsUnitType(tft, ConvertUnitType(9)), \"ancient is not giant\")\n"
+        "  call BJassAssert(IsUnitType(roc, ConvertUnitType(9)), \"UnitData giant\")\n"
+        "  call UnitRemoveType(tft, ConvertUnitType(19))\n"
+        "  call BJassAssert(not IsUnitType(tft, ConvertUnitType(19)), \"remove ancient\")\n"
+        "endfunction\n"));
+
+    reset_entities();
+    G_SetSLKRows("UnitData", old_data);
+    G_SetSLKRows("UnitBalance", old_balance);
+    G_SetSLKRows("UnitUI", old_ui);
+    free_slk_rows(data_rows);
+    free_slk_rows(balance_rows);
+    free_slk_rows(ui_rows);
+}
+
 TEST(wc3_api, dota_unit_damage_target_and_invulnerable) {
     edict_t *attacker = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 0, 0);
     edict_t *target = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 64, 0);

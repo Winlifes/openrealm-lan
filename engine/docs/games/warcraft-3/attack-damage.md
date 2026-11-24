@@ -291,6 +291,8 @@ Attack 1 target legality is owned by `skills/s_attack.c`, not by the generic AI 
 
 `S_AttackCanTarget()` applies that authored mask to explicit Attack orders and every later attack recheck. For ordinary units, the target's `UnitData.targetType` supplies the ground/air/structure/etc. category; destructables continue through `G_DestructableCanBeAttackedBy()`. This keeps target legality in the Attack ability instead of teaching generic AI about Spirit Towers, Burrows, or other particular unit rawcodes.
 
+Legacy maps can author `enemies,vulnerable` as the entire weapon target list. The relationship and vulnerability bits apply to all ordinary unit categories when the list omits a category. An explicit `ground` or other category still narrows the list. Attack validation, weapon selection, and splash use the same check. The `weapon_target_mask_can_specify_only_enemy_and_vulnerable` and `unit_weapon_target_lists_preserve_relationship_and_vulnerability` tests cover the runtime and SLK paths.
+
 Minimum attack range is checked alongside maximum range. It comes from `UnitWeapons.minRange` (`uamn`) rather than a Meat-Wagon rawcode special case. A mobile unit already ordered to attack a target inside that dead zone steps directly away from the target until it can fire; Hold Position and `AI_IMMOBILE` units drop the impossible attack instead.
 
 Automatic acquisition adds one policy on top through `S_AttackCanAutoAcquire()`:

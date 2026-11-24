@@ -2277,6 +2277,22 @@ TEST(wc3_slk, unit_weapon_target_lists_decode_to_targetflag_mask) {
     free_slk_rows(rows);
 }
 
+TEST(wc3_slk, unit_weapon_target_lists_preserve_relationship_and_vulnerability) {
+    cstring_t slk =
+        "ID;PWXL;N;E\n"
+        "C;Y1;X1;K\"unitWeapID\"\nC;Y1;X2;K\"targs1\"\nC;Y1;X3;K\"targs2\"\n"
+        "C;Y2;X1;K\"hfoo\"\nC;Y2;X2;K\"enemies,vulnerable\"\nC;Y2;X3;K\"ground,friend\"\n"
+        "E\n";
+    slkTestData_t *rows = parse_slk_string(slk);
+    slkTestData_t *saved = G_SetSLKRows("UnitWeapons", rows);
+
+    T_EQ(g_UnitWeapons[0].attack1.targetsAllowed, 65536u | 1048576u);
+    T_EQ(g_UnitWeapons[0].attack2.targetsAllowed, 2u | 24576u);
+
+    G_SetSLKRows("UnitWeapons", saved);
+    free_slk_rows(rows);
+}
+
 TEST(wc3_slk, doodad_fields_use_typed_row) {
     cstring_t slk =
         "ID;PWXL;N;E\n"

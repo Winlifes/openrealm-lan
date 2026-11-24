@@ -875,6 +875,14 @@ static uint32_t ParseWeaponTargetMask(cstring_t text) {
         else if (!strcasecmp(token, "debris"))     mask |= WC3_TARGET_FLAG_DEBRIS;
         else if (!strcasecmp(token, "decoration")) mask |= WC3_TARGET_FLAG_DECORATION;
         else if (!strcasecmp(token, "bridge"))     mask |= WC3_TARGET_FLAG_BRIDGE;
+        else if (!strcasecmp(token, "player"))    mask |= WC3_TARGET_FLAG_PLAYER;
+        else if (!strcasecmp(token, "friend"))    mask |= WC3_TARGET_FLAG_PLAYER | WC3_TARGET_FLAG_ALLIED;
+        else if (!strcasecmp(token, "ally") || !strcasecmp(token, "allies"))
+            mask |= WC3_TARGET_FLAG_ALLIED;
+        else if (!strcasecmp(token, "enemy") || !strcasecmp(token, "enemies"))
+            mask |= WC3_TARGET_FLAG_ENEMY;
+        else if (!strcasecmp(token, "vulnerable")) mask |= WC3_TARGET_FLAG_VULNERABLE;
+        else if (!strcasecmp(token, "invulnerable")) mask |= WC3_TARGET_FLAG_INVULNERABLE;
         while (*p && *p != ',') p++;
         if (*p == ',') p++;
     }

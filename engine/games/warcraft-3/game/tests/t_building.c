@@ -1433,7 +1433,8 @@ TEST(wc3_building, building_upgrade_completion_morphs_in_place_and_preserves_hea
 
 TEST(wc3_building, authored_mobile_upgrade_completes_in_place) {
     uint32_t const target = MAKEFOURCC('h','f','o','o');
-    UnitProfile_t profile = { .upgrade = "hfoo" };
+    uint32_t const building = MAKEFOURCC('h','b','a','r');
+    UnitProfile_t profile = { .upgrade = "hfoo,hbar" };
 
     reset_entities();
     setup_test_world();
@@ -1446,6 +1447,8 @@ TEST(wc3_building, authored_mobile_upgrade_completes_in_place) {
 
     T_ASSERT(!G_UnitIsStructure(unit));
     T_ASSERT(!G_UnitIsBuilding(target));
+    T_ASSERT(G_UnitIsBuilding(building));
+    T_ASSERT(!G_ProducerCanUpgrade(unit, building));
     T_ASSERT(G_ProducerCanUpgrade(unit, target));
     bool const started = G_StartBuildingUpgrade(unit, target);
     T_ASSERT(started);
