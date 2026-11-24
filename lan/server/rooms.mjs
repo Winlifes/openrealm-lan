@@ -38,18 +38,23 @@ const publicOrigin = process.env.WC3_PUBLIC_ORIGIN;
 const publicHost = publicOrigin ? new URL(publicOrigin).host : null;
 const publicPrefix = process.env.WC3_PUBLIC_PREFIX || '';
 if (!/^(?:\/[A-Za-z0-9_-]+)*$/.test(publicPrefix)) throw Error('Invalid WC3_PUBLIC_PREFIX');
-const allowedOrigins = new Set([origin, publicOrigin].filter(Boolean));
-const acceptsOrigin = request => !request.headers.origin || allowedOrigins.has(request.headers.origin);
+const lanSite = {origin, prefix:'', defaultName:'局域网对局'};
+const publicSite = {origin:publicOrigin, prefix:publicPrefix, defaultName:'公网对局'};
+const siteFor = request => request.headers.host?.toLowerCase() === publicHost ? publicSite : lanSite;
+const acceptsOrigin = (request, site) => !request.headers.origin || request.headers.origin === site.origin;
 const safeText = (value, fallback) => String(value || fallback).replace(/[\x00-\x1f\x7f"\\]/g, ' ').trim().slice(0, 40) || fallback;
 const quoted = value => '"' + String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
 const humanCapacity = map => map.slots.filter(slot=>!slot.computer).length;
 mkdirSync(join(dev, 'room-logs'), {recursive:true});
 
-function publicRoom(room, request) {
-  const prefix = request.headers.host === publicHost ? publicPrefix : '';
+function roomForSite(id, site) {
+  const room = rooms.get(id);
+  return room?.site === site ? room : undefined;
+}
+function roomDetails(room) {
   return {id:room.id, name:room.name, map:room.map.name, mapId:room.map.id,
     slots:humanCapacity(room.map), players:room.peers.size, status:room.status, error:room.error,
-    build,url:prefix + '/play/game/?' + new URLSearchParams({room:room.id,map:room.map.path})};
+    build,url:room.site.prefix + '/play/game/?' + new URLSearchParams({room:room.id,map:room.map.path})};
 }
 function writeCommand(room, text) {
   if (!room.child || room.child.exitCode !== null || !room.child.stdin.writable) throw Error('游戏进程已停止');
@@ -119,21 +124,32 @@ function json(response, code, body) {
 export const server = http.createServer(async (request,response) => {
   try {
     const url = new URL(request.url, origin);
-    if (request.method==='GET' && url.pathname==='/api/health') return json(response,200,{ok:true,rooms:rooms.size,build,transportRevision});
-    if (request.method==='GET' && url.pathname==='/api/maps') return json(response,200,maps.map(map=>({id:map.id,name:map.name,players:humanCapacity(map)})));
-    if (request.method==='GET' && url.pathname==='/api/rooms') return json(response,200,[...rooms.values()].map(room=>publicRoom(room,request)));
+    const site = siteFor(request);
+    if (request.method==='GET') {
+      if (url.pathname==='/api/maps') return json(response,200,maps.map(map=>({id:map.id,name:map.name,players:humanCapacity(map)})));
+      if (url.pathname==='/api/health' || url.pathname==='/api/rooms') {
+        const visible = [...rooms.values()].filter(room=>room.site===site);
+        if (url.pathname==='/api/health') return json(response,200,{ok:true,rooms:visible.length,build,transportRevision});
+        return json(response,200,visible.map(roomDetails));
+      }
+      const match = url.pathname.match(/^\/api\/rooms\/([a-f0-9]{18})$/);
+      if (match) {
+        const room = roomForSite(match[1], site);
+        return room ? json(response,200,roomDetails(room)) : json(response,404,{error:'当前入口找不到该房间，请返回房间列表'});
+      }
+    }
     if (request.method==='POST' && url.pathname==='/api/rooms') {
-      if (!acceptsOrigin(request)) return json(response,403,{error:'请从游戏网站创建房间'});
-      if (rooms.size>=maxRooms) return json(response,409,{error:'目前最多同时运行 4 个房间，请等待空闲房间'});
+      if (!acceptsOrigin(request, site)) return json(response,403,{error:'请从当前游戏入口创建房间'});
       let text=''; for await (const chunk of request) { text+=chunk; if(text.length>4096)throw Error('请求过大'); }
       const input=JSON.parse(text), map=maps.find(m=>m.id===input.mapId);
       if(!map) return json(response,400,{error:'请选择有效地图'});
+      if (rooms.size>=maxRooms) return json(response,409,{error:'目前最多同时运行 4 个房间，请等待空闲房间'});
       const ports=new Set([...rooms.values()].map(r=>r.port));
       const port=Array.from({length:maxRooms},(_,i)=>firstPort+i).find(p=>!ports.has(p));
-      const room={id:randomBytes(9).toString('hex'),name:safeText(input.name,'局域网对局'),map,port,status:'starting',
+      const room={id:randomBytes(9).toString('hex'),name:safeText(input.name,site.defaultName),site,map,port,status:'starting',
         peers:new Set(),events:new EventEmitter(),logTail:'',emptySince:Date.now(),created:Date.now()};
       rooms.set(room.id,room); void initializeRoom(room);
-      return json(response,202,publicRoom(room,request));
+      return json(response,202,roomDetails(room));
     }
     return json(response,404,{error:'没有这个接口'});
   } catch(error) { json(response,400,{error:error.message}); }
@@ -143,8 +159,9 @@ const wss=new WebSocketServer({noServer:true,maxPayload:65507,perMessageDeflate:
 server.on('upgrade',(request,socket,head)=>{
   const url=new URL(request.url,origin);
   const match=url.pathname.match(/^\/api\/rooms\/([a-f0-9]{18})\/ws$/);
-  const room=match&&rooms.get(match[1]);
-  if (!acceptsOrigin(request) || !room || room.status!=='waiting' ||
+  const site=siteFor(request);
+  const room=match&&roomForSite(match[1],site);
+  if (!acceptsOrigin(request, site) || !room || room.status!=='waiting' ||
       room.peers.size>=humanCapacity(room.map)) {
     socket.end('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n'); return;
   }

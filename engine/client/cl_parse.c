@@ -238,7 +238,8 @@ static void CL_ReadPacketEntities(sizeBuf_t *msg) {
         }
         /* An entity new to the snapshot is encoded against its baseline, one already in it against its previous state.
          * Testing the model alone sent sound/event-only entities back to their baseline on every delta. */
-        if (!CL_InSnapshot(&old)) {
+        bool const in_delta_base = CL_InSnapshot(&old);
+        if (!in_delta_base) {
             ent->current = ent->baseline;
         }
         ent->prev = ent->current;
@@ -283,7 +284,9 @@ static void CL_ReadPacketEntities(sizeBuf_t *msg) {
                 changed++;
             }
         }
-        if (ent->serverframe != cl.frame.serverframe - 1) {
+        /* A rebase can discard an entity while its last frame number remains
+         * consecutive. Its spawn baseline is a decoding input, never a pose. */
+        if (!in_delta_base || ent->serverframe != cl.frame.serverframe - 1) {
             ent->prev = ent->current;
         }
         ent->serverframe = cl.frame.serverframe;
@@ -1639,6 +1642,47 @@ TEST(client_frames, delta_against_older_acknowledged_frame_rebuilds_that_frame) 
     test_apply_frame(&msg);
     T_EQ(cl.num_active, 1);
     T_ASSERT(test_entity_is(9, 90)); T_ASSERT(!cl.ents[5].current.model);
+
+    CL_ResetFrameHistory();
+    cls = saved_cls;
+    memcpy(&cl, saved, sizeof(cl));
+    free(saved);
+}
+
+TEST(client_frames, recovered_snapshot_does_not_animate_building_from_baseline) {
+    struct client_state *saved = malloc(sizeof(cl));
+    struct client_static saved_cls = cls;
+    uint8_t data[512];
+    sizeBuf_t msg;
+    entityState_t const none = { 0 };
+    entityState_t building = { .number = 5, .model = 1, .flags = EF_BUILDING, .origin = { 640, -384, 18 } };
+
+    T_NOT_NULL(saved);
+    if (!saved) return;
+    memcpy(saved, &cl, sizeof(cl));
+    memset(&cl, 0, sizeof(cl));
+    cls.netchan.remote_address.type = NA_IP;
+    CL_ResetFrameHistory();
+
+    SZ_Init(&msg, data, sizeof(data)); /* the last acknowledged frame predates construction */
+    test_frame_header(&msg, 1, -1);
+    test_apply_frame(&msg);
+
+    FOR_LOOP(i, 3) {
+        int const frame = 2 + i;
+        int const base = frame == 4 ? -1 : 1;
+        building.frame++;
+        SZ_Init(&msg, data, sizeof(data));
+        test_frame_header(&msg, frame, base);
+        MSG_WriteDeltaEntity(&msg, &none, &building, false);
+        test_apply_frame(&msg);
+        T_ASSERT(test_entity_is(5, 640));
+        /* The renderer samples prev at the beginning of each new snapshot. */
+        T_EQ(cl.ents[5].prev.origin.x, building.origin.x);
+        T_EQ(cl.ents[5].prev.origin.y, building.origin.y);
+        T_EQ(cl.ents[5].prev.origin.z, building.origin.z);
+        T_EQ(cl.ents[5].prev.model, building.model);
+    }
 
     CL_ResetFrameHistory();
     cls = saved_cls;

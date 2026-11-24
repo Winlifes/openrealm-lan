@@ -25,7 +25,9 @@
   }, true);
   video.addEventListener('click', () => finish('skipped'));
   window.loadMovieCatalog = async function () {
-    const response = await fetch('movies/index.json?v=' + encodeURIComponent(window.__BUILD));
+    const response = await fetch('movies/index.json?v=' + encodeURIComponent(window.__BUILD), {
+      signal: AbortSignal.timeout(8000),
+    });
     // The LAN build may intentionally omit the large optional movie assets.
     // Keep startup independent from that package so the playable maps can use
     // the smaller selected data mirror.

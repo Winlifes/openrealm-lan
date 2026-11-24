@@ -11,18 +11,18 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 
-async function upgrade(port, path, origin='https://wc3.test') {
+async function upgrade(port, path, origin='https://wc3.test', host=new URL(origin).host) {
   return new Promise((resolve, reject) => {
     const req = http.request({host:'127.0.0.1',port,path,headers:{
       Connection:'Upgrade',Upgrade:'websocket','Sec-WebSocket-Version':'13',
-      'Sec-WebSocket-Key':'dGhlIHNhbXBsZSBub25jZQ==',Origin:origin} });
+      'Sec-WebSocket-Key':'dGhlIHNhbXBsZSBub25jZQ==',Origin:origin,Host:host} });
     req.on('upgrade',(response,socket)=>{ socket.destroy(); resolve(response.statusCode); });
     req.on('response',response=>{ response.resume(); resolve(response.statusCode); });
     req.on('error',reject); req.setTimeout(3000,()=>req.destroy(Error('upgrade timeout'))); req.end();
   });
 }
 
-test('only the browser build paired with the immutable runtime can join', {timeout:15000}, async () => {
+test('rooms require the matching build and stay on their originating site', {timeout:15000}, async () => {
   const root = await mkdtemp(join(tmpdir(),'wc3-room-build-'));
   const build = 'contract-test-r26', dev = join(root,'development');
   const engine = join(root,'engine-releases',build,'bin','openwarcraft3');
@@ -53,6 +53,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       {id:'scenario',name:'Warchasers',path:'Warchasers.w3m',slots:scenarioSlots},
     ]));
     const publicOrigin = 'https://wc3-public.test';
+    const publicHeaders = {Host:new URL(publicOrigin).host};
     child = spawn(process.execPath,[fileURLToPath(new URL('./rooms.mjs',import.meta.url))],{
       env:{...process.env,WC3_LAN_ROOT:root,WC3_ENGINE:engine,WC3_API_PORT:String(port),WC3_ORIGIN:'https://wc3.test',WC3_PUBLIC_ORIGIN:publicOrigin,WC3_PUBLIC_PREFIX:'/wc3'},
       stdio:['ignore','pipe','pipe']});
@@ -65,7 +66,8 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       let body='';
       response.setEncoding('utf8');
       for await (const chunk of response) body+=chunk;
-      assert.ok(response.statusCode>=200 && response.statusCode<300,body);
+      if (options.status) assert.equal(response.statusCode,options.status,body);
+      else assert.ok(response.statusCode>=200 && response.statusCode<300,body);
       return JSON.parse(body);
     };
     for(let i=0; !logs.includes('WC3 room service ready'); i++) {
@@ -91,23 +93,36 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
     assert.deepEqual({build:health.build,missing,stale,matching},
       {build,missing:426,stale:426,matching:101});
     await delay(50);
-    assert.equal(await upgrade(port,path+'?build='+build,publicOrigin),101);
-    await delay(50);
+    assert.equal(await upgrade(port,path+'?build='+build,publicOrigin),409);
+    assert.equal(await upgrade(port,path+'?build='+build,publicOrigin,'wc3.test'),409);
     assert.equal(await upgrade(port,path+'?build='+build,'https://outside.test'),409);
+    assert.deepEqual(await api('rooms',{headers:publicHeaders}),[]);
+    await api(`rooms/${room.id}`,{headers:publicHeaders,status:404});
+    await api('rooms',{method:'POST',headers:{...publicHeaders,Origin:'https://wc3.test'},
+      body:JSON.stringify({mapId:'test'}),status:403});
     const scenarioMap=(await api('maps')).find(m=>m.id==='scenario');
     assert.equal(scenarioMap.players,4,'Authored computer players must not inflate the human player capacity');
-    const scenario=await api('rooms',{method:'POST',headers:{'Content-Type':'application/json',Origin:publicOrigin,Host:new URL(publicOrigin).host},
+    const scenario=await api('rooms',{method:'POST',headers:{...publicHeaders,'Content-Type':'application/json',Origin:publicOrigin},
       body:JSON.stringify({mapId:'scenario',name:'原版合作图'})});
     assert.equal(scenario.slots,4);
     assert.equal(new URL(scenario.url,publicOrigin).pathname,'/wc3/play/game/');
-    const publicList=await api('rooms',{headers:{Host:new URL(publicOrigin).host}});
+    const publicList=await api('rooms',{headers:publicHeaders});
+    assert.deepEqual(publicList.map(r=>r.id),[scenario.id]);
+    assert.deepEqual((await api('rooms')).map(r=>r.id),[room.id]);
+    assert.equal((await api('health',{headers:publicHeaders})).rooms,1);
+    assert.equal((await api('health')).rooms,1);
     assert.equal(new URL(publicList[0].url,publicOrigin).pathname,'/wc3/play/game/');
     assert.equal(new URL(room.url,'https://wc3.test').pathname,'/play/game/');
+    assert.equal((await api(`rooms/${scenario.id}`,{headers:publicHeaders})).id,scenario.id);
+    await api(`rooms/${scenario.id}`,{status:404});
     for(let i=0;;i++) {
-      const current=(await api('rooms')).find(r=>r.id===scenario.id);
+      const current=await api(`rooms/${scenario.id}`,{headers:publicHeaders});
       if(current?.status==='waiting')break;
       assert.ok(i<100 && current?.status!=='error',JSON.stringify(current)); await delay(30);
     }
+    const publicPath=`/api/rooms/${scenario.id}/ws?build=${build}`;
+    assert.equal(await upgrade(port,publicPath),409);
+    assert.equal(await upgrade(port,publicPath,publicOrigin),101);
     const scenarioLog=await readFile(join(dev,'room-logs',scenario.id+'.log'),'utf8');
     assert.ok(scenarioLog.includes('lobby_config 2 5 "原版合作图"'),scenarioLog);
     for(const [i,s] of scenarioSlots.entries()) {

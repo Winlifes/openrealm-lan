@@ -162,6 +162,8 @@ components, not interchangeable native gameplay angles.
 
 The client keeps two snapshots per entity: `prev` and `current`. `CL_PrepRefresh` blends between them using a fraction derived from `cl.time` and the server frame interval, producing smooth motion even when the client render rate exceeds the server tick rate.
 
+Rebuilding a full snapshot or an older acknowledged delta base can remove an entity that appeared in the previous display frame. If the new packet adds it again, `CL_ReadPacketEntities` decodes against the spawn baseline and starts both render poses at the decoded state. A consecutive frame number does not imply that the restored base contains the entity. `client_frames.recovered_snapshot_does_not_animate_building_from_baseline` exercises both recovery paths.
+
 `V_RenderView` keeps a presentation-only scene clock across frames so paused views can submit cached entities with `deltaTime = 0`. Map/session server time can restart from zero while the process and renderer remain alive, so `V_AdvanceSceneTime` treats `now < last` as a new render epoch: it resets `view.time` to `now` and emits zero delta for that frame. The non-active preview path applies the same non-wrapping elapsed-time rule. Never subtract a retained `DWORD` scene timestamp from a newly reset map clock without this epoch check; unsigned wrap otherwise looks like roughly `2^32` milliseconds and can burst particles/animations/effects for one frame. The regression is covered by `net.scene_time_rewind_starts_a_new_render_epoch`.
 
 ## Console and HUD

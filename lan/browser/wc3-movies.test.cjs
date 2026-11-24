@@ -12,7 +12,7 @@ function fixture(catalog) {
   };
   let completed = 0;
   const window = {__errors:[], __BUILD:'test',addEventListener:(name, fn)=>handlers[name]=fn};
-  const context = {window, Module:{_WC3_MovieDone(){completed++;}}, performance:{now:()=>1},
+  const context = {window, AbortSignal, Module:{_WC3_MovieDone(){completed++;}}, performance:{now:()=>1},
     document:{getElementById:id=>id==='movie'?video:tap, createElement:()=>{
       const track={remove(){tracks.splice(tracks.indexOf(track),1);}};return track;
     }}, fetch:async()=>({ok:true,json:async()=>catalog})};
