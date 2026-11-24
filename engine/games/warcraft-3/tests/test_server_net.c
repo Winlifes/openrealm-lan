@@ -2121,14 +2121,17 @@ TEST(server_net, loading_configstrings_do_not_queue_duplicate_live_updates) {
     T_ASSERT(!sv.syncstrings[CS_MODELS + 1]);
 }
 
-/* Exercise the real command dispatcher over UDP with enough startup data to exceed the old datagram limit. */
-TEST(server_net, udp_signon_pages_preserve_complete_configstrings_and_baselines) {
+/* Exercise the real command dispatcher with enough startup data to fill several datagrams. */
+static void check_udp_signon_pages(bool local_batch) {
     uint8_t buf[MAX_MSGLEN];
     sizeBuf_t msg = { .data = buf, .maxsize = sizeof(buf) };
     entityState_t baselines[200];
     char next[64] = "configstrings";
     uint32_t strings = 0, bases = 0, pages = 0;
+    bool larger_batch = false;
+    int max_payload = (local_batch ? BZ_LOCAL_SIGNON_SIZE : BZ_SIGNON_SIZE) - NETCHAN_HEADER_SIZE;
     NET_Shutdown(); reset_server_state(2);
+    test_client_stubs_set_cvar("sv_local_signon_batch", local_batch ? "1" : "0");
     T_ASSERT(bind_server_socket(PORT_SERVER + 21));
     int sock = open_client_socket();
     T_ASSERT(sock >= 0);
@@ -2154,8 +2157,9 @@ TEST(server_net, udp_signon_pages_preserve_complete_configstrings_and_baselines)
         MSG_WriteString(&msg, next);
         SV_ExecuteUserCommand(&msg, &svs.clients[0]);
         int size = recv_netchan(sock, buf, sizeof(buf));
-        T_ASSERT(size > 0 && size <= BZ_SIGNON_SIZE);
-        if (size <= 0 || size > BZ_SIGNON_SIZE) break;
+        T_ASSERT(size > 0 && size <= max_payload);
+        if (size <= 0 || size > max_payload) break;
+        if (size > BZ_SIGNON_SIZE - NETCHAN_HEADER_SIZE) larger_batch = true;
         msg.cursize = size; msg.readcount = 0; next[0] = 0;
         while (msg.readcount < msg.cursize) {
             int op = MSG_ReadByte(&msg);
@@ -2179,8 +2183,29 @@ TEST(server_net, udp_signon_pages_preserve_complete_configstrings_and_baselines)
         T_EQ(svs.clients[0].state, cs_connected);
     }
     T_EQ(strings, 200); T_EQ(bases, 200); T_ASSERT(pages > 2);
+    T_EQ(larger_batch, local_batch);
     sv.baselines = NULL;
     close(sock); NET_Shutdown();
+    test_client_stubs_clear_cvars();
+}
+
+TEST(server_net, udp_signon_pages_preserve_complete_configstrings_and_baselines) {
+    check_udp_signon_pages(false);
+}
+
+TEST(server_net, local_udp_signon_batches_preserve_complete_configstrings_and_baselines) {
+    check_udp_signon_pages(true);
+}
+
+TEST(server_net, nonlocal_ip_signon_keeps_its_datagram_limit) {
+    struct netchan *channel = &svs.clients[0].netchan;
+    memset(channel, 0, sizeof(*channel));
+    channel->remote_address = (netadr_t){ .type = NA_IP, .ip = { 192, 0, 2, 1 } };
+    SZ_Init(&channel->message, channel->message_buf, sizeof(channel->message_buf));
+    channel->inflight_length = 512;
+    test_client_stubs_set_cvar("sv_local_signon_batch", "1");
+    T_EQ(SV_SignonLimit(channel), BZ_SIGNON_SIZE - NETCHAN_HEADER_SIZE - channel->inflight_length);
+    test_client_stubs_clear_cvars();
 }
 
 /* An edict spawned after SV_CreateBaseline keeps a zeroed baseline whose number is 0. Signon must still

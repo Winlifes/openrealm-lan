@@ -4,6 +4,8 @@ The native process runs the match. Each browser connects over WebSocket to the r
 
 The room service starts the dedicated engine with `+lobby_start <map>`. The room loads its lobby metadata at that point. The host's Start command loads the world and runs its game scripts. The browser reports `Ping` next to FPS and Drawcalls using recent acknowledgements from the game connection.
 
+The room service uses 8 KiB sign-on datagrams on its loopback UDP hop. Larger batches reduce the number of WebSocket round trips needed to initialize the map.
+
 ## Prepare the runtime directory
 
 Set the following values from the repository root. Use a dedicated runtime directory outside the checkout.
@@ -67,5 +69,9 @@ caddy run --config lan/Caddyfile.example --adapter caddyfile
 ```
 
 The example listens on loopback and uses Caddy's internal TLS issuer. Open `https://localhost:8444/rooms.html` with a browser that supports cross-origin isolation and WebAssembly MEMORY64. For use on the LAN, set the Caddy site address, bind address, TLS certificate, and `WC3_ORIGIN` to the LAN origin. Make the certificate trusted on the clients and limit site access to your LAN.
+
+To use both a LAN origin and a public HTTPS site under `/wc3/`, set `WC3_PUBLIC_ORIGIN` to the public origin (scheme and host only) and `WC3_PUBLIC_PREFIX=/wc3` in the room service. The public proxy strips `/wc3` before forwarding and preserves the public `Host` header. Serve the launcher, release assets and `/api` on that same public origin. Forward WebSocket upgrades and keep the cross-origin isolation headers on the game page. Both entrances then share the room catalog and game processes.
+
+The public edge can redirect the versioned `bootstrap.mpq`, `openwarcraft3.wasm`, and `openwarcraft3.data` downloads to object storage. Verify the stored bytes against `release-manifest.json`, allow CORS for the public site, and serve the Wasm object as `application/wasm`. Keep the launcher and engine script available from the game origin for cross-origin isolation.
 
 The bridge validates that room clients use the server's build name. Its R90 backpressure policy drops UDP datagrams for a congested connection while allowing the engine's own acknowledgements and retransmission to recover. Room transport checking uses `npm --prefix lan/server test`.

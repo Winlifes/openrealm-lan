@@ -10,6 +10,7 @@
 #define NUM_FOR_EDICT(e) (uint32_t)(((string_t)(e)-(string_t)ge->edicts) / ge->edict_size)
 
 #define BZ_SIGNON_SIZE 1400 // bytes; fits a 1500-byte LAN MTU with UDP/IP headers; bounds remote startup batches
+#define BZ_LOCAL_SIGNON_SIZE 8192 // bytes; fits the local UDP hop used by the WebSocket relay
 #define BZ_CLIENT_ZOMBIE_MSEC 2000 // milliseconds; Quake 2 disconnect grace period before a client slot can be reused
 
 /* Loopback accepts engine-sized messages; a UDP or EOS datagram must fit BZ_SIGNON_SIZE with its netchan header. */
@@ -17,7 +18,11 @@ static inline uint32_t SV_DatagramLimit(struct netchan const *chan) { return cha
 /* Room for a startup reply. The next packet also carries the pending reliable message (a new batch, or a resend of the
  * one in flight) in front of it, so that comes off the datagram budget; it used to be added on top. */
 static inline uint32_t SV_SignonLimit(struct netchan const *chan) {
-    uint32_t const limit = SV_DatagramLimit(chan), pending = chan->inflight_length ? chan->inflight_length : chan->reliable.cursize;
+    const netadr_t *address = &chan->remote_address;
+    uint32_t limit = SV_DatagramLimit(chan);
+    if (address->type == NA_IP && address->ip[0] == 127 && Cvar_Integer("sv_local_signon_batch", 0))
+        limit = MIN(chan->message.maxsize, BZ_LOCAL_SIGNON_SIZE - NETCHAN_HEADER_SIZE);
+    uint32_t const pending = chan->inflight_length ? chan->inflight_length : chan->reliable.cursize;
     return chan->remote_address.type == NA_LOOPBACK ? limit : limit - MIN(limit, pending);
 }
 

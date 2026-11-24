@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Winlife 魔兽争霸 III · 联机房间</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/rooms.css"><script src="/rooms.js" defer></script></head>
-<body><header class="topbar"><a class="brand" href="/"><span class="mark">W</span><span>WINLIFE<small>魔兽争霸 III · 局域网</small></span></a><a class="back" href="/">返回首页</a></header>
-<main><section class="room-intro"><p class="eyebrow">LAN MULTIPLAYER</p><h1>一起开局。</h1><p>同一局域网的电脑可直接加入房间。房主可以设置种族、队伍、颜色和电脑对手。</p></section>
+<title>Winlife 魔兽争霸 III · 联机房间</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="rooms.css"><script src="rooms.js" defer></script></head>
+<body><header class="topbar"><a class="brand" href="./"><span class="mark">W</span><span>WINLIFE<small>魔兽争霸 III · 联机对战</small></span></a><a class="back" href="./">返回首页</a></header>
+<main><section class="room-intro"><p class="eyebrow">MULTIPLAYER</p><h1>一起开局。</h1><p>创建房间后，朋友可以通过这个页面加入。房主可以设置种族、队伍、颜色和电脑对手。</p></section>
 <section class="room-grid"><article class="room-panel"><h2>创建房间</h2><form id="create-room">
 <label for="nickname">你的昵称</label><input id="nickname" required maxlength="24" autocomplete="nickname" placeholder="输入昵称">
 <p class="hint">昵称会保存在这台浏览器，下次自动使用。</p>
@@ -10,5 +10,5 @@
 <label for="map-search">查找地图</label><input id="map-search" type="search" placeholder="输入地图名称">
 <label for="map">对战地图</label><select id="map" required><option value="">正在读取地图…</option></select>
 <button id="create" type="submit">创建并进入</button><p id="room-message" role="status" aria-live="polite"></p></form></article>
-<article class="room-panel"><div class="room-heading"><h2>局域网房间</h2><button id="refresh" class="secondary" type="button">刷新</button></div><div id="rooms" aria-live="polite">正在读取…</div><p class="hint">对局开始后关闭加入入口。空房间会自动清理。</p></article></section></main>
+<article class="room-panel"><div class="room-heading"><h2>联机房间</h2><button id="refresh" class="secondary" type="button">刷新</button></div><div id="rooms" aria-live="polite">正在读取…</div><p class="hint">对局开始后关闭加入入口。空房间会自动清理。</p></article></section></main>
 <footer>Winlife 魔兽争霸 III · 经典画质 · 键盘与鼠标操作</footer></body></html>

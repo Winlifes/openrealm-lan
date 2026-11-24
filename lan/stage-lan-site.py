@@ -31,10 +31,10 @@ for path in (Path(__file__).resolve().parent/'site').iterdir():
         shutil.copy2(path, web/path.name)
 (web/'index.html').write_text(
     '<!doctype html><meta charset="utf-8"><title>OpenRealm LAN</title>'
-    '<meta http-equiv="refresh" content="0;url=/rooms.html">'
-    '<a href="/rooms.html">Open multiplayer rooms</a>\n', encoding='utf-8')
+    '<meta http-equiv="refresh" content="0;url=rooms.html">'
+    '<a href="rooms.html">Open multiplayer rooms</a>\n', encoding='utf-8')
 (game/'index.html').write_text(
     '<!doctype html><meta charset="utf-8"><title>OpenRealm LAN</title>'
-    f'<script>location.replace("/play/releases/{args.release}/"+location.search+location.hash)</script>'
+    f'<script>location.replace("../releases/{args.release}/"+location.search+location.hash)</script>'
     '<p>Loading multiplayer client…</p>\n', encoding='utf-8')
 print(web/'rooms.html')

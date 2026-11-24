@@ -11,11 +11,11 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 
-async function upgrade(port, path) {
+async function upgrade(port, path, origin='https://wc3.test') {
   return new Promise((resolve, reject) => {
     const req = http.request({host:'127.0.0.1',port,path,headers:{
       Connection:'Upgrade',Upgrade:'websocket','Sec-WebSocket-Version':'13',
-      'Sec-WebSocket-Key':'dGhlIHNhbXBsZSBub25jZQ==',Origin:'https://wc3.test'} });
+      'Sec-WebSocket-Key':'dGhlIHNhbXBsZSBub25jZQ==',Origin:origin} });
     req.on('upgrade',(response,socket)=>{ socket.destroy(); resolve(response.statusCode); });
     req.on('response',response=>{ response.resume(); resolve(response.statusCode); });
     req.on('error',reject); req.setTimeout(3000,()=>req.destroy(Error('upgrade timeout'))); req.end();
@@ -52,13 +52,21 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       {id:'test',name:'Test',path:'Test.w3m',slots:[{player:0,race:1,team:0,color:0,computer:false}]},
       {id:'scenario',name:'Warchasers',path:'Warchasers.w3m',slots:scenarioSlots},
     ]));
+    const publicOrigin = 'https://wc3-public.test';
     child = spawn(process.execPath,[fileURLToPath(new URL('./rooms.mjs',import.meta.url))],{
-      env:{...process.env,WC3_LAN_ROOT:root,WC3_ENGINE:engine,WC3_API_PORT:String(port),WC3_ORIGIN:'https://wc3.test'},
+      env:{...process.env,WC3_LAN_ROOT:root,WC3_ENGINE:engine,WC3_API_PORT:String(port),WC3_ORIGIN:'https://wc3.test',WC3_PUBLIC_ORIGIN:publicOrigin,WC3_PUBLIC_PREFIX:'/wc3'},
       stdio:['ignore','pipe','pipe']});
     let logs=''; child.stdout.on('data',b=>logs+=b); child.stderr.on('data',b=>logs+=b);
-    const api = async (path,options) => {
-      const response=await fetch(`http://127.0.0.1:${port}/api/${path}`,options);
-      assert.ok(response.ok,await response.clone().text()); return response.json();
+    const api = async (path,options={}) => {
+      const req=http.request({host:'127.0.0.1',port,path:'/api/'+path,method:options.method,headers:options.headers});
+      const received=once(req,'response');
+      req.end(options.body);
+      const [response]=await received;
+      let body='';
+      response.setEncoding('utf8');
+      for await (const chunk of response) body+=chunk;
+      assert.ok(response.statusCode>=200 && response.statusCode<300,body);
+      return JSON.parse(body);
     };
     for(let i=0; !logs.includes('WC3 room service ready'); i++) {
       assert.ok(i<100 && child.exitCode===null,logs); await delay(30);
@@ -82,11 +90,19 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
     const matching=await upgrade(port,path+'?build='+build);
     assert.deepEqual({build:health.build,missing,stale,matching},
       {build,missing:426,stale:426,matching:101});
+    await delay(50);
+    assert.equal(await upgrade(port,path+'?build='+build,publicOrigin),101);
+    await delay(50);
+    assert.equal(await upgrade(port,path+'?build='+build,'https://outside.test'),409);
     const scenarioMap=(await api('maps')).find(m=>m.id==='scenario');
     assert.equal(scenarioMap.players,4,'Authored computer players must not inflate the human player capacity');
-    const scenario=await api('rooms',{method:'POST',headers:{'Content-Type':'application/json'},
+    const scenario=await api('rooms',{method:'POST',headers:{'Content-Type':'application/json',Origin:publicOrigin,Host:new URL(publicOrigin).host},
       body:JSON.stringify({mapId:'scenario',name:'原版合作图'})});
     assert.equal(scenario.slots,4);
+    assert.equal(new URL(scenario.url,publicOrigin).pathname,'/wc3/play/game/');
+    const publicList=await api('rooms',{headers:{Host:new URL(publicOrigin).host}});
+    assert.equal(new URL(publicList[0].url,publicOrigin).pathname,'/wc3/play/game/');
+    assert.equal(new URL(room.url,'https://wc3.test').pathname,'/play/game/');
     for(let i=0;;i++) {
       const current=(await api('rooms')).find(r=>r.id===scenario.id);
       if(current?.status==='waiting')break;

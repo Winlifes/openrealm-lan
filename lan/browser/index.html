@@ -60,6 +60,8 @@
   var resourceStatus = document.getElementById('resource-status');
   var canvas = document.getElementById('canvas');
   const query = new URLSearchParams(location.search);
+  const siteRoot = new URL('../../../', location.href);
+  const sitePath = path => new URL(path, siteRoot).pathname;
   const room = query.get('room');
   const isRoom = /^[a-f0-9]{18}$/.test(room || '');
   let resourceBundle;
@@ -175,13 +177,13 @@
       let args = [];
       const nickname = (localStorage.getItem('winlife-wc3-nickname') || '玩家').replace(/["\\+;\x00-\x1f]/g,' ').trim().slice(0,24);
       if (nickname) args.push('+set','name',nickname);
-      if (isRoom) args.push('+ws_url','wss://' + location.host + '/api/rooms/' + room + '/ws','+set','connect','127.0.0.1');
+      if (isRoom) args.push('+ws_url','wss://' + location.host + sitePath('api/rooms/' + room + '/ws'),'+set','connect','127.0.0.1');
       if (query.get('debug') === '1') args.push('+set','cl_ui_hit_debug','1');
       return args;
     })()),
     print: function (t) { if (window.__logs.length < 2000) window.__logs.push(String(t)); },
     printErr: function (t) { console.error(t); window.__errors.push(String(t)); if (window.__errors.length > 4000) window.__errors.shift(); },
-    WC3_DATA_BASE: '/play/gamedata/',
+    WC3_DATA_BASE: sitePath('play/gamedata/'),
     onSessionEnded: function () { finishBrowserSession(); },
     onExit: function () { finishBrowserSession(); },
     onRuntimeInitialized: function () {
@@ -216,7 +218,7 @@
         setStatus('进度保存失败，请稍后重试退出');
         return;
       }
-      location.assign(isRoom ? '/rooms.html' : '/');
+      location.assign(sitePath(isRoom ? 'rooms.html' : ''));
     };
     if (Module.FS && Module.FS.syncfs) Module.FS.syncfs(false, leave);
     else leave();
@@ -258,7 +260,7 @@
 <script src="wc3-input.js"></script>
 <script>
   async function boot() {
-    const health = isRoom ? fetch('/api/health', {cache:'no-store'}) : Promise.resolve(null);
+    const health = isRoom ? fetch(sitePath('api/health'), {cache:'no-store'}) : Promise.resolve(null);
     const version = fetchAsset('version.json', '客户端版本').then(response => response.json());
     const [active, release] = await Promise.all([health, version]);
     window.__BUILD = release.build;
