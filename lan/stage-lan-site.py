@@ -17,12 +17,16 @@ if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', args.release):
 
 root = args.root.resolve()
 release = root/'browser-releases'/args.release
-native = root/'engine-releases'/args.release/'bin/openwarcraft3'
+version = json.loads((release/'version.json').read_text())
+server_build = version['build']
+if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', server_build):
+    raise SystemExit('Invalid server build in browser release')
+native = root/'engine-releases'/server_build/'bin/openwarcraft3'
 web = root/'www'
 linked_releases = web/'play/releases'
-if (json.loads((release/'version.json').read_text())['build'] != args.release or
+if (version.get('release', server_build) != args.release or
         not native.is_file() or linked_releases.resolve() != release.parent.resolve()):
-    raise SystemExit('Stage the native and browser runtimes under the same release name first')
+    raise SystemExit('Stage the browser release and its matching native build first')
 
 game = web/'play/game'
 game.mkdir(parents=True, exist_ok=True)

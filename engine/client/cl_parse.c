@@ -17,6 +17,9 @@
 #include "sound/s_local.h"
 #include "ui_layout.h"
 
+#define CL_CAMERA_PREDICTION_MIN_MSEC 250 // Local prediction window in milliseconds without a fresh RTT.
+#define CL_CAMERA_PREDICTION_MAX_MSEC 1500 // Upper limit in milliseconds even if latency rises.
+
 /* Keep predicted camera targets inside the loaded map. Scripted WC3 camera
  * rectangles stay server-side; the client does not get a per-player copy. */
 vec2_t CL_ClampCameraPosition(vec2_t position) {
@@ -563,11 +566,16 @@ void CL_ParsePlayerInfo(sizeBuf_t *msg) {
     cl.viewDef.camerastate[0].znear = cl.playerstate.znear;
     cl.viewDef.camerastate[0].zfar = cl.playerstate.zfar;
 
-    /* Prediction expires if a game rejects/clamps input, and yields immediately to scripted UI ownership. */
+    /* Client real time is monotonic. The interpolation clock can move backward
+     * when an older server sample arrives while the browser is still panning. */
     if (cl.playerstate.client_ui_state != CLIENT_UI_GAME)
         cl.camera_prediction.active = cl.camera_prediction.view = false;
-    if (cl.time - cl.camera_prediction.focus_ms > BZ_INPUT_MAX_MSEC) cl.camera_prediction.active = false;
-    if (cl.time - cl.camera_prediction.view_ms > BZ_INPUT_MAX_MSEC) cl.camera_prediction.view = false;
+    uint32_t const now = CL_RealTime();
+    /* Allow time for the server to send a snapshot after it receives the input. */
+    uint32_t const prediction_ms = MAX(CL_CAMERA_PREDICTION_MIN_MSEC,
+        MIN(CL_CAMERA_PREDICTION_MAX_MSEC, CL_NetworkPing() + 2 * FRAMETIME));
+    if (now - cl.camera_prediction.focus_ms > prediction_ms) cl.camera_prediction.active = false;
+    if (now - cl.camera_prediction.view_ms > prediction_ms) cl.camera_prediction.view = false;
     if (cl.camera_prediction.view) {
         if (!memcmp(&cl.playerstate.viewangles, &cl.camera_prediction.angles, sizeof(vec3_t)) &&
             cl.playerstate.distance == cl.camera_prediction.distance) {

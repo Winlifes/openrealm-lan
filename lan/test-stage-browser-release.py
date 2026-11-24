@@ -44,6 +44,8 @@ class BrowserReleaseInputs(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             release = root / 'browser-releases/test-build'
+            self.assertEqual(json.loads((release / 'version.json').read_text()),
+                             {'build': 'test-build', 'release': 'test-build'})
             manifest = json.loads((release / 'release-manifest.json').read_text())
             self.assertEqual((release / 'assets.index.txt').read_bytes(), served_index.read_bytes())
             self.assertEqual(json.loads((release / 'preload.index.json').read_text()), preload_plan)
@@ -53,6 +55,21 @@ class BrowserReleaseInputs(unittest.TestCase):
                 body = (compiled / name).read_bytes()
                 self.assertEqual((release / name).read_bytes(), body, name)
                 self.assertEqual(manifest[name]['sha256'], hashlib.sha256(body).hexdigest())
+            result = subprocess.run([sys.executable, str(script), 'updated-browser',
+                                     '--server-build', 'test-build', '--engine-build', str(compiled),
+                                     '--asset-index', str(served_index), '--preload-index', str(preload_index)],
+                                    env={**os.environ, 'WC3_LAN_ROOT': str(root)},
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            version = root / 'browser-releases/updated-browser/version.json'
+            self.assertEqual(json.loads(version.read_text()), {'build': 'test-build', 'release': 'updated-browser'})
+            native = root / 'engine-releases/test-build/bin/openwarcraft3'
+            native.parent.mkdir(parents=True)
+            native.touch()
+            result = subprocess.run([sys.executable, str(script.with_name('stage-lan-site.py')),
+                                     'updated-browser', '--root', str(root)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('../releases/updated-browser/', (root / 'www/play/game/index.html').read_text())
 
 
 if __name__ == '__main__':

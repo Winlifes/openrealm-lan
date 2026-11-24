@@ -12,7 +12,7 @@ test('placeholder stays visible until browser painting opportunities', () => {
   globalThis.requestAnimationFrame = fn => { frames.push(fn); };
   try {
     const node = {hidden:true};
-    const show = makeEarlyMapLoading({getElementById:()=>node});
+    const show = makeEarlyMapLoading({getElementById:id=>id==='early-map-loading' ? node : null});
     show(true, 0, false);
     show(false, 1, true);
     assert.equal(node.hidden, false);
@@ -29,7 +29,7 @@ test('a new map transition cancels an earlier pending hide', () => {
   globalThis.requestAnimationFrame = fn => { frames.push(fn); };
   try {
     const node = {hidden:true};
-    const show = makeEarlyMapLoading({getElementById:()=>node});
+    const show = makeEarlyMapLoading({getElementById:id=>id==='early-map-loading' ? node : null});
     show(true, 0, false); show(false, 1, true); show(true, 0, false);
     frames.shift()(); frames.shift()();
     assert.equal(node.hidden, false);

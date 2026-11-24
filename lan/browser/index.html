@@ -16,6 +16,8 @@
             place-content: center; text-align: center; color: #eee; background: #090b11;
             font: 15px/1.5 system-ui, sans-serif; pointer-events: none; }
   #status[hidden], #early-map-loading[hidden] { display: none; }
+  #early-map-loading { gap: 14px; }
+  #early-map-progress { width: min(360px, 74vw); height: 12px; accent-color: #c8a765; }
   #resource-status { position: absolute; z-index: 11; top: calc(50% + 22px); inset-inline: 0;
             color: #bfc8d4; text-align: center; font: 12px/1.5 system-ui, sans-serif; pointer-events: none; }
   #game-controls { position: absolute; z-index: 40; top: 42px; right: 8px; display: flex; gap: 5px; }
@@ -40,7 +42,10 @@
   <canvas id="canvas" width="1280" height="720" oncontextmenu="event.preventDefault()" tabindex="0"></canvas>
   <div id="status" role="status">正在准备客户端…</div>
   <div id="resource-status"></div>
-  <div id="early-map-loading" role="status" hidden>正在载入对局…</div>
+  <div id="early-map-loading" hidden>
+    <span id="early-map-phase" role="status">正在载入对局…</span>
+    <progress id="early-map-progress" max="1" aria-label="对局加载进度"></progress>
+  </div>
   <div id="game-controls">
     <button id="pointer-lock-button" type="button" title="按 Esc 释放鼠标" aria-pressed="false" hidden disabled>锁定鼠标</button>
     <button id="fullscreen-button" type="button" aria-pressed="false">全屏</button>
@@ -65,6 +70,7 @@
   const room = query.get('room');
   const isRoom = /^[a-f0-9]{18}$/.test(room || '');
   let resourceBundle;
+  const warmAssets = new Map();
   function setStatus(status) {
     window.__status = status;
     st.hidden = status === 'runtime-initialized';
@@ -72,14 +78,38 @@
   }
   function mark(name) { performance.mark(name); }
   const presentMapLoading = window.openrealmEarlyMapLoading;
+  const mapPhase = document.getElementById('early-map-phase');
+  let watchingRoom = isRoom;
   let loadingMatch = false;
   window.openrealmEarlyMapLoading = function (active, progress, submitted) {
+    if (!active && !loadingMatch) return;
+    if (active) {
+      watchingRoom = false;
+      mapPhase.textContent = progress >= 1 ? '正在进入对局…' : '正在载入对局…';
+    } else {
+      warmAssets.clear();
+    }
     if (active !== loadingMatch) {
       loadingMatch = active;
       mark(active ? 'wc3-match-loading' : 'wc3-match-ready');
     }
     presentMapLoading?.(active, progress, submitted);
   };
+
+  async function watchRoomStart() {
+    if (!watchingRoom) return;
+    try {
+      const rooms = await fetchAsset(sitePath('api/rooms'), '房间状态');
+      const state = (await rooms.json()).find(entry => entry.id === room);
+      if (!watchingRoom) return;
+      if (state?.status === 'playing') {
+        watchingRoom = false;
+        mapPhase.textContent = '服务器正在准备对局…';
+        presentMapLoading?.(true, 0, false);
+      }
+    } catch (_) { /* Retry after transient network failures. */ }
+    if (watchingRoom) setTimeout(watchRoomStart, 800);
+  }
 
   async function fetchAsset(url, label) {
     const response = await fetch(url);
@@ -91,6 +121,40 @@
       '?v=' + encodeURIComponent(window.__BUILD);
   }
   function pathList(text) { return text.split(/\r?\n/).map(line => line.trim()).filter(Boolean); }
+  async function downloadLooseAsset(path, sidecars) {
+    const sidecar = path + '.b64';
+    const candidates = sidecars.has(path) ? [sidecar, path] : [path];
+    if (path.endsWith('.blp')) candidates.push(path.slice(0, -4) + '.dds');
+    for (const name of candidates) {
+      const response = await fetch(dataUrl(name), {signal: AbortSignal.timeout(30000)});
+      if (!response.ok) continue;
+      return name === sidecar
+        ? Uint8Array.from(atob(await response.text()), byte => byte.charCodeAt(0))
+        : new Uint8Array(await response.arrayBuffer());
+    }
+    return null;
+  }
+  function mountLooseAsset(diskPath, bytes) {
+    if (!bytes?.byteLength) return 0;
+    const separator = diskPath.lastIndexOf('/');
+    if (separator > 0) Module.FS.mkdirTree(diskPath.slice(0, separator));
+    Module.FS.writeFile(diskPath, bytes, {canOwn: true});
+    return bytes.byteLength;
+  }
+  function fetchAssetForEngine(diskPath, filename) {
+    const path = filename.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
+    if (!Module.WC3_ASSET_INDEX.has(path)) return 0;
+    const cached = warmAssets.get(path);
+    if (cached) return mountLooseAsset(diskPath, cached);
+    return downloadLooseAsset(path, Module.WC3_B64_SET).then(bytes => {
+      const size = mountLooseAsset(diskPath, bytes);
+      if (size) console.debug('[fetch-on-demand] ' + path + ' (' + size + ' bytes)');
+      return size;
+    }).catch(error => {
+      console.warn('读取对局资源失败', path, error.message);
+      return 0;
+    });
+  }
   async function loadMaps() {
     const response = await fetchAsset('playable-maps.index.txt', '可玩地图目录');
     const paths = pathList(await response.text());
@@ -123,8 +187,8 @@
       while (next < files.length) {
         const path = files[next++];
         try {
-          const asset = await fetch(dataUrl(path + (sidecars.has(path) ? '.b64' : '')));
-          if (asset.ok) await asset.arrayBuffer();
+          const bytes = await downloadLooseAsset(path, sidecars);
+          if (bytes?.byteLength) warmAssets.set(path, bytes);
         } catch (_) { /* The engine retains its normal on-demand fetch path. */ }
         completed++;
         if (completed % 10 === 0 || completed === files.length)
@@ -177,22 +241,32 @@
       let args = [];
       const nickname = (localStorage.getItem('winlife-wc3-nickname') || '玩家').replace(/["\\+;\x00-\x1f]/g,' ').trim().slice(0,24);
       if (nickname) args.push('+set','name',nickname);
-      if (isRoom) args.push('+ws_url','wss://' + location.host + sitePath('api/rooms/' + room + '/ws'),'+set','connect','127.0.0.1');
+      if (isRoom) {
+        const socketOrigin = location.origin.replace(/^http/, 'ws');
+        args.push('+ws_url',socketOrigin + sitePath('api/rooms/' + room + '/ws'),'+set','connect','127.0.0.1');
+      }
       if (query.get('debug') === '1') args.push('+set','cl_ui_hit_debug','1');
       return args;
     })()),
     print: function (t) { if (window.__logs.length < 2000) window.__logs.push(String(t)); },
     printErr: function (t) { console.error(t); window.__errors.push(String(t)); if (window.__errors.length > 4000) window.__errors.shift(); },
     WC3_DATA_BASE: sitePath('play/gamedata/'),
+    WC3_FetchAsset: fetchAssetForEngine,
     onSessionEnded: function () { finishBrowserSession(); },
     onExit: function () { finishBrowserSession(); },
     onRuntimeInitialized: function () {
       mark('wc3-runtime-ready');
       setStatus('runtime-initialized');
       document.getElementById('pointer-lock-button').disabled = false;
+      void watchRoomStart();
     },
     locateFile: function (f) { return f + '?v=' + window.__BUILD; },
-    onAbort: function (why) { window.__errors.push('ABORT: ' + why); setStatus('aborted'); },
+    onAbort: function (why) {
+      window.__errors.push('ABORT: ' + why);
+      watchingRoom = false;
+      presentMapLoading?.(false, 0, false);
+      setStatus('游戏加载失败，请返回房间重试');
+    },
     wc3PlayMovie: function (path) {
       var name=String(path).replace(/\\/g,'/').split('/').pop().replace(/\.(mpq|avi|mp4|bik|webm)$/i,'').toLowerCase();
       if (Module.WC3_MOVIES && Module.WC3_MOVIES.has(name)) {
@@ -210,6 +284,8 @@
   function finishBrowserSession() {
     if (returningToSite) return;
     returningToSite = true;
+    watchingRoom = false;
+    presentMapLoading?.(false, 0, false);
     setStatus('正在保存进度并返回…');
     var leave = function (error) {
       if (error) {

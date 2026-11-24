@@ -44,7 +44,7 @@ void CL_SetCameraPosition(vec2_t position) {
     CL_PredictCameraPosition(position);
     cl.camera_prediction.active = true;
     cl.camera_prediction.origin = position;
-    cl.camera_prediction.focus_ms = cl.time;
+    cl.camera_prediction.focus_ms = CL_RealTime();
     MSG_WriteByte(&cls.netchan.message, clc_input);
     MSG_WriteInput(&cls.netchan.message, &(inputCmd_t){ .action = BZ_INPUT_FOCUS, .focus = position });
 }

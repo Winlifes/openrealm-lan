@@ -627,6 +627,8 @@ void CL_SetLoadingProgress(float progress) {
 }
 
 void CL_BeginLoadingMap(cstring_t mapName) {
+    cl.loading_progress = 0.0f;
+    Sys_UpdateLoadingPresentation(true, cl.loading_progress, false);
     /* Release glue-owned caches before the renderer registers a different world. */
     CL_SuspendMenu();
     /* Per-map input conveniences must never retain entity numbers into the
@@ -642,12 +644,10 @@ void CL_BeginLoadingMap(cstring_t mapName) {
      * so PrepRefresh sends it again and CL_ParseFrame can end the plaque. */
     CL_RestartRefresh();
     CL_MapLoadDebugBegin();
-    cl.loading_progress = 0.0f;
     cl.precache_ready = false;
     cl.playerstate.client_ui_state = CLIENT_UI_LOADING;
     cls.state = ca_connected;
     CL_SetGameplayInput();
-    Sys_UpdateLoadingPresentation(true, cl.loading_progress, false);
     SCR_BeginLoadingPlaque();
     /* New map baselines repopulate the compact active-entity list; drop any
      * stale entries from the previous map before they arrive. */

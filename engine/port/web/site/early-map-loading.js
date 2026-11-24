@@ -3,6 +3,7 @@
   'use strict';
   function makeEarlyMapLoading(document) {
     const overlay = document && document.getElementById('early-map-loading');
+    const progressBar = document && document.getElementById('early-map-progress');
     let serial = 0;
     return function setEarlyMapLoading(active, progress, loadingScreenSubmitted) {
       if (!overlay) return;
@@ -10,8 +11,12 @@
       // Loading layouts arrive before map registration is finished. Keep the
       // browser placeholder until the authored loading frame is ready and the
       // client reaches the existing post-RegisterMap 40% checkpoint.
-      if (active && (!loadingScreenSubmitted || progress < 0.4)) {
+      if (active && (progressBar || !loadingScreenSubmitted || progress < 0.4)) {
         overlay.hidden = false;
+        if (progressBar) {
+          if (progress > 0) progressBar.value = Math.min(1, progress);
+          else progressBar.removeAttribute('value');
+        }
         return;
       }
       // A worker can submit its WebGL frame before the browser composites it.

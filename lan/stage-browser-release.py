@@ -6,13 +6,17 @@ import argparse, hashlib, json, re, shutil
 
 parser = argparse.ArgumentParser()
 parser.add_argument('release')
+parser.add_argument('--server-build', help='Native build for a wire-compatible browser-only update')
 parser.add_argument('--engine-build', type=Path, required=True,
                     help='Exact Emscripten bin directory produced by build-browser-engine.sh')
 parser.add_argument('--preview-dir', type=Path, help='Prepared HTML and bootstrap directory')
 parser.add_argument('--asset-index', type=Path, help='Manifest of files in the served data mirror, if it is a subset')
 parser.add_argument('--preload-index', type=Path, help='Optional JSON listing the measured lobby and per-map startup assets')
 args = parser.parse_args()
-if not re.fullmatch(r'[a-zA-Z0-9._-]+', args.release): parser.error('Invalid release name')
+version_name = r'[A-Za-z0-9][A-Za-z0-9._-]*'
+server_build = args.server_build or args.release
+if not re.fullmatch(version_name, args.release) or not re.fullmatch(version_name, server_build):
+    parser.error('Invalid browser release or server build')
 root = Path(os.environ.get('WC3_LAN_ROOT', Path.home() / '.local/share/wc3-lan')).resolve()
 dev = root / 'development'
 preview = args.preview_dir or dev / 'browser-preview'
@@ -52,7 +56,7 @@ for name in engine_files:
     shutil.copy2(source, target / name)
     if source.read_bytes() != (target / name).read_bytes():
         raise ValueError('Compiled engine copy mismatch: ' + name)
-(target / 'version.json').write_text(json.dumps(dict(build=args.release)) + '\n')
+(target / 'version.json').write_text(json.dumps(dict(build=server_build, release=args.release)) + '\n')
 for name in ['NOTICE.md', 'LICENSE']:
     file = preview / name
     if name == 'LICENSE' and not file.exists(): file = dev / 'src/LICENSE'
