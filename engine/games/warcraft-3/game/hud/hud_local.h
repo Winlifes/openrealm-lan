@@ -62,6 +62,13 @@ typedef struct {
 } infoPanelIconCache_t;
 
 typedef struct {
+    char command[CMDARG_LEN * 2];
+    bool queueable;
+} hudCommandHotkey_t;
+
+typedef hudCommandHotkey_t hudCommandHotkeys_t[128];
+
+typedef struct {
     frameDef_t const *frame;
     frameDef_t const *parent;
     cstring_t measure_text;
@@ -125,6 +132,7 @@ typedef struct {
     color32_t timer_dialog_default_title_color;
     color32_t timer_dialog_default_time_color;
     FRAMEDEF msg_root, msg_text;
+    hudCommandHotkeys_t command_hotkeys[MAX_PLAYERS];
     PATHSTR image_key[MAX_IMAGES];
     PATHSTR image_name[MAX_IMAGES];
     bool image_decorated[MAX_IMAGES];

@@ -35,6 +35,22 @@ game UI authoring
 including `-1` sentinels. Code reading an unsigned wire field must cast its
 result to `BYTE`; do not globally change `MSG_ReadByte` semantics.
 
+## Command-card hotkeys
+
+A selection change can reach the server before the corresponding command card
+reaches the client. A game can publish a handler name in
+`CS_COMMANDBAR_HOTKEY_COMMAND` to resolve printable, unbound command-card keys
+in the same input stream as selection. The client sends the uppercase ASCII
+value with an optional `queue` argument for Shift. Other layout hotkeys and
+mouse hit tests still use the frame data. With an empty configstring, the client
+also resolves command-card keys from the retained frames.
+
+Warcraft III records the enabled bindings as it writes each player's command
+card, including build and skill menus. A replacement or empty layout replaces
+the bindings. The handler dispatches the matching button through the usual
+game command path and queues it only when the authored frame permits queuing.
+The configstring and command use the existing wire messages.
+
 ## Frame Point ABI
 
 `common/msg.c:uiFrameFields` serializes each `uiFrame_t.points` element and

@@ -3955,6 +3955,7 @@ uint16_t UI_TestSelectedTimedStatusStat(gameClient_t *client, edict_t *selected)
 #endif
 void UI_WriteLayout(edict_t *, frameDef_t const *, uint32_t);
 void UI_WriteStart(uint32_t);
+cstring_t UI_CommandHotkey(gameClient_t const *, unsigned long key, bool *queueable);
 void UI_ClearLayer(edict_t *, uint32_t);
 void UI_ShowGameResult(edict_t *, uint32_t);
 struct wc3ScoreView_s;

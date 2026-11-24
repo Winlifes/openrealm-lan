@@ -6,6 +6,7 @@
  * to the network via gi.Write.  All HUD panels use these to emit frames.
  */
 
+#include <ctype.h>
 #include <string.h>
 
 #include "hud_local.h"
@@ -16,6 +17,15 @@ gameClient_t *ui_current_client;
 static uint8_t ui_window_text[MAX_MSGLEN];
 static uint32_t ui_window_text_size;
 bool ui_window_writing;
+static bool ui_writing_command_bar;
+static hudCommandHotkeys_t ui_command_hotkeys;
+
+cstring_t UI_CommandHotkey(gameClient_t const *client, unsigned long key, bool *queueable) {
+    if (!client || client->ps.number >= MAX_PLAYERS || key < ' ' || key > '~') return NULL;
+    hudCommandHotkey_t const *binding = &hud.command_hotkeys[client->ps.number][toupper((int)key)];
+    *queueable = binding->queueable;
+    return binding->command[0] ? binding->command : NULL;
+}
 
 cstring_t UI_LevelStringSafe(cstring_t text) {
     if (!text || !*text) {
@@ -64,6 +74,13 @@ void UI_WriteColoredProxyFrame(uiFrame_t *frame, handle_t data, uint32_t data_si
     }
     frame->buffer.data = data;
     frame->buffer.size = data_size;
+    if (ui_writing_command_bar && frame->hotkey >= ' ' && frame->hotkey <= '~' &&
+        frame->onclick && *frame->onclick && !(frame->flagsvalue & UIFRAME_DISABLED)) {
+        /* The screen checks frames back to front, so the last enabled binding wins. */
+        hudCommandHotkey_t *binding = &ui_command_hotkeys[toupper(frame->hotkey)];
+        strlcpy(binding->command, frame->onclick, sizeof(binding->command));
+        binding->queueable = (frame->flagsvalue & UIFLAG_ORDER_QUEUEABLE) != 0;
+    }
     gi.Write(ui_window_writing ? PF_UIWINDOWFRAME : PF_UIFRAME, frame);
 }
 
@@ -591,12 +608,17 @@ BZ_HOST_HIDDEN float Theme_Float(cstring_t key, cstring_t def) {
 
 void UI_WriteStart(uint32_t layer) {
     UI_ResetFrameWriteList();
+    ui_writing_command_bar = layer == LAYER_COMMANDBAR;
+    if (ui_writing_command_bar) memset(ui_command_hotkeys, 0, sizeof(ui_command_hotkeys));
     gi.Write(PF_BYTE, &(int32_t){svc_layout});
     gi.Write(PF_BYTE, &(int32_t){layer});
     ui_next_frame_number = 1;
 }
 
 void UI_WriteEnd(edict_t *ent) {
+    if (ui_writing_command_bar && ent && ent->client && ent->client->ps.number < MAX_PLAYERS)
+        memcpy(hud.command_hotkeys[ent->client->ps.number], ui_command_hotkeys, sizeof(ui_command_hotkeys));
+    ui_writing_command_bar = false;
     gi.Write(PF_LONG, &(int32_t){0});   /* bits=0 */
     gi.Write(PF_SHORT, &(int32_t){0});  /* number=0  — MSG_ReadEntityBits reads int32_t+int16_t */
     /* A NULL recipient leaves the initial loading layout for the server signon buffer. */

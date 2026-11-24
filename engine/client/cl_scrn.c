@@ -2657,16 +2657,26 @@ bool SCR_LayoutMouseEvent(layoutMouseEvent_t const *mouse_event) {
     return false;
 }
 
-/* Dispatch a command-button hotkey the same way a mouse click on that */
+/* Layers without a server-side key handler resolve keys against their retained frames. */
 bool SCR_LayoutKeyEvent(int key, bool shift_held) {
-    int const upper = toupper(key);
+    int const upper = key >= 0 && key <= UINT8_MAX ? toupper(key) : key;
     int const modal_layer = SCR_LayoutModalLayer();
 
     FOR_LOOP(layer, MAX_LAYOUT_LAYERS) {
         handle_t layout = layout_layers[layer];
         if (modal_layer >= 0 && (int)layer != modal_layer) continue;
         uint32_t flags = cl.playerstate.uiflags;
-        if (!layout || layer == LAYER_WORLD_HOVER || (1 << layer) & flags) continue;
+        if (layer == LAYER_WORLD_HOVER || (1u << layer) & flags) continue;
+        if (layer == LAYER_COMMANDBAR && cls.state == ca_active && key >= ' ' && key <= '~' &&
+            cl.configstrings[CS_COMMANDBAR_HOTKEY_COMMAND][0]) {
+            /* A selection or submenu command may already be on its way to the
+             * server, even if the frame it will replace still draws here. */
+            MSG_WriteByte(&cls.netchan.message, clc_stringcmd);
+            SZ_Printf(&cls.netchan.message, "%s %d%s", cl.configstrings[CS_COMMANDBAR_HOTKEY_COMMAND],
+                      upper, shift_held ? " queue" : "");
+            return true;
+        }
+        if (!layout) continue;
         SCR_Clear(layout);
         for (uint32_t i = SCR_NumFrames(); i > 0; i--) {
             uiFrame_t const *frame = SCR_Frame(i - 1);

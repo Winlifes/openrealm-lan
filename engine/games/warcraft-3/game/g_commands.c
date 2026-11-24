@@ -3585,7 +3585,39 @@ clientCommand_t clientCommands[] = {
     { NULL }
 };
 
+static uint32_t G_ResolveCommandHotkey(edict_t *ent, uint32_t argc, cstring_t argv[],
+                                      char *command, size_t size, cstring_t button_args[3]) {
+    gameClient_t const *client = ent ? ent->client : NULL;
+    char *end, *argument;
+    bool queueable;
+    cstring_t binding;
+
+    if (argc < 2 || !client || !client->connected || client->modal_flags ||
+        client->ps.client_ui_state != CLIENT_UI_GAME || (client->ps.uiflags & (1u << LAYER_COMMANDBAR))) return 0;
+    unsigned long const key = strtoul(argv[1], &end, 10);
+    if (!argv[1][0] || *end) return 0;
+    binding = UI_CommandHotkey(client, key, &queueable);
+    if (!binding) return 0;
+
+    strlcpy(command, binding, size);
+    argument = strchr(command, ' ');
+    if (!argument) return 0;
+    *argument++ = '\0';
+    button_args[0] = command;
+    button_args[1] = argument;
+    button_args[2] = "queue";
+    return queueable && argc == 3 && !strcmp(argv[2], "queue") ? 3 : 2;
+}
+
 void G_ClientCommand(edict_t *ent, uint32_t argc, cstring_t argv[]) {
+    char button_command[CMDARG_LEN * 2];
+    cstring_t button_args[3];
+
+    if (argc && !strcmp(argv[0], "commandkey")) {
+        argc = G_ResolveCommandHotkey(ent, argc, argv, button_command, sizeof(button_command), button_args);
+        if (!argc) return;
+        argv = button_args;
+    }
     /* Completed single-player gameplay has no valid simulation commands.
      * Leave score-window interactions on the normal validated game-owned
      * dispatcher; never pass the command through the minimap signal overlay. */

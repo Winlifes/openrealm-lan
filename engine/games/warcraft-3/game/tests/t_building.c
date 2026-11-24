@@ -4604,6 +4604,42 @@ static void shared_check_spending_commands(bool advanced) {
 TEST(wc3_building, basic_control_ally_commands_cannot_spend_owner_resources) { shared_check_spending_commands(false); }
 TEST(wc3_building, advanced_control_ally_commands_spend_owner_resources) { shared_check_spending_commands(true); }
 
+TEST(wc3_building, command_hotkey_uses_the_latest_player_card) {
+    sharedControlFixture_t f = shared_control_fixture(true);
+    UnitProfile_t profile = { .trains = "hpea" };
+    edict_t *barracks = shared_owned_unit(&f, MAKEFOURCC('h','b','a','r'), &profile);
+    gameCommandButton_t train = { .command = "hpea", .hotkey = 'P' };
+    gameCommandButton_t patrol = { .command = STR_CmdPatrol, .hotkey = 'p' };
+    cstring_t key[] = { "commandkey", "80" };
+
+    UI_WriteStart(LAYER_COMMANDBAR);
+    UI_WriteCommandButtonFrame(&patrol);
+    UI_WriteEnd(f.viewer_ent);
+    UI_WriteStart(LAYER_COMMANDBAR);
+    UI_WriteCommandButtonFrame(&train);
+    UI_WriteEnd(f.viewer_ent);
+
+    /* Another player's card must not overwrite the viewer's bindings. */
+    UI_WriteStart(LAYER_COMMANDBAR);
+    UI_WriteCommandButtonFrame(&patrol);
+    UI_WriteEnd(f.owner_ent);
+
+    G_ClientCommand(f.viewer_ent, 2, key);
+    T_EQ(G_ProductionQueueCount(barracks), 1);
+    T_ASSERT(!f.viewer->menu.on_location_selected);
+
+    train.disabled = true;
+    UI_WriteStart(LAYER_COMMANDBAR);
+    UI_WriteCommandButtonFrame(&train);
+    UI_WriteEnd(f.viewer_ent);
+    G_ClientCommand(f.viewer_ent, 2, key);
+    T_EQ(G_ProductionQueueCount(barracks), 1);
+
+    UI_ClearLayer(f.viewer_ent, LAYER_COMMANDBAR);
+    G_ClientCommand(f.viewer_ent, 2, key);
+    T_EQ(G_ProductionQueueCount(barracks), 1);
+}
+
 TEST(wc3_building, enable_user_ui_does_not_block_build_command_button) {
     edict_t *clent = &g_edicts[0];
     gameClient_t *client = clent->client;

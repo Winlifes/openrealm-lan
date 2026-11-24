@@ -4500,6 +4500,36 @@ TEST(client_screen, shifted_stop_and_hold_hotkeys_queue_only_those_orders) {
     }
 }
 
+TEST(client_screen, command_hotkey_handler_ignores_the_previous_card) {
+    uint8_t message_buf[256];
+
+    test_client_stubs_init();
+    FOR_LOOP(layer, MAX_LAYOUT_LAYERS) SCR_ClearLayoutLayer(layer);
+    SZ_Init(&cls.netchan.message, message_buf, sizeof(message_buf));
+    cls.state = ca_active;
+    net_install_command_button("button CmdPatrol", 'P', false);
+    strlcpy(cl.configstrings[CS_COMMANDBAR_HOTKEY_COMMAND], "commandkey", sizeof(cl.configstrings[0]));
+
+    T_ASSERT(SCR_LayoutKeyEvent('p', false));
+    net_read_layout_command("commandkey 80");
+
+    /* A selection made from an empty card can have a hotkey too. */
+    SZ_Clear(&cls.netchan.message);
+    SCR_ClearLayoutLayer(LAYER_COMMANDBAR);
+    T_ASSERT(SCR_LayoutKeyEvent('p', true));
+    net_read_layout_command("commandkey 80 queue");
+
+    SZ_Clear(&cls.netchan.message);
+    cl.playerstate.uiflags = 1u << LAYER_COMMANDBAR;
+    T_ASSERT(!SCR_LayoutKeyEvent('p', false));
+    T_EQ(cls.netchan.message.cursize, 0);
+    cl.playerstate.uiflags = 0;
+    net_install_single_layout_frame(LAYER_QUESTDIALOG, FT_TEXTURE, 0.01f, 0.01f, 0.2f, 0.2f);
+    T_ASSERT(!SCR_LayoutKeyEvent('p', false));
+    T_EQ(cls.netchan.message.cursize, 0);
+    SCR_ClearLayoutLayer(LAYER_QUESTDIALOG);
+}
+
 /* WC3's info/status panel rises above the flat world-scissor bottom.  A drag
  * crossing that authored panel must stop at the panel's top rather than draw
  * the marquee through the transparent portions of the HUD art. */

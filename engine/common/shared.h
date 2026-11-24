@@ -307,6 +307,7 @@ enum {
     CS_SCENE_FOG = 13,
     /* Generic scene water tint: "r g b a" as normalized floats. Empty means neutral white. */
     CS_SCENE_WATER_COLOR = 14,
+    CS_COMMANDBAR_HOTKEY_COMMAND = 15, // optional command name for authoritative command-bar keys
     CS_MAXCLIENTS = 30,
     CS_MAPCHECKSUM = 31,        // for catching cheater maps
     CS_MODELS = 32,

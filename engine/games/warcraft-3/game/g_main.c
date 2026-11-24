@@ -872,6 +872,7 @@ static bool G_LoadMap(cstring_t mapFilename) {
     cstring_t marker = Stb_IniCacheFind(&game.config.theme, "Default", "TargetPointConfirm");
     if (!marker || !*marker) fprintf(stderr, "G_LoadMap: missing skin field TargetPointConfirm\n");
     gi.configstring(CS_ORDER_MARKER, marker ? marker : "");
+    gi.configstring(CS_COMMANDBAR_HOTKEY_COMMAND, "commandkey");
     gi.LoadingFrame();
     G_MusicResetState();
     G_ResetAttackAlerts();
