@@ -1237,7 +1237,7 @@ typedef struct {
 
 #define JASS_GROUP_INITIAL_CAPACITY 64 // handle pointer slots; grows dynamically while group objects stay at stable addresses
 #define MAX_TRIGGERS 4096 // handles; bounds deterministic per-map trigger registry slots
-#define MAX_TIMERS 4096 // handles; stable slots are retained for stale JASS handle safety across repeated waits
+#define MAX_TIMERS 16384 // handles; covers scenario pools of 8193 timers and leaves stable slots for live script timers
 #define MAX_TIMERDIALOGS 64 // handles; bounds map-lifetime timer-dialog registry slots
 #define MAX_LEADERBOARDS 32 // handles; fixed save-stable leaderboard registry
 #define MAX_LEADERBOARD_ITEMS 24 // rows; covers classic player/campaign boards
@@ -3416,6 +3416,7 @@ void UI_WriteMessageInputLayout(edict_t *ent);
 void G_SetMultiboardMinimized(multiboard_t *board, player_t *player, bool minimized);
 bool G_IsMultiboardMinimized(multiboard_t const *board, player_t const *player);
 void G_MarkMultiboardDirty(multiboard_t const *board);
+void G_ClearMultiboard(multiboard_t *board);
 void G_MultiboardSetRowCount(multiboard_t *board, int32_t count);
 void G_MultiboardSetColumnCount(multiboard_t *board, int32_t count);
 struct gmultiboardcell_s *G_MultiboardCell(multiboard_t *board, int32_t row, int32_t col);

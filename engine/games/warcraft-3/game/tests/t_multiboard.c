@@ -461,6 +461,41 @@ TEST(wc3_api, multiboard_title_and_cell_zero_alpha_survive_layout) { mb_title_co
 TEST(wc3_save, multiboard_title_color_survives_save_and_label_change) { mb_title_color_case(MB_TITLE_SAVE); }
 TEST(wc3_api, multiboard_title_color_resets_after_destroy) { mb_title_color_case(MB_TITLE_REUSE); }
 
+TEST(wc3_api, multiboard_clear_recreates_empty_cells_without_losing_title) {
+    player_t *saved = currentplayer;
+    setup_test_world();
+    currentplayer = NULL;
+    T_ASSERT(run_test_jass(
+        "function main takes nothing returns nothing\n"
+        "  local multiboard mb = CreateMultiboard()\n"
+        "  local multiboarditem old = null\n"
+        "  call MultiboardSetTitleText(mb, \"Round results\")\n"
+        "  call MultiboardSetRowCount(mb, 2)\n"
+        "  call MultiboardSetColumnCount(mb, 3)\n"
+        "  call MultiboardDisplay(mb, true)\n"
+        "  set old = MultiboardGetItem(mb, 0, 0)\n"
+        "  call MultiboardSetItemValue(old, \"Previous round\")\n"
+        "  call MultiboardClear(mb)\n"
+        "  call BJassAssert(MultiboardGetRowCount(mb) == 0, \"clear rows\")\n"
+        "  call BJassAssert(MultiboardGetColumnCount(mb) == 0, \"clear columns\")\n"
+        "  call MultiboardSetRowCount(mb, 1)\n"
+        "  call MultiboardSetColumnCount(mb, 1)\n"
+        "  call MultiboardSetItemValue(old, \"Stale item\")\n"
+        "  call MultiboardReleaseItem(old)\n"
+        "endfunction\n"));
+    multiboard_t *board = G_VisibleMultiboard(0);
+    T_NOT_NULL(board);
+    if (board) {
+        T_STREQ(board->title, "Round results");
+        T_EQ(board->rows, 1);
+        T_EQ(board->cols, 1);
+        struct gmultiboardcell_s *cell = G_MultiboardCell(board, 0, 0);
+        T_NOT_NULL(cell);
+        if (cell) T_STREQ(cell->value, "");
+    }
+    currentplayer = saved;
+}
+
 TEST(wc3_api, multiboard_natives_manage_cells_display_and_minimize) {
     player_t *saved = currentplayer;
     multiboard_t *board;

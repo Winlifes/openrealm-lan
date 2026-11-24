@@ -25,6 +25,8 @@ A `TIMERDIALOG` stores only presentation state and a pointer to the existing `GT
 
 The fixed `level.timer_dialogs[MAX_TIMERDIALOGS]` registry gives JASS light handles stable map-lifetime addresses. Each slot stores the timer association, title, optional title/time colours, and a client visibility mask.
 
+The timer registry allows 16,384 stable handles. Scenario scripts can allocate a full timer array during initialization, including the 8,193 allocations in Zombie Island III New Century 1.0. Save files store the number of used timer slots and their fields.
+
 ## Implemented Natives
 
 The ordinary campaign path is implemented:

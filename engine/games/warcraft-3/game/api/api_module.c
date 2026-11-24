@@ -1119,6 +1119,7 @@ jassModule_t jass_funcs[] = {
     { "MultiboardSetTitleTextColor", MultiboardSetTitleTextColor },
     { "MultiboardGetRowCount", MultiboardGetRowCount },
     { "MultiboardGetColumnCount", MultiboardGetColumnCount },
+    { "MultiboardClear", MultiboardClear },
     { "MultiboardSetRowCount", MultiboardSetRowCount },
     { "MultiboardSetColumnCount", MultiboardSetColumnCount },
     { "MultiboardGetItem", MultiboardGetItem },

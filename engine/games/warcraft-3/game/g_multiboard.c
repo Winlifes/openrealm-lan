@@ -52,13 +52,17 @@ multiboard_t *G_AllocMultiboard(void) {
     return NULL;
 }
 
-void G_FreeMultiboard(multiboard_t *board) {
-    int32_t index = multiboard_index(board);
-    if (index < 0) return;
+static void multiboard_detach_items(int32_t index) {
     FOR_LOOP(i, MAX_MULTIBOARD_ITEMS) {
         multiboardItem_t *item = &level.multiboard_items[i];
         if (item->inuse && item->board == index) item->board = -1;
     }
+}
+
+void G_FreeMultiboard(multiboard_t *board) {
+    int32_t index = multiboard_index(board);
+    if (index < 0) return;
+    multiboard_detach_items(index);
     level.multiboard_dirty_clients |= board->displayed_clients;
     memset(board, 0, sizeof(*board));
 }
@@ -129,6 +133,15 @@ bool G_IsMultiboardMinimized(multiboard_t const *board, player_t const *player) 
 void G_MarkMultiboardDirty(multiboard_t const *board) {
     if (multiboard_index(board) < 0) return;
     level.multiboard_dirty_clients |= board->displayed_clients ? board->displayed_clients : multiboard_all_client_mask();
+}
+
+void G_ClearMultiboard(multiboard_t *board) {
+    int32_t const index = multiboard_index(board);
+    if (index < 0) return;
+    multiboard_detach_items(index);
+    memset(board->cells, 0, sizeof(board->cells));
+    board->rows = board->cols = 0;
+    G_MarkMultiboardDirty(board);
 }
 
 void G_MultiboardSetRowCount(multiboard_t *board, int32_t count) {

@@ -13,7 +13,7 @@ Parent tracking: [dota-map-playability.md](dota-map-playability.md) / GitHub #43
 
 `MultiboardDisplay` / `MultiboardMinimize` / `SetTextTagVisibility` follow the leaderboard local model: `currentplayer` (GetLocalPlayer context) updates one client slot; a global call updates every connected client mask.
 
-Destroying a multiboard sets `item->board = -1` so outstanding item handles no longer mutate cells. Cell data lives on the board, not on the item view.
+Clearing or destroying a multiboard detaches its outstanding item handles. `MultiboardClear` empties the cell grid and preserves the board title and per-client display state, so a map can rebuild the rows for its next round.
 
 ## Implemented DotA Surface
 
@@ -61,7 +61,7 @@ current client-side motion/fade clock does not apply an explicit script age or
 restore the elapsed presentation age after load. Do not describe this lifecycle
 repair as complete floating-text presentation parity.
 
-`IsMultiboardDisplayed` and `MultiboardSuppressDisplay` are registered. Other `common.txt` natives (`MultiboardClear`, …) remain outstanding.
+`IsMultiboardDisplayed`, `MultiboardSuppressDisplay`, and `MultiboardClear` are registered.
 
 ## Presentation Gaps
 

@@ -5353,6 +5353,28 @@ TEST(wc3_timer, registry_enforces_capacity_without_reusing_destroyed_slots) {
     T_EQ(level.num_timers, MAX_TIMERS);
 }
 
+TEST(wc3_timer, scenario_can_preallocate_a_full_script_timer_array) {
+    setup_test_world();
+    T_ASSERT(run_test_jass(
+        "function main takes nothing returns nothing\n"
+        "  local integer i = 0\n"
+        "  local timer t = null\n"
+        "  loop\n"
+        "    exitwhen i > 8192\n"
+        "    set t = CreateTimer()\n"
+        "    set i = i + 1\n"
+        "  endloop\n"
+        "  call TimerStart(t, 2., false, null)\n"
+        "endfunction\n"));
+    T_ASSERT(level.num_timers >= 8193);
+    if (level.num_timers >= 8193) {
+        gtimer_t *timer = &level.timers[level.num_timers - 1];
+        T_ASSERT(timer->running);
+        G_RunTimers();
+        T_EQ(G_TimerRemaining(timer), 2000 - FRAMETIME);
+    }
+}
+
 TEST(wc3_save, load_restores_server_clock_onto_saved_time) {
     cstring_t filename = Test_TempPath("wc3-save-clock.bin");
     gtimer_t *timer;

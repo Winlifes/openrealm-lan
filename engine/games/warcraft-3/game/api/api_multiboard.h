@@ -105,6 +105,11 @@ uint32_t MultiboardGetColumnCount(jass_t *j) {
     multiboard_t *board = jass_checkhandle(j, 1, "multiboard");
     return jass_pushinteger(j, board && board->inuse ? (int32_t)board->cols : 0);
 }
+uint32_t MultiboardClear(jass_t *j) {
+    G_ClearMultiboard(jass_checkhandle(j, 1, "multiboard"));
+    return 0;
+}
+
 uint32_t MultiboardSetRowCount(jass_t *j) {
     G_MultiboardSetRowCount(jass_checkhandle(j, 1, "multiboard"), jass_checkinteger(j, 2));
     return 0;
