@@ -1,9 +1,11 @@
 """Release freezing must use the selected compiler output, never stale preview files."""
 from pathlib import Path
+import gzip
 import hashlib
 import json
 import os
 import subprocess
+import struct
 import sys
 import tempfile
 import unittest
@@ -51,6 +53,7 @@ class BrowserReleaseInputs(unittest.TestCase):
             self.assertEqual(json.loads((release / 'preload.index.json').read_text()), preload_plan)
             self.assertIn('fullscreen-resize.js', manifest)
             self.assertIn('early-map-loading.js', manifest)
+            self.assertIn('wc3-room-assets.js', manifest)
             for name in binaries:
                 body = (compiled / name).read_bytes()
                 self.assertEqual((release / name).read_bytes(), body, name)
@@ -70,6 +73,38 @@ class BrowserReleaseInputs(unittest.TestCase):
                                      'updated-browser', '--root', str(root)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('../releases/updated-browser/', (root / 'www/play/game/index.html').read_text())
+
+            data = root / 'data-current'
+            archive = b'map archive'
+            model = b'compressed model ' * 64
+            for path, body in {'maps/test.w3m': archive, 'ui/frame.dds': b'shared', 'units/model.dds': model}.items():
+                file = data / path
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_bytes(body)
+            served_index.write_text('maps/test.w3m\nui/frame.dds\nunits/model.blp\n')
+            preload_index.write_text(json.dumps({'lobby':['ui/frame.dds'],
+                'maps':{'maps/test.w3m':['ui/frame.dds', 'units/model.blp']}}))
+            command = [sys.executable, str(script), 'with-packs', '--engine-build', str(compiled),
+                       '--asset-index', str(served_index), '--preload-index', str(preload_index), '--data-dir', str(data)]
+            env = {**os.environ, 'WC3_LAN_ROOT': str(root)}
+            target = root / 'browser-releases/with-packs'
+            (data / 'units/model.dds').unlink()
+            result = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(target.exists())
+            (data / 'units/model.dds').write_bytes(model)
+            result = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            plan = json.loads((target / 'preload.index.json').read_text())
+            self.assertEqual(plan['maps']['maps/test.w3m'], ['units/model.blp'])
+            self.assertEqual(plan['archives']['maps/test.w3m'],
+                             {'bytes':len(archive), 'sha256':hashlib.sha256(archive).hexdigest()})
+            self.assertEqual(list(json.loads((target / 'room-maps.index.json').read_text()).values()), ['maps/test.w3m'])
+            packed = (target / plan['packs']['maps']['maps/test.w3m']).read_bytes()
+            size, decoded_size = struct.unpack('<II', packed[:8])
+            self.assertEqual(size, len(packed) - 8)
+            self.assertEqual(decoded_size, len(model))
+            self.assertEqual(gzip.decompress(packed[8:]), model)
 
 
 if __name__ == '__main__':

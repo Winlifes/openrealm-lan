@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Freeze one browser build, including bootstrap and map catalog, before publishing."""
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import os
-import argparse, hashlib, json, re, shutil
+import argparse, gzip, hashlib, json, re, shutil, struct, tempfile
 
 parser = argparse.ArgumentParser()
 parser.add_argument('release')
@@ -12,6 +12,7 @@ parser.add_argument('--engine-build', type=Path, required=True,
 parser.add_argument('--preview-dir', type=Path, help='Prepared HTML and bootstrap directory')
 parser.add_argument('--asset-index', type=Path, help='Manifest of files in the served data mirror, if it is a subset')
 parser.add_argument('--preload-index', type=Path, help='Optional JSON listing the measured lobby and per-map startup assets')
+parser.add_argument('--data-dir', type=Path, help='Build startup bundles and check map archives against this served data mirror')
 args = parser.parse_args()
 version_name = r'[A-Za-z0-9][A-Za-z0-9._-]*'
 server_build = args.server_build or args.release
@@ -27,6 +28,7 @@ files = ['index.html', 'wc3-input.js', 'wc3-movies.js', 'bootstrap.mpq', 'bootst
          'playable-maps.index.txt']
 shared = Path(__file__).resolve().parent.parent / 'engine/port/web/site'
 shared_files = ['fullscreen-resize.js', 'early-map-loading.js']
+room_assets_script = Path(__file__).resolve().parent / 'browser/wc3-room-assets.js'
 asset_index = args.asset_index or preview / 'assets.index.txt'
 if not asset_index.is_file(): raise FileNotFoundError(asset_index)
 for name in files:
@@ -46,24 +48,87 @@ if not set(preload['maps']) <= playable_maps:
 for group in [preload['lobby'], *preload['maps'].values()]:
     if not set(group) <= served_paths:
         raise ValueError('Preload index names an asset absent from the served data mirror')
-target.mkdir(parents=True)
-for name in files: shutil.copy2(preview / name, target / name)
-for name in shared_files: shutil.copy2(shared / name, target / name)
-shutil.copy2(asset_index, target / 'assets.index.txt')
-(target / 'preload.index.json').write_text(json.dumps(preload, ensure_ascii=False) + '\n', encoding='utf-8')
-for name in engine_files:
-    source = args.engine_build / name
-    shutil.copy2(source, target / name)
-    if source.read_bytes() != (target / name).read_bytes():
-        raise ValueError('Compiled engine copy mismatch: ' + name)
-(target / 'version.json').write_text(json.dumps(dict(build=server_build, release=args.release)) + '\n')
-for name in ['NOTICE.md', 'LICENSE']:
-    file = preview / name
-    if name == 'LICENSE' and not file.exists(): file = dev / 'src/LICENSE'
-    if file.exists(): shutil.copy2(file, target / name)
-manifest = {p.name: dict(bytes=p.stat().st_size, sha256=hashlib.sha256(p.read_bytes()).hexdigest())
-            for p in sorted(target.iterdir()) if p.is_file()}
-(target / 'release-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+
+
+def describe(path):
+    digest = hashlib.sha256()
+    with path.open('rb') as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return dict(bytes=path.stat().st_size, sha256=digest.hexdigest())
+
+
+def asset_source(path):
+    relative = PurePosixPath(path)
+    if relative.is_absolute() or '..' in relative.parts or '\\' in path or relative.as_posix() != path:
+        raise ValueError('Invalid asset path: ' + path)
+    return args.data_dir / relative
+
+
+def write_pack(directory, name, paths):
+    if not paths:
+        return None
+    with (directory / name).open('wb') as bundle:
+        for path in paths:
+            source = asset_source(path)
+            if not source.is_file() and source.suffix == '.blp':
+                source = source.with_suffix('.dds')
+            size = source.stat().st_size
+            if not 0 < size < 2**32:
+                raise ValueError('Invalid bundled asset size: ' + path)
+            raw = source.read_bytes()
+            compressed = gzip.compress(raw, compresslevel=4, mtime=0)
+            stored = compressed if len(compressed) < len(raw) else raw
+            bundle.write(struct.pack('<II', len(stored), len(raw)))
+            bundle.write(stored)
+    return name
+
+
+def pack_startup_assets(directory):
+    lobby = list(dict.fromkeys(preload['lobby']))
+    shared_paths = set(lobby)
+    maps = {name: [path for path in dict.fromkeys(paths) if path not in shared_paths]
+            for name, paths in sorted(preload['maps'].items())}
+    archives = {}
+    for name in maps:
+        archive = asset_source(name)
+        if name not in served_paths or not archive.is_file() or not archive.stat().st_size:
+            raise ValueError('Playable map is absent from the served data mirror: ' + name)
+        archives[name] = describe(archive)
+    packs = {'lobby': write_pack(directory, 'room-lobby.bin', lobby), 'maps': {}}
+    for name, paths in maps.items():
+        key = hashlib.sha256(name.encode()).hexdigest()[:16]
+        packs['maps'][name] = write_pack(directory, f'room-map-{key}.bin', paths)
+    return dict(lobby=lobby, maps=maps, packs=packs, archives=archives)
+
+
+if args.data_dir and set(preload['maps']) != playable_maps:
+    raise ValueError('A packed release needs a preload list for every playable map')
+target.parent.mkdir(parents=True, exist_ok=True)
+with tempfile.TemporaryDirectory(prefix=f'.{args.release}-', dir=target.parent) as staging_path:
+    staging = Path(staging_path)
+    for name in files: shutil.copy2(preview / name, staging / name)
+    for name in shared_files: shutil.copy2(shared / name, staging / name)
+    shutil.copy2(room_assets_script, staging / room_assets_script.name)
+    shutil.copy2(asset_index, staging / 'assets.index.txt')
+    map_ids = {hashlib.sha256(name.encode()).hexdigest()[:16]: name for name in sorted(playable_maps)}
+    (staging / 'room-maps.index.json').write_text(json.dumps(map_ids, ensure_ascii=False) + '\n', encoding='utf-8')
+    plan = pack_startup_assets(staging) if args.data_dir else preload
+    (staging / 'preload.index.json').write_text(json.dumps(plan, ensure_ascii=False) + '\n', encoding='utf-8')
+    for name in engine_files:
+        shutil.copy2(args.engine_build / name, staging / name)
+    (staging / 'version.json').write_text(json.dumps(dict(build=server_build, release=args.release)) + '\n')
+    for name in ['NOTICE.md', 'LICENSE']:
+        file = preview / name
+        if name == 'LICENSE' and not file.exists(): file = dev / 'src/LICENSE'
+        if file.exists(): shutil.copy2(file, staging / name)
+    manifest = {p.name: describe(p) for p in sorted(staging.iterdir()) if p.is_file()}
+    for name in engine_files:
+        if describe(args.engine_build / name) != manifest[name]:
+            raise ValueError('Compiled engine copy mismatch: ' + name)
+    (staging / 'release-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    staging.chmod(0o755)
+    staging.rename(target)
 play = root / 'www/play'
 play.mkdir(parents=True, exist_ok=True)
 link = play / 'releases'

@@ -15,11 +15,19 @@
   #status, #early-map-loading { position: absolute; inset: 0; z-index: 10; display: grid;
             place-content: center; text-align: center; color: #eee; background: #090b11;
             font: 15px/1.5 system-ui, sans-serif; pointer-events: none; }
+  #status { gap: 12px; padding: 20px; }
   #status[hidden], #early-map-loading[hidden] { display: none; }
+  #room-download-progress { justify-self: center; width: min(360px, 74vw); height: 12px; accent-color: #c8a765; }
+  #resource-status { color: #bfc8d4; font-size: 12px; font-variant-numeric: tabular-nums; }
+  #resource-status:empty { display: none; }
+  #room-loading-actions { display: flex; justify-content: center; align-items: center; gap: 12px; }
+  #room-loading-actions[hidden] { display: none; }
+  #room-loading-actions a, #room-loading-actions button { pointer-events: auto; padding: 6px 12px;
+            border: 1px solid #6a7484; border-radius: 4px; background: #1c2534;
+            color: #eee; font: inherit; text-decoration: none; cursor: pointer; }
+  #room-loading-actions a:hover, #room-loading-actions button:hover { background: #2b3a50; }
   #early-map-loading { gap: 14px; }
   #early-map-progress { width: min(360px, 74vw); height: 12px; accent-color: #c8a765; }
-  #resource-status { position: absolute; z-index: 11; top: calc(50% + 22px); inset-inline: 0;
-            color: #bfc8d4; text-align: center; font: 12px/1.5 system-ui, sans-serif; pointer-events: none; }
   #game-controls { position: absolute; z-index: 40; top: 42px; right: 8px; display: flex; gap: 5px; }
   #game-controls button { height: 30px; padding: 0 8px; border: 1px solid rgba(220,230,245,.55);
             border-radius: 4px; background: rgba(0,0,0,.65); color: #fff; font: 12px/1 system-ui, sans-serif;
@@ -40,8 +48,15 @@
 </style>
 <div id="game-container">
   <canvas id="canvas" width="1280" height="720" oncontextmenu="event.preventDefault()" tabindex="0"></canvas>
-  <div id="status" role="status">正在准备客户端…</div>
-  <div id="resource-status"></div>
+  <div id="status">
+    <span id="status-message" role="status">正在准备客户端…</span>
+    <progress id="room-download-progress" aria-label="进房资源下载进度"></progress>
+    <span id="resource-status"></span>
+    <div id="room-loading-actions" hidden>
+      <button id="room-download-retry" type="button" hidden>重试</button>
+      <a id="room-download-back">返回房间列表</a>
+    </div>
+  </div>
   <div id="early-map-loading" hidden>
     <span id="early-map-phase" role="status">正在载入对局…</span>
     <progress id="early-map-progress" max="1" aria-label="对局加载进度"></progress>
@@ -57,31 +72,67 @@
 </div>
 <script src="fullscreen-resize.js"></script>
 <script src="early-map-loading.js"></script>
+<script src="wc3-room-assets.js"></script>
 <script>
   window.__status = 'loading';
   window.__logs = [];
   window.__errors = [];
-  var st = document.getElementById('status');
-  var resourceStatus = document.getElementById('resource-status');
+  const statusPanel = document.getElementById('status');
+  const statusMessage = document.getElementById('status-message');
+  const resourceStatus = document.getElementById('resource-status');
+  const roomProgress = document.getElementById('room-download-progress');
+  const roomActions = document.getElementById('room-loading-actions');
+  const retry = document.getElementById('room-download-retry');
   var canvas = document.getElementById('canvas');
   const query = new URLSearchParams(location.search);
   const siteRoot = new URL('../../../', location.href);
   const sitePath = path => new URL(path, siteRoot).pathname;
-  const room = query.get('room');
-  const isRoom = /^[a-f0-9]{18}$/.test(room || '');
-  const roomPath = sitePath('api/rooms/' + room);
+  const createMap = query.get('create');
+  const roomDraftKey = 'winlife-wc3-room-draft';
+  let room = query.get('room');
+  let roomPath = room !== null ? sitePath('api/rooms/' + room) : null;
+  const isRoom = room !== null || createMap !== null;
+  const back = document.getElementById('room-download-back');
+  back.href = sitePath(isRoom ? 'rooms.html' : '');
+  if (!isRoom) back.textContent = '返回首页';
+  roomActions.hidden = !isRoom;
+  retry.addEventListener('click', () => location.reload());
   let roomMap;
   let releaseFiles;
   let resourceBundle;
-  let matchPreload;
-  let matchReady = false;
+  let assetVersion;
   let loadFailed = false;
   const warmAssets = new Map();
   function setStatus(status) {
     if (loadFailed) return;
     window.__status = status;
-    st.hidden = status === 'runtime-initialized';
-    st.textContent = st.hidden ? '' : status;
+    statusPanel.hidden = status === 'runtime-initialized';
+    statusMessage.textContent = statusPanel.hidden ? '' : status;
+  }
+  function finishDownloadProgress() {
+    roomProgress.hidden = true;
+    resourceStatus.textContent = '';
+  }
+  function downloadProgress(sizes) {
+    const total = [...sizes.values()].reduce((sum, size) => sum + size, 0);
+    const received = new Map();
+    let renderPending = false;
+    const megabytes = bytes => (bytes / (1024 * 1024)).toFixed(1);
+    roomProgress.max = total;
+    roomProgress.value = 0;
+    return (name, bytes) => {
+      if (!sizes.has(name) || roomProgress.hidden) return;
+      received.set(name, bytes);
+      if (renderPending) return;
+      renderPending = true;
+      requestAnimationFrame(() => {
+        renderPending = false;
+        if (roomProgress.hidden) return;
+        const loaded = [...received.values()].reduce((sum, size) => sum + size, 0);
+        roomProgress.value = loaded;
+        resourceStatus.textContent = megabytes(loaded) + ' / ' + megabytes(total) + ' MiB';
+      });
+    };
   }
   function mark(name) { performance.mark(name); }
   const presentMapLoading = window.openrealmEarlyMapLoading;
@@ -94,7 +145,6 @@
       watchingRoom = false;
       mapPhase.textContent = progress >= 1 ? '正在进入对局…' : '正在载入对局…';
     } else {
-      matchReady = true;
       warmAssets.clear();
     }
     if (active !== loadingMatch) {
@@ -125,56 +175,121 @@
       : '联机服务暂时不可用，请返回房间列表重试');
     return response.json();
   }
-  async function readResource(url, read, {timeout = 30000, cache = 'default'} = {}) {
-    const response = await fetch(url, {cache, signal:AbortSignal.timeout(timeout)});
-    if (!response.ok) throw new Error(url + ' HTTP ' + response.status);
-    return read(response);
+  function readRoomForJoin() {
+    return readRoom().catch(error => {
+      if (error instanceof TypeError || error.name === 'TimeoutError')
+        throw new Error('联机服务连接失败，请重试', {cause:error});
+      throw error;
+    });
   }
-  async function fetchAsset(url, label, read, fallback = url) {
+  function checkRoom(active, build) {
+    if (active.build !== build) throw new Error('游戏版本已更新，请返回房间列表重新进入');
+    if (active.status !== 'waiting') throw new Error(active.status === 'playing'
+      ? '对局已经开始，请返回房间列表' : '房间暂时无法加入，请返回房间列表');
+    if (active.players >= active.slots) throw new Error('房间已满，请返回房间列表');
+    return active;
+  }
+  async function createPreparedRoom(draft) {
+    setStatus('资源已就绪，正在创建房间…');
+    const response = await fetch(sitePath('api/rooms'), {
+      method:'POST', headers:{'Content-Type':'application/json'}, signal:AbortSignal.timeout(8000),
+      body:JSON.stringify({mapId:draft.mapId, name:draft.name})
+    }).catch(cause => { throw new Error('创建房间连接失败，请重试', {cause}); });
+    let active = await response.json();
+    if (!response.ok) throw new Error(active.error || '创建房间失败，请重试');
+    room = active.id;
+    roomPath = sitePath('api/rooms/' + room);
+    const url = new URL(location.href);
+    url.searchParams.delete('create');
+    url.searchParams.set('room', room);
+    url.searchParams.set('map', roomMap);
+    history.replaceState(null, '', url);
+    sessionStorage.removeItem(roomDraftKey);
+    const deadline = performance.now() + 45000;
+    while (active.status === 'starting' && performance.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 350));
+      active = await readRoomForJoin();
+    }
+    if (active.status === 'error') throw new Error(active.error || '服务器准备房间失败，请重试');
+    return active;
+  }
+  async function readResource(url, read, {timeout = 30000, cache = 'default'} = {}) {
+    const controller = new AbortController();
+    let timer;
+    const resetTimeout = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), timeout);
+    };
+    resetTimeout();
     try {
-      return await readResource(url, read);
+      const response = await fetch(url, {cache, signal:controller.signal});
+      if (!response.ok) throw new Error(url + ' HTTP ' + response.status);
+      return await read(response, resetTimeout);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  async function fetchAsset(url, label, read, {fallback = url, timeout, onRetry} = {}) {
+    try {
+      return await readResource(url, read, {timeout});
     } catch (error) {
       console.warn('重新下载' + label, error);
+      onRetry?.();
       try {
-        return await readResource(fallback, read, {cache:'reload'});
+        return await readResource(fallback, read, {timeout, cache:'reload'});
       } catch (cause) {
-        throw new Error(label + '加载失败，请刷新重试', {cause});
+        throw new Error(label + '下载失败，请重试', {cause});
       }
     }
   }
-  async function readBinary(response, name) {
-    const bytes = await response.arrayBuffer();
-    if (bytes.byteLength !== releaseFiles[name]?.bytes) throw new Error(name + ' 文件大小不符');
-    return bytes;
+  function readStartupFile(url, label, file, progress, fallback = url) {
+    return fetchAsset(url, label, (response, resetTimeout) => wc3RoomAssets.readBinary(response, file, bytes => {
+      resetTimeout();
+      progress?.(bytes);
+    }), {fallback, onRetry: () => progress?.(0)});
   }
   function showLoadFailure(error) {
     if (loadFailed) return;
     console.error(error);
-    const message = error?.message || '资源初始化失败，请刷新重试';
+    const message = error?.message || '资源初始化失败，请重试';
     window.__errors.push(message);
     watchingRoom = false;
-    resourceStatus.textContent = '';
+    warmAssets.clear();
+    finishDownloadProgress();
     presentMapLoading?.(false, 0, false);
     setStatus(message);
+    roomActions.hidden = false;
+    retry.hidden = false;
     loadFailed = true;
   }
-  function dataUrl(path) {
+  function dataUrl(path, version = window.__BUILD) {
     return Module.WC3_DATA_BASE + path.split('/').map(encodeURIComponent).join('/') +
-      '?v=' + encodeURIComponent(window.__BUILD);
+      '?v=' + encodeURIComponent(version);
   }
   function pathList(text) { return text.split(/\r?\n/).map(line => line.trim()).filter(Boolean); }
   async function downloadLooseAsset(path, sidecars) {
     const sidecar = path + '.b64';
-    const candidates = sidecars.has(path) ? [sidecar, path] : [path];
+    const candidates = sidecars.has(path) ? [path, sidecar] : [path];
     if (path.endsWith('.blp')) candidates.push(path.slice(0, -4) + '.dds');
-    for (const name of candidates) {
-      const response = await fetch(dataUrl(name), {signal: AbortSignal.timeout(30000)});
-      if (!response.ok) continue;
-      return name === sidecar
-        ? Uint8Array.from(atob(await response.text()), byte => byte.charCodeAt(0))
-        : new Uint8Array(await response.arrayBuffer());
+    for (const cache of ['default', 'reload']) {
+      let failure;
+      for (const name of candidates) {
+        try {
+          const response = await fetch(dataUrl(name), {cache, signal:AbortSignal.timeout(30000)});
+          if (response.status === 404 || response.status === 410) continue;
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          const bytes = name === sidecar
+            ? Uint8Array.from(atob(await response.text()), byte => byte.charCodeAt(0))
+            : new Uint8Array(await response.arrayBuffer());
+          if (bytes.byteLength) return bytes;
+          throw new Error('Empty response');
+        } catch (error) {
+          failure = error;
+        }
+      }
+      if (!failure) return null;
+      if (cache === 'reload') throw failure;
     }
-    return null;
   }
   function mountLooseAsset(diskPath, bytes) {
     if (!bytes?.byteLength) return 0;
@@ -187,7 +302,7 @@
     const path = filename.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
     if (!Module.WC3_ASSET_INDEX.has(path)) return 0;
     const cached = warmAssets.get(path);
-    if (cached) return mountLooseAsset(diskPath, cached);
+    if (cached instanceof Uint8Array) return mountLooseAsset(diskPath, cached);
     const fetchMissing = () => downloadLooseAsset(path, Module.WC3_B64_SET).then(bytes => {
       const size = mountLooseAsset(diskPath, bytes);
       if (size) console.debug('[fetch-on-demand] ' + path + ' (' + size + ' bytes)');
@@ -196,73 +311,103 @@
       console.warn('读取对局资源失败', path, error.message);
       return 0;
     });
-    if (loadingMatch && matchPreload) {
-      return matchPreload.then(() => {
-        const prepared = warmAssets.get(path);
-        return prepared ? mountLooseAsset(diskPath, prepared) : fetchMissing();
-      });
-    }
-    return fetchMissing();
+    if (!cached) return fetchMissing();
+    const expanded = wc3RoomAssets.inflate(cached);
+    if (expanded instanceof Uint8Array) return mountLooseAsset(diskPath, expanded);
+    return expanded.then(bytes => mountLooseAsset(diskPath, bytes)).catch(error => {
+      console.warn('解压开局资源失败', path, error.message);
+      return fetchMissing();
+    });
   }
-  async function loadMaps() {
-    const paths = await fetchAsset('playable-maps.index.txt', '可玩地图目录', async response => pathList(await response.text()));
-    if (!isRoom) return {paths};
-    if (!paths.includes(roomMap)) throw new Error('当前版本找不到房间地图，请返回房间列表');
-    const bytes = await fetchAsset(dataUrl(roomMap), '房间地图', async response => new Uint8Array(await response.arrayBuffer()));
-    mark('wc3-room-map-ready');
-    return {paths, selected:roomMap, bytes};
-  }
-  async function preloadRoomAssets(paths, b64) {
-    if (!isRoom) return;
-    const plan = await readResource('preload.index.json', response => response.json(), {timeout:8000});
-    const served = new Set(paths);
-    const sidecars = new Set(b64);
-    const lobby = new Set(plan.lobby.filter(path => served.has(path)));
-    const mapFiles = Object.hasOwn(plan.maps, roomMap) ? plan.maps[roomMap] : [];
-    const matchFiles = [...new Set(mapFiles)].filter(path => served.has(path) && !lobby.has(path));
-    mark('wc3-room-preload-start');
-    async function downloadGroup(files, onProgress) {
-      let next = 0, completed = 0;
-      async function download() {
-        while (next < files.length && !matchReady) {
-          const path = files[next++];
-          try {
-            const bytes = await downloadLooseAsset(path, sidecars);
-            if (!matchReady && bytes?.byteLength) warmAssets.set(path, bytes);
-          } catch (_) { /* The engine can retry on demand. */ }
-          completed++;
-          if (completed % 10 === 0 || completed === files.length) onProgress(completed, files.length);
+  async function preloadLooseAssets(paths, sidecars) {
+    let next = 0, completed = 0, failure;
+    async function download() {
+      while (next < paths.length && !failure) {
+        const path = paths[next++];
+        try {
+          const bytes = await downloadLooseAsset(path, sidecars);
+          if (!bytes) throw new Error('Asset is missing');
+          warmAssets.set(path, bytes);
+          resourceStatus.textContent = '地图素材 ' + (++completed) + ' / ' + paths.length;
+        } catch (cause) {
+          failure = new Error('地图素材下载失败，请重试（' + path.split('/').pop() + '）', {cause});
         }
       }
-      await Promise.all(Array.from({length: Math.min(24, files.length)}, download));
     }
-    await downloadGroup([...lobby], (loaded, total) => {
-      resourceStatus.textContent = '大厅素材 ' + loaded + ' / ' + total;
-    });
-    // Admit the browser to the lobby as soon as the shared assets are ready.
-    // Continue the selected map's preload while players are setting up the room.
-    matchPreload = downloadGroup(matchFiles, (loaded, total) => {
-      if (loadingMatch) mapPhase.textContent = '正在下载地图素材 ' + loaded + ' / ' + total;
-    }).then(() => {
-      matchPreload = null;
-      mark('wc3-room-preload-ready');
-    });
+    await Promise.all(Array.from({length: Math.min(16, paths.length)}, download));
+    if (failure) throw failure;
   }
-  async function prefetchBrowserResources() {
+  async function prepareBrowserResources(mapName) {
     mark('wc3-resources-start');
-    setStatus(isRoom ? '正在准备客户端和对局资源…' : '正在准备客户端和基础资源…');
-    const b64 = fetch(dataUrl('b64.index.txt'), {signal:AbortSignal.timeout(8000)}).then(response => {
+    setStatus(mapName ? '正在下载「' + mapName + '」的开局资源…' : '正在准备客户端和基础资源…');
+    const sidecars = fetch(dataUrl('b64.index.txt'), {signal:AbortSignal.timeout(8000)}).then(async response => {
       if (response.status === 404) return '';
       if (!response.ok) throw new Error('HTTP ' + response.status);
       return response.text();
-    }).catch(error => { console.warn('资源编码目录不可用，使用原始文件', error); return ''; });
-    const [index, sidecars, bootstrap, maps] = await Promise.all([
-      fetchAsset('assets.index.txt', '资源目录', response => response.text()),
-      b64,
-      fetchAsset('bootstrap.mpq', '基础资源包', response => readBinary(response, 'bootstrap.mpq'), 'bootstrap.mpq?local=1'),
-      loadMaps()
+    }).catch(error => { console.warn('资源编码目录不可用，使用原始文件', error); return ''; })
+      .then(text => new Set(pathList(text.toLowerCase())));
+    const readText = async (name, label) => new TextDecoder().decode(await readStartupFile(name, label, releaseFiles[name]));
+    const [assets, maps, preloadText, mapIds] = await Promise.all([
+      readText('assets.index.txt', '资源目录'),
+      readText('playable-maps.index.txt', '可玩地图目录'),
+      isRoom ? readText('preload.index.json', '开局资源目录') : null,
+      createMap ? readText('room-maps.index.json', '房间地图目录').then(JSON.parse) : null
     ]);
-    return {paths:pathList(index), bootstrap:new Uint8Array(bootstrap), sidecars:pathList(sidecars.toLowerCase()), maps};
+    const paths = new Set(pathList(assets));
+    const mapPaths = pathList(maps);
+    if (createMap) roomMap = mapIds[createMap];
+    if (isRoom && !mapPaths.includes(roomMap)) throw new Error('当前版本找不到房间地图，请返回房间列表');
+    const plan = isRoom ? JSON.parse(preloadText) : null;
+    const mapFiles = plan && Object.hasOwn(plan.maps, roomMap) ? plan.maps[roomMap] : [];
+    const archive = plan?.archives?.[roomMap];
+    const usePacks = plan?.packs && typeof DecompressionStream === 'function';
+    const bundles = usePacks ? [
+      [plan.packs.lobby, plan.lobby, '公共开局资源包'],
+      [plan.packs.maps[roomMap], mapFiles, '地图开局资源包']
+    ].filter(([, files]) => files.length) : [];
+    const core = ['openwarcraft3.wasm', 'openwarcraft3.data', 'openwarcraft3.js', 'bootstrap.mpq'];
+    const sizes = new Map([...core, ...bundles.map(([name]) => name)].map(name => [name, releaseFiles[name]?.bytes]));
+    if (archive) sizes.set(roomMap, archive.bytes);
+    const progress = downloadProgress(sizes);
+    const download = (name, label, fallback) => readStartupFile(name, label, releaseFiles[name],
+      bytes => progress(name, bytes), fallback);
+    const selectedMap = async () => {
+      if (!isRoom) return null;
+      const url = dataUrl(roomMap, assetVersion);
+      const bytes = archive ? await readStartupFile(url, '房间地图', archive, size => progress(roomMap, size)) :
+        await fetchAsset(url, '房间地图', async response => {
+          const data = new Uint8Array(await response.arrayBuffer());
+          if (!data.byteLength) throw new Error('Empty map archive');
+          return data;
+        }, {timeout:90000});
+      mark('wc3-room-map-ready');
+      return bytes;
+    };
+    if (isRoom) mark('wc3-room-preload-start');
+    const [bootstrap, engineModule, engineData, mapBytes, encodings] = await Promise.all([
+      download('bootstrap.mpq', '基础资源包', 'bootstrap.mpq?local=1'),
+      download('openwarcraft3.wasm', '客户端引擎', 'openwarcraft3.wasm?local=1')
+        .then(bytes => WebAssembly.compile(bytes)),
+      download('openwarcraft3.data', '客户端数据包', 'openwarcraft3.data?local=1'),
+      selectedMap(),
+      sidecars,
+      download('openwarcraft3.js', '客户端脚本'),
+      ...bundles.map(async ([name, files, label]) => {
+        const bytes = await download(name, label);
+        if (loadFailed) return;
+        try {
+          for (const [path, data] of wc3RoomAssets.unpack(bytes, files)) warmAssets.set(path, data);
+        } catch (cause) {
+          throw new Error(label + '校验失败，请重试', {cause});
+        }
+      })
+    ]);
+    if (plan && !usePacks) {
+      finishDownloadProgress();
+      await preloadLooseAssets([...new Set([...plan.lobby, ...mapFiles])], encodings);
+    }
+    if (isRoom) mark('wc3-room-preload-ready');
+    return {paths, bootstrap, sidecars:encodings, mapPaths, mapBytes, engineModule, engineData:engineData.buffer};
   }
   window.addEventListener('error', function (e) { window.__errors.push(String(e.message)); });
   var Module = {
@@ -273,12 +418,12 @@
       if (query.get('audio') === 'dummy') Module.ENV.SDL_AUDIODRIVER = 'dummy';
       Module.addRunDependency('game-resources');
       const movies = loadMovieCatalog().catch(error => console.warn('跳过过场视频目录', error));
-      Promise.all([loadBrowserResources(), loadPlayerFiles(), !isRoom && movies])
+      Promise.all([mountBrowserResources(), loadPlayerFiles(), !isRoom && movies])
         .then(function () {
           // Removing the final dependency starts main synchronously. A renderer
           // exception here is an engine startup error, not a failed download.
           try { Module.removeRunDependency('game-resources'); }
-          catch (cause) { showLoadFailure(new Error('游戏启动失败，请刷新重试', {cause})); }
+          catch (cause) { showLoadFailure(new Error('游戏启动失败，请重试', {cause})); }
         }).catch(showLoadFailure);
     }],
     arguments: ['-data', '/data', '+com_maxfps', '60', '+fs_expansion', '1', '+vid_native', '0', '+vid_fullscreen', '0', '+vid_mode', '4',
@@ -287,10 +432,6 @@
       let args = [];
       const nickname = (localStorage.getItem('winlife-wc3-nickname') || '玩家').replace(/["\\+;\x00-\x1f]/g,' ').trim().slice(0,24);
       if (nickname) args.push('+set','name',nickname);
-      if (isRoom) {
-        const socketOrigin = location.origin.replace(/^http/, 'ws');
-        args.push('+ws_url',socketOrigin + roomPath + '/ws','+set','connect','127.0.0.1');
-      }
       if (query.get('debug') === '1') args.push('+set','cl_ui_hit_debug','1');
       return args;
     })()),
@@ -308,10 +449,7 @@
     },
     locateFile: function (f) { return f + '?v=' + window.__BUILD; },
     onAbort: function (why) {
-      window.__errors.push('ABORT: ' + why);
-      watchingRoom = false;
-      presentMapLoading?.(false, 0, false);
-      setStatus('游戏加载失败，请返回房间重试');
+      showLoadFailure(new Error('游戏加载失败，请重试', {cause:why}));
     },
     wc3PlayMovie: function (path) {
       var name=String(path).replace(/\\/g,'/').split('/').pop().replace(/\.(mpq|avi|mp4|bik|webm)$/i,'').toLowerCase();
@@ -359,66 +497,59 @@
       Module.FS.syncfs(true, function (error) { if(error)reject(error);else resolve(); });
     });
   };
-  async function loadBrowserResources() {
-    const {paths, bootstrap, sidecars, maps} = await resourceBundle;
+  function mountBrowserResources() {
+    const {paths, bootstrap, sidecars, mapPaths, mapBytes} = resourceBundle;
     resourceBundle = null;
-    Module.WC3_ASSET_INDEX = new Set(paths);
-    Module.WC3_B64_SET = new Set(sidecars);
+    Module.WC3_ASSET_INDEX = paths;
+    Module.WC3_B64_SET = sidecars;
     const fs = Module.FS;
     fs.writeFile('/data/startup.mpq', bootstrap, {canOwn:true});
     // Other maps need only a directory entry until the engine opens them.
-    for (const name of maps.paths) {
+    for (const name of mapPaths) {
       const path = '/data/' + name.replace(/^maps\//i, 'Maps/');
       fs.mkdirTree(path.slice(0, path.lastIndexOf('/')));
-      fs.writeFile(path, name === maps.selected ? maps.bytes : new Uint8Array(0), {canOwn:true});
+      fs.writeFile(path, name === roomMap ? mapBytes : new Uint8Array(0), {canOwn:true});
     }
-    await preloadRoomAssets(paths, sidecars).catch(error => window.__errors.push('预载目录: ' + error.message));
-    window.__mapCatalog = maps.paths.length;
-    resourceStatus.textContent = '';
+    window.__mapCatalog = mapPaths.length;
     mark('wc3-resources-mounted');
-    setStatus('正在初始化游戏…');
   }
 </script>
 <script src="wc3-movies.js"></script>
 <script src="wc3-input.js"></script>
 <script>
   async function boot() {
-    if (room !== null && !isRoom) throw new Error('房间链接无效，请返回房间列表');
-    const roomState = isRoom ? readRoom().catch(error => {
-      if (error instanceof TypeError || error.name === 'TimeoutError')
-        throw new Error('联机服务暂时不可用，请返回房间列表重试', {cause:error});
-      throw error;
-    }) : null;
+    if ((room !== null && !/^[a-f0-9]{18}$/.test(room)) ||
+        (createMap !== null && (room !== null || !/^[a-f0-9]{16}$/.test(createMap))))
+      throw new Error('房间链接无效，请返回房间列表');
+    const draft = createMap ? JSON.parse(sessionStorage.getItem(roomDraftKey)) : null;
+    if (createMap && draft?.mapId !== createMap) throw new Error('请从房间列表创建房间');
+    const version = fetchAsset('version.json', '客户端版本', response => response.json());
     const [active, release, files] = await Promise.all([
-      roomState,
-      fetchAsset('version.json', '客户端版本', response => response.json()),
+      room ? Promise.all([readRoomForJoin(), version]).then(([state, {build}]) => checkRoom(state, build)) : null,
+      version,
       fetchAsset('release-manifest.json', '发布文件清单', response => response.json())
     ]);
     window.__BUILD = release.build;
+    assetVersion = release.release || release.build;
     releaseFiles = files;
     Module.WC3_DATA_V = encodeURIComponent(release.build);
+    if (active) roomMap = new URL(active.url, location.origin).searchParams.get('map');
+    let {engineModule, engineData, ...prepared} = await prepareBrowserResources(active?.map || draft?.mapName);
+    finishDownloadProgress();
     if (isRoom) {
-      if (active.build !== release.build)
-        throw new Error('游戏版本已更新，请返回房间列表重新进入');
-      if (active.status !== 'waiting') throw new Error(active.status === 'playing'
-        ? '对局已经开始，请返回房间列表' : '房间暂时无法加入，请返回房间列表');
-      roomMap = new URL(active.url, location.origin).searchParams.get('map');
-      Module.arguments[Module.arguments.indexOf('+ws_url') + 1] += '?build=' + Module.WC3_DATA_V;
-    }
-    resourceBundle = prefetchBrowserResources();
-    resourceBundle.catch(showLoadFailure);
-    let [engineModule, engineData] = await Promise.all([
-      fetchAsset('openwarcraft3.wasm', '客户端引擎', async response =>
-        WebAssembly.compile(await readBinary(response, 'openwarcraft3.wasm')), 'openwarcraft3.wasm?local=1'),
-      fetchAsset('openwarcraft3.data', '客户端数据包',
-        response => readBinary(response, 'openwarcraft3.data'), 'openwarcraft3.data?local=1')
-    ]);
-    if (loadFailed) return;
+      const ready = checkRoom(createMap ? await createPreparedRoom(draft) : await readRoomForJoin(), release.build);
+      if (new URL(ready.url, location.origin).searchParams.get('map') !== roomMap)
+        throw new Error('房间地图已变更，请返回房间列表重新进入');
+      setStatus('资源已就绪，正在连接房间…');
+      const socket = location.origin.replace(/^http/, 'ws') + roomPath + '/ws?build=' + Module.WC3_DATA_V;
+      Module.arguments.push('+ws_url', socket, '+set', 'connect', '127.0.0.1');
+    } else setStatus('正在初始化游戏…');
+    resourceBundle = prepared;
     Module.instantiateWasm = (imports, receive) => {
       const module = engineModule;
       engineModule = null;
       WebAssembly.instantiate(module, imports).then(instance => receive(instance, module)).catch(cause => {
-        showLoadFailure(new Error('客户端引擎初始化失败，请刷新重试', {cause}));
+        showLoadFailure(new Error('客户端引擎初始化失败，请重试', {cause}));
       });
     };
     Module.getPreloadedPackage = () => {
@@ -426,12 +557,15 @@
       engineData = null;
       return data;
     };
-    const loadScript = retry => {
+    const scriptHash = releaseFiles['openwarcraft3.js'].sha256;
+    const scriptIntegrity = 'sha256-' + btoa(scriptHash.match(/../g).map(hex => String.fromCharCode(parseInt(hex, 16))).join(''));
+    const loadScript = retried => {
       const script = document.createElement('script');
-      script.src = retry ? 'openwarcraft3.js?retry=1' : 'openwarcraft3.js';
+      script.src = retried ? 'openwarcraft3.js?retry=1' : 'openwarcraft3.js';
+      script.integrity = scriptIntegrity;
       script.onerror = () => {
         script.remove();
-        if (retry) showLoadFailure(new Error('客户端脚本加载失败，请刷新重试'));
+        if (retried) showLoadFailure(new Error('客户端脚本加载失败，请重试'));
         else loadScript(true);
       };
       document.head.appendChild(script);
