@@ -2,6 +2,8 @@
 
 The native process runs the match. Each browser connects over WebSocket to the room service, which relays UDP datagrams to that process. Use one release name for the native executable and browser build. The service binds its HTTP API to loopback. Put Caddy in front of it to serve a single HTTPS origin for the room page, game assets and WebSockets.
 
+The room service starts the dedicated engine with `+lobby_start <map>`. The room loads its lobby metadata at that point. The host's Start command loads the world and runs its game scripts. The browser reports `Ping` next to FPS and Drawcalls using recent acknowledgements from the game connection.
+
 ## Prepare the runtime directory
 
 Set the following values from the repository root. Use a dedicated runtime directory outside the checkout.
@@ -44,6 +46,12 @@ python3 lan/stage-browser-release.py "$WC3_RELEASE" \
   --engine-build "$WC3_ENGINE_SOURCE/build/em-web/bin"
 python3 lan/stage-lan-site.py "$WC3_RELEASE"
 ```
+
+If the server hosts a trimmed data mirror, pass `--asset-index /path/to/served-assets.txt` when staging the browser release. Generate the list from the actual server directory with lowercase paths relative to `data-current`, one per line. This keeps the browser from requesting files omitted from the mirror. The browser loads the bootstrap and the room's selected archive in parallel with the client engine, then loads other assets on demand.
+
+For high-latency links, `--preload-index /path/to/preload.index.json` takes a JSON `lobby` array of shared asset paths and a `maps` object keyed by playable map path. Each value lists the successful game-data requests observed when starting that map. The browser warms the HTTP cache with bounded parallel downloads for its chosen map. The sample Caddy configuration sets a five-minute freshness window for these loose files.
+
+Use `performance.getEntriesByType('mark')` in the browser to inspect the `wc3-resources-start` through `wc3-resources-mounted` interval and the later `wc3-match-loading` through `wc3-match-ready` interval. In the corresponding `development/room-logs/<room-id>.log`, `SV_LobbyStartMatch:` and `Server initialized.` mark the server's world load. The browser's match interval also includes game sign-on and scene registration.
 
 For Linux builds, pass the absolute libmenu shared library path with `--library` to `build-room-catalog.py` and set `WC3_MPQ_LIBRARY` to the same path for `build-browser-bootstrap.py`.
 

@@ -35,10 +35,10 @@ test('only the browser build paired with the immutable runtime can join', {timeo
     await mkdir(join(root,'engine-releases',build,'bin'),{recursive:true});
     await writeFile(engine,`#!/usr/bin/env node
 import readline from 'node:readline';
-console.log('Server initialized.');
+if(process.argv.includes('+map')||!process.argv.includes('+lobby_start'))process.exit(1);
+console.log('Lobby initialized for test map');
 readline.createInterface({input:process.stdin}).on('line',line=>{
   console.log('fixture command: '+line);
-  if(line.startsWith('lobby_start '))console.log('Lobby initialized for test map');
 });
 `,{mode:0o755});
     const scenarioSlots=[
@@ -66,6 +66,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
     const health=await api('health');
     const room=await api('rooms',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({mapId:'test',name:'Winlife 测试房间'})});
+    assert.equal(new URL(room.url,'https://wc3.test').searchParams.get('map'),'Test.w3m');
     for(let i=0;;i++) {
       const rooms=await api('rooms');
       if(rooms[0]?.status==='waiting')break;

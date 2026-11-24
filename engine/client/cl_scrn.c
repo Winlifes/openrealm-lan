@@ -63,6 +63,12 @@ static void SCR_DrawFPS(uint32_t msec) {
     } else {
         snprintf(text, sizeof(text), "FPS --  Drawcalls %u", (unsigned)re.GetDrawCalls());
     }
+    if (Netchan_IsSequenced(&cls.netchan) && cls.state != ca_disconnected) {
+        int ping = CL_NetworkPing();
+        size_t length = strlen(text);
+        if (ping >= 0) snprintf(text + length, sizeof(text) - length, "  Ping %d ms", ping);
+        else snprintf(text + length, sizeof(text) - length, "  Ping --");
+    }
     SCR_DrawString(10, y, text);
 }
 

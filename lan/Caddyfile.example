@@ -14,7 +14,14 @@ https://localhost:8444 {
         reverse_proxy 127.0.0.1:18780
     }
     handle_path /play/gamedata/* {
+        header Cache-Control "public, max-age=300"
         root * {$WC3_LAN_ROOT}/data-current
+        file_server
+    }
+    handle /play/releases/* {
+        header Cache-Control "public, max-age=31536000, immutable"
+        root * {$WC3_LAN_ROOT}/www
+        encode gzip
         file_server
     }
     handle {

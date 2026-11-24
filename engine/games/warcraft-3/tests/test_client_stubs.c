@@ -25,6 +25,7 @@ uint32_t test_fow_upload_calls;
 uint32_t test_cursor_draw_calls;
 uint32_t test_client_realtime, test_cursor_time;
 uint32_t CL_RealTime(void) { return test_client_realtime; }
+int CL_NetworkPing(void) { return -1; }
 void CL_RequestSignon(cstring_t command) {
     if (!command) return;
     MSG_WriteByte(&cls.netchan.message, clc_stringcmd);

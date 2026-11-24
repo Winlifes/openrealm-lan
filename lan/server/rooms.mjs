@@ -42,7 +42,7 @@ mkdirSync(join(dev, 'room-logs'), {recursive:true});
 function publicRoom(room) {
   return {id:room.id, name:room.name, map:room.map.name, mapId:room.map.id,
     slots:humanCapacity(room.map), players:room.peers.size, status:room.status, error:room.error,
-    build,url:'/play/game/?room=' + room.id};
+    build,url:'/play/game/?' + new URLSearchParams({room:room.id,map:room.map.path})};
 }
 function writeCommand(room, text) {
   if (!room.child || room.child.exitCode !== null || !room.child.stdin.writable) throw Error('游戏进程已停止');
@@ -72,7 +72,7 @@ async function initializeRoom(room) {
     room.child = spawn(engine, ['-data', join(root,'data-current'), '+dedicated','1',
       '+game_port',String(room.port), '+fs_expansion','1', '+set','wc3_locale','zhCN',
       '+set','com_frame_limit','0', '+set','com_fast_forward','0',
-      '+map', room.map.path],
+      '+lobby_start', room.map.path],
       {cwd:join(dev,'src'), stdio:['pipe','pipe','pipe']});
     const output = createWriteStream(join(dev, 'room-logs', room.id + '.log'));
     const append = data => {
@@ -89,9 +89,6 @@ async function initializeRoom(room) {
         for (const ws of room.peers) ws.close(1011, '游戏进程已退出');
       }
     });
-    await waitLog(room, 'Server initialized.');
-    room.logTail = '';
-    writeCommand(room, 'lobby_start ' + quoted(room.map.path));
     await waitLog(room, 'Lobby initialized for');
     writeCommand(room, `lobby_config 2 ${room.map.slots.length} ${quoted(room.name)}`);
     /* stdin's current console reader accepts one line per readiness event. Send

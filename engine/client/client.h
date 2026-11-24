@@ -149,6 +149,12 @@ struct client_state {
 
 struct client_static {
     struct netchan netchan;
+    struct {
+        struct { uint32_t sequence, sent_at; } sent[32];
+        uint32_t updated_at;
+        unsigned msec;
+        bool valid;
+    } net_ping;
     keydest_t key_dest;
     connstate_t state;
     uint32_t disable_screen;       /* loading plaque timestamp; freeze screen while nonzero */
@@ -157,6 +163,7 @@ struct client_static {
 
 // cl_main.c
 void CL_Connect(cstring_t host, unsigned short port);
+int CL_NetworkPing(void);
 void CL_Disconnect(cstring_t reason, bool notify);
 void CL_SetMenuBindings(void);
 void CL_SetGameplayInput(void);

@@ -629,21 +629,23 @@ int main(int argc, string_t argv[]) {
     bool run_tests = false;
     bool run_online_check = false;
     bool has_load = false;
+    bool has_lobby = false;
     for (int i = 1; i < COM_Argc(); i++) {
 #if defined(BZ_EOS) && defined(BZ_TESTS)
         if (!strcmp(COM_Argv(i), "+online_acceptance")) run_online_check = true;
 #endif
         if (!strcmp(COM_Argv(i), "+test")) { run_tests = true; break; }
         if (!strcmp(COM_Argv(i), "+load")) has_load = true;
+        if (!strcmp(COM_Argv(i), "+lobby_start")) has_lobby = true;
     }
 
     if (dedicated) {
         // Dedicated server mode: no client stack, no SDL window.
         SV_Init();
-        if (!has_map && !run_tests && !run_online_check && !has_load) {
+        if (!has_map && !run_tests && !run_online_check && !has_load && !has_lobby) {
             SV_InitGameProgs();
             if (!SV_HasExternalControl()) {
-                fprintf(stderr, "Dedicated server requires +map <map> unless an external controller is active\n");
+                fprintf(stderr, "Dedicated server requires +map <map> or +lobby_start <map> unless an external controller is active\n");
                 return 1;
             }
         }
@@ -669,6 +671,7 @@ int main(int argc, string_t argv[]) {
         } else {
             Cbuf_AddLateCommands();
             Cbuf_Execute();
+            if (has_lobby && !SV_IsActive()) return 1;
         }
     } else {
         SV_Init();
