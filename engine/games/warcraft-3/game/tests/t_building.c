@@ -927,6 +927,7 @@ TEST(wc3_building, construction_and_upgrade_keep_progress_queue_transport) {
     gameClient_t *client = &game.clients[0];
     edict_t *building;
     UnitBalance_t balance;
+    UnitProfile_t profile;
     umove_t birth = { .animation = "birth", .think = ai_birth };
     void (*old_write)(pfWriteType_t, void const *) = gi.Write;
     int (*old_image_index)(cstring_t) = gi.ImageIndex;
@@ -936,6 +937,9 @@ TEST(wc3_building, construction_and_upgrade_keep_progress_queue_transport) {
     balance = *building->data.UnitBalance;
     balance.buildTime = 100;
     building->data.UnitBalance = &balance;
+    profile = *building->data.UnitProfile;
+    profile.upgrade = "otrb";
+    building->data.UnitProfile = &profile;
     building->s.player = client->ps.number;
     building->build = building;
     G_AddConstruction(building);
@@ -958,7 +962,7 @@ TEST(wc3_building, construction_and_upgrade_keep_progress_queue_transport) {
     G_FreeConstruction(building);
     building->currentmove = NULL;
     G_AddResearch(building);
-    G_GetResearch(building)->upgrade = building->class_id;
+    G_GetResearch(building)->upgrade = MAKEFOURCC('o','t','r','b');
     G_GetResearch(building)->duration = 100.0f;
     G_GetResearch(building)->progress = 50.0f;
 
@@ -981,6 +985,7 @@ TEST(wc3_building, selected_building_rebuilds_info_panel_for_construction_and_up
     edict_t *player = &g_edicts[0];
     edict_t *building;
     UnitBalance_t balance;
+    UnitProfile_t profile;
     umove_t birth = { .animation = "birth", .think = ai_birth };
     void (*old_write)(pfWriteType_t, void const *) = gi.Write;
     void (*old_unicast)(edict_t *) = gi.unicast;
@@ -996,6 +1001,9 @@ TEST(wc3_building, selected_building_rebuilds_info_panel_for_construction_and_up
     balance.isBuilding = true;
     balance.buildTime = 100;
     building->data.UnitBalance = &balance;
+    profile = *building->data.UnitProfile;
+    profile.upgrade = "otrb";
+    building->data.UnitProfile = &profile;
     building->s.player = client->ps.number;
     G_SelectEntity(client, building);
 
@@ -1022,7 +1030,7 @@ TEST(wc3_building, selected_building_rebuilds_info_panel_for_construction_and_up
     G_FreeConstruction(building);
     building->currentmove = NULL;
     G_AddResearch(building);
-    G_GetResearch(building)->upgrade = building->class_id;
+    G_GetResearch(building)->upgrade = MAKEFOURCC('o','t','r','b');
     G_GetResearch(building)->duration = 100.0f;
     G_GetResearch(building)->progress = 50.0f;
     G_InvalidateUnitInfoPanel(building);
