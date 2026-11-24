@@ -70,6 +70,8 @@
   const room = query.get('room');
   const isRoom = /^[a-f0-9]{18}$/.test(room || '');
   let resourceBundle;
+  let matchPreload;
+  let matchReady = false;
   const warmAssets = new Map();
   function setStatus(status) {
     window.__status = status;
@@ -87,6 +89,7 @@
       watchingRoom = false;
       mapPhase.textContent = progress >= 1 ? '正在进入对局…' : '正在载入对局…';
     } else {
+      matchReady = true;
       warmAssets.clear();
     }
     if (active !== loadingMatch) {
@@ -146,7 +149,7 @@
     if (!Module.WC3_ASSET_INDEX.has(path)) return 0;
     const cached = warmAssets.get(path);
     if (cached) return mountLooseAsset(diskPath, cached);
-    return downloadLooseAsset(path, Module.WC3_B64_SET).then(bytes => {
+    const fetchMissing = () => downloadLooseAsset(path, Module.WC3_B64_SET).then(bytes => {
       const size = mountLooseAsset(diskPath, bytes);
       if (size) console.debug('[fetch-on-demand] ' + path + ' (' + size + ' bytes)');
       return size;
@@ -154,6 +157,13 @@
       console.warn('读取对局资源失败', path, error.message);
       return 0;
     });
+    if (loadingMatch && matchPreload) {
+      return matchPreload.then(() => {
+        const prepared = warmAssets.get(path);
+        return prepared ? mountLooseAsset(diskPath, prepared) : fetchMissing();
+      });
+    }
+    return fetchMissing();
   }
   async function loadMaps() {
     const response = await fetchAsset('playable-maps.index.txt', '可玩地图目录');
@@ -178,25 +188,36 @@
     const served = new Set(paths);
     const sidecars = new Set(b64);
     const map = query.get('map');
+    const lobby = new Set(plan.lobby.filter(path => served.has(path)));
     const mapFiles = Object.hasOwn(plan.maps, map) ? plan.maps[map] : [];
-    const files = [...new Set([...plan.lobby, ...mapFiles])].filter(path => served.has(path));
-    if (!files.length) return;
+    const matchFiles = [...new Set(mapFiles)].filter(path => served.has(path) && !lobby.has(path));
     mark('wc3-room-preload-start');
-    let next = 0, completed = 0;
-    async function download() {
-      while (next < files.length) {
-        const path = files[next++];
-        try {
-          const bytes = await downloadLooseAsset(path, sidecars);
-          if (bytes?.byteLength) warmAssets.set(path, bytes);
-        } catch (_) { /* The engine retains its normal on-demand fetch path. */ }
-        completed++;
-        if (completed % 10 === 0 || completed === files.length)
-          resourceStatus.textContent = '地图与界面素材 ' + completed + ' / ' + files.length;
+    async function downloadGroup(files, onProgress) {
+      let next = 0, completed = 0;
+      async function download() {
+        while (next < files.length && !matchReady) {
+          const path = files[next++];
+          try {
+            const bytes = await downloadLooseAsset(path, sidecars);
+            if (!matchReady && bytes?.byteLength) warmAssets.set(path, bytes);
+          } catch (_) { /* The engine can retry on demand. */ }
+          completed++;
+          if (completed % 10 === 0 || completed === files.length) onProgress(completed, files.length);
+        }
       }
+      await Promise.all(Array.from({length: Math.min(24, files.length)}, download));
     }
-    await Promise.all(Array.from({length: Math.min(12, files.length)}, download));
-    mark('wc3-room-preload-ready');
+    await downloadGroup([...lobby], (loaded, total) => {
+      resourceStatus.textContent = '大厅素材 ' + loaded + ' / ' + total;
+    });
+    // Admit the browser to the lobby as soon as the shared assets are ready.
+    // Continue the selected map's preload while players are setting up the room.
+    matchPreload = downloadGroup(matchFiles, (loaded, total) => {
+      if (loadingMatch) mapPhase.textContent = '正在下载地图素材 ' + loaded + ' / ' + total;
+    }).then(() => {
+      matchPreload = null;
+      mark('wc3-room-preload-ready');
+    });
   }
   async function prefetchBrowserResources() {
     mark('wc3-resources-start');
@@ -209,13 +230,10 @@
         return response.text();
       })
     ]).then(([index, b64]) => ({paths: pathList(index), sidecars: pathList(b64.toLowerCase())}));
-    const warmup = indexes.then(({paths, sidecars}) =>
-      preloadRoomAssets(paths, sidecars).catch(error => window.__errors.push('预载目录: ' + error.message)));
     const [{paths, sidecars}, bootstrap, maps] = await Promise.all([
       indexes,
       fetchAsset('bootstrap.mpq', '基础资源包').then(async response => new Uint8Array(await response.arrayBuffer())),
-      loadMaps(),
-      warmup
+      loadMaps()
     ]);
     return {paths, bootstrap, sidecars, maps};
   }
@@ -326,6 +344,7 @@
       fs.mkdirTree(path.slice(0, path.lastIndexOf('/')));
       fs.writeFile(path, name === maps.selected ? maps.bytes : new Uint8Array(0), {canOwn:true});
     }
+    await preloadRoomAssets(paths, sidecars).catch(error => window.__errors.push('预载目录: ' + error.message));
     window.__mapCatalog = maps.paths.length;
     resourceStatus.textContent = '';
     mark('wc3-resources-mounted');
