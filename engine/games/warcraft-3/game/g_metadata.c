@@ -2815,6 +2815,7 @@ cstring_t FindConfigValue(cstring_t category, cstring_t field) {
     cstring_t value;
     uint32_t buff_parent = 0;
 
+    if ((value = G_MapAbilityCommandText(category, field))) return value;
     if ((value = G_MapItemText(category, field))) return value;
     if ((value = MapBuffText(category, field, &buff_parent))) return value;
     if (buff_parent) {

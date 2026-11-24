@@ -1717,7 +1717,31 @@ static cstring_t G_CampaignMenuTarget(void) {
     return targets[race];
 }
 
-void G_RequestEndGame(bool do_score_screen) {
+static void G_EndDedicatedRoomClient(edict_t *player, bool do_score_screen) {
+    if (!player || !player->client || !player->client->connected) return;
+    if (do_score_screen) {
+        G_RequestClientScore(player);
+    } else {
+        gi.Write(PF_BYTE, &(int32_t){ svc_disconnect });
+        gi.unicast(player);
+    }
+}
+
+void G_RequestEndGameForPlayer(bool do_score_screen, player_t const *recipient) {
+    if (level.lobby_setup.active && gi.CvarString && atoi(gi.CvarString("dedicated", "0"))) {
+        /* Dialog callbacks and GetLocalPlayer branches exit the viewer.
+         * An unscoped map EndGame, such as a timed final result, exits the room. */
+        if (recipient) {
+            G_EndDedicatedRoomClient(G_GetPlayerEntityByNumber(recipient->number), do_score_screen);
+        } else {
+            FOR_LOOP(i, game.max_clients) {
+                gameClient_t *client = game.clients + i;
+                if (client->connected)
+                    G_EndDedicatedRoomClient(G_GetPlayerEntityByNumber(client->ps.number), do_score_screen);
+            }
+        }
+        return;
+    }
     if (G_ScoreTransitionOwnsExit()) return;
     G_ResetDifficultyTransition();
     cstring_t map = level.map_path[0] ? level.map_path : gi.CvarString("map", "");
@@ -1733,6 +1757,10 @@ void G_RequestEndGame(bool do_score_screen) {
     }
     if (do_score_screen) G_QueueScoreTransition("menu", "menu_main");
     else gi.MenuAction("menu", "menu_main");
+}
+
+void G_RequestEndGame(bool do_score_screen) {
+    G_RequestEndGameForPlayer(do_score_screen, NULL);
 }
 
 bool G_IsCampaignMapPath(cstring_t path) {
@@ -2640,6 +2668,34 @@ static void G_TestPostgameFrameMenuAction(cstring_t action, cstring_t argument) 
 }
 static bool postgame_test_paused;
 static void G_TestPostgamePause(bool paused) { postgame_test_paused = paused; }
+
+static cstring_t G_TestDedicatedRoomCvar(cstring_t name, cstring_t fallback) {
+    return !strcmp(name, "dedicated") ? "1" : fallback;
+}
+
+TEST(wc3_score_postgame, dedicated_endgame_routes_each_score_to_its_viewer) {
+    cstring_t (*old_cvar)(cstring_t, cstring_t) = gi.CvarString;
+
+    reset_entities();
+    setup_test_world();
+    G_ResetScoreTransition();
+    level.lobby_setup.active = 1;
+    game.clients[0].connected = game.clients[1].connected = true;
+    gi.CvarString = G_TestDedicatedRoomCvar;
+
+    G_RequestEndGameForPlayer(true, &game.clients[1].ps);
+    T_ASSERT(client_scores[1].pending);
+    T_ASSERT(!client_scores[0].pending);
+    T_ASSERT(!score_transition.pending);
+
+    G_RequestEndGame(true);
+    T_ASSERT(client_scores[1].pending && client_scores[0].pending);
+    T_ASSERT(!score_transition.pending);
+    gi.CvarString = old_cvar;
+    level.lobby_setup.active = 0;
+    G_ResetScoreTransition();
+}
+
 /* Entering the completed single-player score screen claims a permanent
  * pause reason. Ending script/modal pause must not resume its simulation. */
 TEST(wc3_score_postgame, terminal_score_presentation_blocks_resume_and_simulation) {

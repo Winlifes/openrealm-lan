@@ -131,6 +131,23 @@ void setup_test_world(void);
 edict_t *alloc_test_unit(uint32_t class_id, float x, float y);
 static void world_test_load_yield(void) {}
 
+TEST(wc3_world, static_pathing_rejects_out_of_range_spawn_footprints) {
+    uint8_t cells[64] = { 0 };
+    box2_t const bounds = { .min = { 0, 0 }, .max = { 256, 256 } };
+    vec2_t const center = { 128, 128 };
+
+    CM_SetupTestWorldBounds(&bounds);
+    CM_SetupTestPathmap(8, 8, cells);
+    T_ASSERT(CM_PointIsPathableForRadius(&center, 32));
+    T_ASSERT(!CM_PointIsPathableForRadius(&(vec2_t){ FLT_MAX, 128 }, 32));
+    T_ASSERT(!CM_PointIsPathableForRadius(&(vec2_t){ 128, NAN }, 32));
+    T_ASSERT(!CM_PointIsPathableForRadius(&center, FLT_MAX));
+    T_ASSERT(!CM_PointIsPathableForRadius(&(vec2_t){ 16, 128 }, 32));
+    CM_SetupPathMap(0, 0, NULL);
+    CM_SetupTestWorldBounds(NULL);
+    setup_test_world();
+}
+
 /* Exercise archive loading, not the synthetic routing initializer. A static
  * browser link must load the game's WPM as well as the client's preview copy. */
 TEST(wc3_world, archive_load_initializes_authoritative_build_pathing) {

@@ -1345,6 +1345,7 @@ struct gtrigger_s {
     gTriggerAction_t *actions;
     gTriggerCondition_t *conditions;
     bool disabled;
+    bool destroyed;
 };
 
 /* JASS timer identity, callback and simulation countdown owned by the timer registry. */
@@ -1450,6 +1451,7 @@ typedef struct {
     int32_t parent, child;
     hashtableSlotType_t type;
     char handle_type[MAX_HASHTABLE_TYPE]; /* HT_HANDLE only; SaveUnitHandle vs SaveItemHandle */
+    struct jass_ref *handle_ref; /* retained VM-owned storage for handles such as Location */
     union {
         int32_t integer;
         float real;
@@ -3058,6 +3060,7 @@ bool G_IsSinglePlayer(void);
 void G_RequestClientScore(edict_t *player);
 bool G_ClientScoreTerminal(edict_t *player);
 void G_RequestEndGame(bool do_score_screen);
+void G_RequestEndGameForPlayer(bool do_score_screen, player_t const *recipient);
 bool G_IsCampaignMapPath(cstring_t path);
 void G_FlushScoreTransition(void);
 void G_FlushPausedScoreTransition(void);
@@ -3431,6 +3434,7 @@ void G_SetTextTagVisible(texttag_t *tag, player_t *player, bool visible);
 bool G_IsTextTagVisible(texttag_t const *tag, player_t const *player);
 hashtable_t *G_AllocHashtable(void);
 void G_FreeHashtable(hashtable_t *table);
+void G_FlushHashtableEntries(hashtable_t *table);
 void G_ClearHashtableRegistry(void);
 bool G_HashtableIndex(hashtable_t const *table, uint32_t *index);
 bool G_HashtableReserve(hashtable_t *table, uint32_t need);
@@ -3691,6 +3695,7 @@ ability_t const *FindAbilityByClassname(cstring_t);
 ability_t const *FindAbilityForCommand(cstring_t);
 /* The caller frees a non-NULL copy with gi.MemFree. NULL means no authored text. */
 string_t G_CopyAbilityTooltipText(uint32_t, abilityTextField_t, int32_t rank, int32_t player);
+cstring_t G_MapAbilityCommandText(cstring_t category, cstring_t field);
 bool G_SetAbilityTooltipText(uint32_t, abilityTextField_t, int32_t rank, int32_t player, cstring_t);
 void G_ClearAbilityTooltipText(void);
 bool G_ValidateAbilityTooltipText(void);

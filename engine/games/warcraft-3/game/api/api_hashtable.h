@@ -116,6 +116,8 @@ static hashtableEntry_t *hashtable_ensure(hashtable_t *table, int32_t parent, in
 
 static void hashtable_remove_at(hashtable_t *table, uint32_t index) {
     if (!table || index >= table->num_entries) return;
+    hashtableEntry_t *entry = table->entries + index;
+    if (entry->handle_ref) jass_releaseownedhandle(entry->value.handle, entry->handle_ref);
     table->entries[index] = table->entries[table->num_entries - 1];
     table->num_entries--;
 }
@@ -191,12 +193,18 @@ uint32_t SaveStr(jass_t *j) {
     return jass_pushboolean(j, true);
 }
 
-static bool hashtable_save_handle(hashtable_t *table, int32_t parent, int32_t child, handle_t value, cstring_t type) {
-    hashtableEntry_t *e;
-    if (!table || !value || !type) return false;
-    e = hashtable_ensure(table, parent, child, HT_HANDLE);
+static bool hashtable_save_handle(jass_t *j, cstring_t type) {
+    hashtable_t *table = jass_checkhandle(j, 1, "hashtable");
+    handle_t value = jass_checkhandle(j, 4, type);
+    if (!table || !value) return false;
+    hashtableEntry_t *e = hashtable_ensure(table, jass_checkinteger(j, 2), jass_checkinteger(j, 3), HT_HANDLE);
     if (!e) return false;
+    /* A temporary Location() argument may have no owner once this call
+     * returns. Keep its actual VM handle so Load/Move/Remove share identity. */
+    struct jass_ref *ref = jass_retainownedhandle(j, 4, type);
+    if (e->handle_ref) jass_releaseownedhandle(e->value.handle, e->handle_ref);
     e->value.handle = value;
+    e->handle_ref = ref;
     snprintf(e->handle_type, sizeof(e->handle_type), "%s", type);
     return true;
 }
@@ -269,11 +277,7 @@ uint32_t RemoveSavedHandle(jass_t *j) {
 
 uint32_t FlushParentHashtable(jass_t *j) {
     hashtable_t *table = jass_checkhandle(j, 1, "hashtable");
-    if (table && table->inuse) {
-        if (table->entries) gi.MemFree(table->entries);
-        table->entries = NULL;
-        table->num_entries = table->capacity = 0;
-    }
+    if (table && table->inuse) G_FlushHashtableEntries(table);
     return 0;
 }
 
@@ -291,15 +295,15 @@ uint32_t FlushChildHashtable(jass_t *j) {
 
 #define HT_SAVE_HANDLE(Name, Type) \
 uint32_t Save##Name##Handle(jass_t *j) { \
-    return jass_pushboolean(j, hashtable_save_handle(jass_checkhandle(j, 1, "hashtable"), \
-        jass_checkinteger(j, 2), jass_checkinteger(j, 3), jass_checkhandle(j, 4, Type), Type)); \
+    return jass_pushboolean(j, hashtable_save_handle(j, Type)); \
 }
 #define HT_LOAD_HANDLE(Name, Type) \
 uint32_t Load##Name##Handle(jass_t *j) { \
     hashtableEntry_t *e = hashtable_find(jass_checkhandle(j, 1, "hashtable"), \
         jass_checkinteger(j, 2), jass_checkinteger(j, 3), HT_HANDLE); \
-    handle_t value = e ? hashtable_live_handle(e->value.handle) : NULL; \
-    return value ? jass_pushlighthandle(j, value, Type) : jass_pushnullhandle(j, Type); \
+    if (!e) return jass_pushnullhandle(j, Type); \
+    if (e->handle_ref && strcmp(e->handle_type, Type)) return jass_pushnullhandle(j, Type); \
+    return jass_pushretainedhandle(j, hashtable_live_handle(e->value.handle), e->handle_ref, Type); \
 }
 
 HT_SAVE_HANDLE(Player, "player")

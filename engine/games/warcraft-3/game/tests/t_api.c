@@ -81,6 +81,33 @@ TEST(wc3_api, ability_tooltip_reads_original_object_fields_and_inherits_custom_p
     info->num_userCreatedAbilities=0; info->userCreatedAbilities=NULL;
 }
 
+TEST(wc3_api, custom_ability_command_card_uses_map_object_art) {
+    const uint32_t id = MAKEFOURCC('A','Q','A','7');
+    char icon[] = "ReplaceableTextures\\CommandButtons\\BTNImpale.blp";
+    char hotkey[] = "T";
+    unitModification_t mods[] = {
+        { .modID=MAKEFOURCC('a','a','r','t'), .type=mod_string, .data=icon },
+        { .modID=MAKEFOURCC('a','h','k','y'), .type=mod_string, .data=hotkey },
+    };
+    unitData_t custom = { .originalUnitID=MAKEFOURCC('A','H','h','b'), .newUnitID=id,
+        .numbeOfModifications=sizeof(mods)/sizeof(*mods), .modifications=mods };
+    gameCommandButton_t button;
+
+    reset_entities();
+    setup_test_world();
+    mapInfo_t *info = (mapInfo_t *)level.mapinfo;
+    info->num_userCreatedAbilities = 1;
+    info->userCreatedAbilities = &custom;
+    G_SetMapAbilityOverrides(info);
+    edict_t *hero = alloc_test_unit(MAKEFOURCC('H','p','a','l'), 0, 0);
+    T_ASSERT(G_BuildCommandButton(hero, "AQA7", false, 0, &button));
+    T_STREQ(button.art, icon);
+    T_EQ(button.hotkey, 'T');
+    G_SetMapAbilityOverrides(NULL);
+    info->num_userCreatedAbilities = 0;
+    info->userCreatedAbilities = NULL;
+}
+
 TEST(wc3_api, ability_tooltip_changes_reach_command_card) {
     gameCommandButton_t button;
     gameClient_t *old_ui_client=ui_current_client;
@@ -1151,6 +1178,28 @@ TEST(wc3_api, recycled_region_gets_distinct_handle_id) {
         "  set newRegion = CreateRegion()\n"
         "  call BJassAssert(GetHandleId(newRegion) != oldRegionId, \"recycled region reused GetHandleId\")\n"
         "  call BJassAssert(LoadInteger(ht, GetHandleId(newRegion), 0) == 0, \"replacement region inherited old hashtable data\")\n"
+        "endfunction\n"));
+}
+
+TEST(wc3_api, hashtable_keeps_temporary_locations_alive_and_shares_removal) {
+    reset_entities();
+    setup_test_world();
+    T_ASSERT(run_test_jass(
+        "function main takes nothing returns nothing\n"
+        "  local hashtable table = InitHashtable()\n"
+        "  local location point = null\n"
+        "  call BJassAssert(SaveLocationHandle(table, 2, 3, Location(512.0, 256.0)), \"save temporary location\")\n"
+        "  set point = LoadLocationHandle(table, 2, 3)\n"
+        "  call BJassAssert(GetLocationX(point) == 512.0 and GetLocationY(point) == 256.0, \"temporary location expired\")\n"
+        "  call MoveLocation(point, -128.0, 64.0)\n"
+        "  call BJassAssert(GetLocationX(LoadLocationHandle(table, 2, 3)) == -128.0, \"loaded alias owns a different point\")\n"
+        "  call RemoveLocation(LoadLocationHandle(table, 2, 3))\n"
+        "  call BJassAssert(GetLocationX(point) == 0.0, \"removal invalidates the existing alias\")\n"
+        "  call BJassAssert(LoadLocationHandle(table, 2, 3) == null, \"removed point loads as null\")\n"
+        "  call BJassAssert(SaveLocationHandle(table, 2, 3, Location(640.0, 128.0)), \"replace removed point\")\n"
+        "  set point = LoadLocationHandle(table, 2, 3)\n"
+        "  call FlushChildHashtable(table, 2)\n"
+        "  call BJassAssert(GetLocationX(point) == 640.0, \"flushing released a live alias\")\n"
         "endfunction\n"));
 }
 
@@ -9191,6 +9240,48 @@ TEST(wc3_api, unit_in_range_fires_when_registered_subject_moves) {
     currentplayer = saved_currentplayer;
 }
 
+TEST(wc3_api, unit_in_range_ignores_objects_and_checks_its_filter) {
+    reset_entities();
+    setup_test_world();
+    T_ASSERT(run_test_jass(
+        "globals\n"
+        "  integer hits = 0\n"
+        "endglobals\n"
+        "function filter_footmen takes nothing returns boolean\n"
+        "  return GetUnitTypeId(GetFilterUnit()) == 'hfoo'\n"
+        "endfunction\n"
+        "function on_range takes nothing returns nothing\n"
+        "  set hits = hits + 1\n"
+        "  call BJassAssert(GetUnitTypeId(GetTriggerUnit()) == 'hfoo', \"unexpected range target\")\n"
+        "endfunction\n"
+        "function main takes nothing returns nothing\n"
+        "  local trigger t = CreateTrigger()\n"
+        "  local unit center = CreateUnit(Player(0), 'hpea', 0.0, 0.0, 0.0)\n"
+        "  call TriggerRegisterUnitInRange(t, center, 128.0, Condition(function filter_footmen))\n"
+        "  call TriggerAddAction(t, function on_range)\n"
+        "endfunction\n"
+        "function verify takes nothing returns nothing\n"
+        "  call BJassAssert(hits == 1, \"expected one entering unit\")\n"
+        "endfunction\n"));
+    edict_t *center = find_test_unit(MAKEFOURCC('h','p','e','a'));
+    edict_t *object = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 512, 0);
+    edict_t *other = alloc_test_unit(MAKEFOURCC('h','r','i','f'), 512, 0);
+    edict_t *footman = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 512, 0);
+    object->svflags &= ~SVF_MONSTER;
+    other->svflags |= SVF_MONSTER;
+    footman->svflags |= SVF_MONSTER;
+    object->old_origin = object->s.origin2;
+    other->old_origin = other->s.origin2;
+    footman->old_origin = footman->s.origin2;
+    vec2_t before = center->s.origin2;
+    center->s.origin2.x = 450;
+    G_UnitPositionChanged(center, &before);
+    G_RunEvents();
+    jass_runevents(level.vm);
+    jass_callbyname(level.vm, "verify", false);
+    T_ASSERT(!jass_rterror_pending(level.vm));
+}
+
 TEST(wc3_api, deferred_removed_range_subject_cannot_dispatch_crossing) {
     player_t *saved_currentplayer = currentplayer;
     edict_t *subject = NULL, *target = NULL;
@@ -12029,6 +12120,8 @@ TEST(wc3_api, destroy_trigger_retires_registered_and_queued_events) {
         "  call SetWidgetLife(subject, 100.0)\n"
         "  call SetWidgetLife(subject, 0.0)\n"
         "  call DestroyTrigger(watched)\n"
+        "  call BJassAssert(not TriggerEvaluate(watched), \"destroyed trigger still evaluates\")\n"
+        "  call TriggerExecute(watched)\n"
         "endfunction\n"));
 
     FOR_EACH_EVENT(event) active_events++;

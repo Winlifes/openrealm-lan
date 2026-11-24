@@ -445,6 +445,26 @@ TEST(wc3_unit, response_feedback_rejects_foreign_clients_resets_and_reused_units
     T_ASSERT(!G_UnitResponseTalking(ent));
 }
 
+TEST(wc3_unit, immediate_free_cancels_queued_removal) {
+    reset_entities();
+    setup_test_world();
+    edict_t *unit = alloc_test_unit(MAKEFOURCC('h','p','e','a'), 0, 0);
+    edict_t *other = alloc_test_unit(MAKEFOURCC('h','p','e','a'), 128, 0);
+
+    G_DeferFreeEdict(unit);
+    G_FreeEdict(unit);
+    T_ASSERT(!unit->inuse);
+    T_ASSERT(!G_IsDeferredFree(unit));
+
+    unit = alloc_test_unit(MAKEFOURCC('h','p','e','a'), 0, 0);
+    G_DeferFreeEdict(unit);
+    G_DeferFreeEdict(other);
+    G_FreeEdict(unit);
+    T_ASSERT(G_IsDeferredFree(other));
+    G_RunDeferredFrees();
+    T_ASSERT(!other->inuse);
+}
+
 TEST(wc3_unit, overlapping_response_feedback_keeps_portrait_until_last_voice_ends) {
     edict_t *ent = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 0, 0);
     G_ResetSelectionSoundState();

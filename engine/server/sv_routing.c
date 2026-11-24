@@ -839,18 +839,20 @@ static bool is_pathable_node_original_flags(int x, int y, uint8_t blocked_flags)
 }
 
 static bool is_pathable_node_original_for_radius_cells_flags(int x, int y, int radius_cells, uint8_t blocked_flags) {
-    int const x0 = x - radius_cells;
-    int const y0 = y - radius_cells;
-    int const x1 = x + radius_cells;
-    int const y1 = y + radius_cells;
     uint32_t stride, blocked;
     uint32_t const *prefix;
     uint8_t const flags = normalize_blocked_flags(blocked_flags);
 
     PERF_INC(pathability_checks);
 
-    if (x0 < 0 || y0 < 0 || x1 >= (int)pathmap.width || y1 >= (int)pathmap.height)
+    if (!is_valid_point(x, y) || radius_cells < 0 || radius_cells > x || radius_cells > y ||
+        (uint32_t)radius_cells >= pathmap.width - x || (uint32_t)radius_cells >= pathmap.height - y)
         return false;
+
+    int const x0 = x - radius_cells;
+    int const y0 = y - radius_cells;
+    int const x1 = x + radius_cells;
+    int const y1 = y + radius_cells;
     prefix = flags == CM_PATHING_UNWALKABLE ? pathmap.obstacle_prefix
            : flags == CM_PATHING_UNFLYABLE ? pathmap.nofly_prefix
            : flags == CM_PATHING_UNSWIMMABLE ? pathmap.nowater_prefix
@@ -930,10 +932,15 @@ bool CM_PointIsPathableForRadiusFlags(vec2_t const *location, float radius, uint
         return true;
     }
     vec2_t n = CM_GetNormalizedMapPosition(location->x, location->y);
+    float const cells = ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
+    /* Scripts can supply coordinates outside the integer cell range. Validate
+     * before converting; a saturated cell plus the footprint used to wrap. */
+    if (!(n.x >= 0.f && n.x < 1.f && n.y >= 0.f && n.y < 1.f) ||
+        !(cells >= 0.f && cells < (float)MIN(pathmap.width, pathmap.height)))
+        return false;
     int tx = (int)floorf(n.x * pathmap.width);
     int ty = (int)floorf(n.y * pathmap.height);
-    int radius_cells = (int)ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
-    return is_pathable_node_original_for_radius_cells_flags(tx, ty, radius_cells, blocked_flags);
+    return is_pathable_node_original_for_radius_cells_flags(tx, ty, (int)cells, blocked_flags);
 }
 
 bool CM_PointIsPathableForRadius(vec2_t const *location, float radius) {

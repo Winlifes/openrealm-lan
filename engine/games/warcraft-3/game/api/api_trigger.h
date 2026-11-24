@@ -63,12 +63,13 @@ uint32_t CreateTrigger(jass_t *j) {
 }
 uint32_t DestroyTrigger(jass_t *j) {
     trigger_t *whichTrigger = jass_checkhandle(j, 1, "trigger");
-    if (!whichTrigger) return 0;
+    if (!whichTrigger || whichTrigger->destroyed) return 0;
 
     /* Trigger handles live for the map lifetime, so destruction retires every
      * registration and disables automatic dispatch without freeing the trigger
      * object underneath a currently executing condition or action. */
     whichTrigger->disabled = true;
+    whichTrigger->destroyed = true;
     FOR_LOOP(i, MAX_EVENTS) {
         event_t *event = &level.events.handlers[i];
         if (event->inuse && event->trigger == whichTrigger) G_RetireEvent(event);
@@ -81,6 +82,7 @@ uint32_t ResetTrigger(jass_t *j) {
 }
 uint32_t EnableTrigger(jass_t *j) {
     trigger_t *whichTrigger = jass_checkhandle(j, 1, "trigger");
+    if (!whichTrigger || whichTrigger->destroyed) return 0;
     if (QuestPeonStageDebugEnabled() && QuestPeonStageTrigger(whichTrigger)) {
         jassContext_t const *ctx = jass_getcontext(j);
         cstring_t caller = ctx ? jass_functionname(ctx->func) : NULL;
@@ -472,13 +474,15 @@ uint32_t TriggerRegisterUnitInRange(jass_t *j) {
     trigger_t *whichTrigger = jass_checkhandle(j, 1, "trigger");
     edict_t *whichUnit = jass_checkhandle(j, 2, "unit");
     float range = jass_checknumber(j, 3);
-//    handle_t filter = jass_checkhandle(j, 4, "boolexpr");
+    jassFunc_t const *filter = jass_checkhandle(j, 4, "boolexpr");
     if (!whichTrigger || !whichUnit) {
         return jass_pushnullhandle(j, "event");
     }
     event_t *evt = G_MakeEvent(EVENT_UNIT_IN_RANGE);
+    if (!evt) return jass_pushnullhandle(j, "event");
     G_SetEventSubject(evt, whichUnit);
     evt->trigger = whichTrigger;
+    evt->filter = filter;
     evt->range = range;
     QuestPeonStageLogRegistration(whichTrigger, EVENT_UNIT_IN_RANGE, evt->subject, "unit-in-range");
     return jass_pushlighthandle(j, evt, "event");

@@ -1,4 +1,5 @@
 #include "g_local.h"
+#include "jass/jass.h"
 
 static int32_t hashtable_index(hashtable_t const *table) {
     uintptr_t ptr = (uintptr_t)table, base = (uintptr_t)level.hashtables;
@@ -48,15 +49,25 @@ hashtable_t *G_AllocHashtable(void) {
     return NULL;
 }
 
+void G_FlushHashtableEntries(hashtable_t *table) {
+    FOR_LOOP(i, table->num_entries) {
+        hashtableEntry_t *entry = table->entries + i;
+        if (entry->handle_ref) jass_releaseownedhandle(entry->value.handle, entry->handle_ref);
+    }
+    if (table->entries) gi.MemFree(table->entries);
+    table->entries = NULL;
+    table->num_entries = table->capacity = 0;
+}
+
 void G_FreeHashtable(hashtable_t *table) {
     if (hashtable_index(table) < 0) return;
-    if (table->entries) gi.MemFree(table->entries);
+    G_FlushHashtableEntries(table);
     memset(table, 0, sizeof(*table));
 }
 
 void G_ClearHashtableRegistry(void) {
     FOR_LOOP(i, MAX_HASHTABLES) {
-        if (level.hashtables[i].entries) gi.MemFree(level.hashtables[i].entries);
+        G_FlushHashtableEntries(&level.hashtables[i]);
         memset(&level.hashtables[i], 0, sizeof(level.hashtables[i]));
     }
 }

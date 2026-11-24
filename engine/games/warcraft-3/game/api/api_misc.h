@@ -509,7 +509,7 @@ uint32_t ForceEnumAllies(jass_t *j) {
     if (!whichForce || !whichPlayer) return 0;
     FOR_LOOP(i, game.max_clients) {
         player_t *player = &game.clients[i].ps;
-        if (G_GetPlayerAlliance(whichPlayer, player, ALLIANCE_PASSIVE) && jass_evaluateplayerexpr(j, filter, player))
+        if (G_PlayerTreatsPlayerAsAlly(whichPlayer->number, player->number) && jass_evaluateplayerexpr(j, filter, player))
             *whichForce |= 1 << player->number;
     }
     return 0;
@@ -521,7 +521,7 @@ uint32_t ForceEnumEnemies(jass_t *j) {
     if (!whichForce || !whichPlayer) return 0;
     FOR_LOOP(i, game.max_clients) {
         player_t *player = &game.clients[i].ps;
-        if (!G_GetPlayerAlliance(whichPlayer, player, ALLIANCE_PASSIVE) && jass_evaluateplayerexpr(j, filter, player))
+        if (!G_PlayerTreatsPlayerAsAlly(whichPlayer->number, player->number) && jass_evaluateplayerexpr(j, filter, player))
             *whichForce |= 1 << player->number;
     }
     return 0;
@@ -925,7 +925,9 @@ uint32_t GetFoodUsed(jass_t *j) {
 
 uint32_t EndGame(jass_t *j) {
     bool doScoreScreen = jass_checkboolean(j, 1);
-    G_RequestEndGame(doScoreScreen);
+    jassContext_t const *context = jass_getcontext(j);
+    player_t const *recipient = context && context->dialog_id ? context->playerState : currentplayer;
+    G_RequestEndGameForPlayer(doScoreScreen, recipient);
     return 0;
 }
 uint32_t ChangeLevel(jass_t *j) {

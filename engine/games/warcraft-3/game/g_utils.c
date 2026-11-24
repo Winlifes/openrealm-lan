@@ -16,10 +16,12 @@ bool G_UnitIsWorldActive(edict_t const *ent) {
 
 /* Drop a queued removal when another lifecycle path frees the same edict first. */
 static void G_CancelDeferredFree(edict_t *ent) {
-    FOR_LOOP(i, deferred_free_count) {
-        if (deferred_frees[i].ent != ent) continue;
-        deferred_frees[i] = deferred_frees[--deferred_free_count];
-        i--;
+    for (uint32_t i = 0; i < deferred_free_count;) {
+        if (deferred_frees[i].ent == ent) {
+            deferred_frees[i] = deferred_frees[--deferred_free_count];
+        } else {
+            i++;
+        }
     }
 }
 

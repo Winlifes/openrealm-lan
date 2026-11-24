@@ -239,11 +239,17 @@ static void G_ExecuteEvent(gameEvent_t *evt) {
                     jass_calltriggerevent(level.vm, e->trigger, evt);
                 }
                 break;
-            case EVENT_UNIT_IN_RANGE:
-                if (evt->responseTo == e) {
+            case EVENT_UNIT_IN_RANGE: {
+                if (evt->responseTo != e || !G_UnitIsWorldActive(subject)) break;
+                handle_t event_handle = G_EventHandle(e);
+                uint32_t spawn_time = subject->spawn_time;
+                if (jass_evaluateboolexpr(level.vm, e->filter, subject) &&
+                    G_UnitIsWorldActive(subject) && subject->spawn_time == spawn_time &&
+                    !G_IsDeferredFree(subject) && G_EventFromHandle(event_handle) == e) {
                     jass_calltriggerevent(level.vm, e->trigger, evt);
                 }
                 break;
+            }
             case EVENT_GAME_TRACKABLE_HIT:
                 break;
             case EVENT_GAME_TRACKABLE_TRACK:
@@ -401,7 +407,7 @@ static void G_TouchTriggers(edict_t *ent) {
                 break;
             }
             case EVENT_UNIT_IN_RANGE:
-                if (!G_EventSubjectIsCurrent(evt)) break;
+                if (!(ent->svflags & SVF_MONSTER) || !G_EventSubjectIsCurrent(evt)) break;
                 if (ent == evt->subject) {
                     edict_t *target;
 
@@ -411,7 +417,7 @@ static void G_TouchTriggers(edict_t *ent) {
                      * preventing duplicate publications. */
                     FOR_LOOP(i, globals.num_edicts) {
                         target = globals.edicts + i;
-                        if (!target->inuse || target == ent)
+                        if (!(target->svflags & SVF_MONSTER) || !G_UnitIsWorldActive(target) || target == ent)
                             continue;
                         if (Vector2_distance(&ent->old_origin, &target->old_origin) <= evt->range &&
                             Vector2_distance(&ent->s.origin2, &target->s.origin2) > evt->range)

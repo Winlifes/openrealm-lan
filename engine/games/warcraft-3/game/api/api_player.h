@@ -234,13 +234,13 @@ uint32_t IsPlayerAlly(jass_t *j) {
     player_t *whichPlayer = jass_checkhandle(j, 1, "player");
     player_t *otherPlayer = jass_checkhandle(j, 2, "player");
     if (!whichPlayer || !otherPlayer) return jass_pushboolean(j, 0);
-    return jass_pushboolean(j, G_GetPlayerAlliance(whichPlayer, otherPlayer, ALLIANCE_PASSIVE));
+    return jass_pushboolean(j, G_PlayerTreatsPlayerAsAlly(whichPlayer->number, otherPlayer->number));
 }
 uint32_t IsPlayerEnemy(jass_t *j) {
     player_t *whichPlayer = jass_checkhandle(j, 1, "player");
     player_t *otherPlayer = jass_checkhandle(j, 2, "player");
     if (!whichPlayer || !otherPlayer) return jass_pushboolean(j, 0);
-    return jass_pushboolean(j, !G_GetPlayerAlliance(whichPlayer, otherPlayer, ALLIANCE_PASSIVE));
+    return jass_pushboolean(j, !G_PlayerTreatsPlayerAsAlly(whichPlayer->number, otherPlayer->number));
 }
 uint32_t IsPlayerInForce(jass_t *j) {
     player_t *whichPlayer = jass_checkhandle(j, 1, "player");

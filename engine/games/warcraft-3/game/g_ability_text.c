@@ -38,6 +38,35 @@ static unitData_t const *AbilityTextMapRecord(uint32_t ability) {
     return NULL;
 }
 
+cstring_t G_MapAbilityCommandText(cstring_t category, cstring_t field) {
+    static struct { cstring_t profile; uint32_t object_field; } const fields[] = {
+        { "Art", MAKEFOURCC('a','a','r','t') },
+        { "Unart", MAKEFOURCC('a','u','a','r') },
+        { "ResearchArt", MAKEFOURCC('a','r','a','r') },
+        { "Hotkey", MAKEFOURCC('a','h','k','y') },
+        { "Unhotkey", MAKEFOURCC('a','u','h','k') },
+        { "Researchhotkey", MAKEFOURCC('a','r','h','k') },
+        { "ResearchHotkey", MAKEFOURCC('a','r','h','k') },
+    };
+    if (!category || !field || strlen(category) != 4) return NULL;
+    uint32_t mod_id = 0;
+    FOR_LOOP(i, sizeof(fields) / sizeof(*fields)) {
+        if (!strcmp(fields[i].profile, field)) { mod_id = fields[i].object_field; break; }
+    }
+    if (!mod_id) return NULL;
+
+    uint32_t id;
+    memcpy(&id, category, sizeof(id));
+    unitData_t const *record = AbilityTextMapRecord(id);
+    if (!record) return NULL;
+    FOR_LOOP(i, record->numbeOfModifications) {
+        unitModification_t const *mod = record->modifications + i;
+        if (mod->modID == mod_id && mod->type == mod_string && mod->data)
+            return G_LevelString((cstring_t)mod->data);
+    }
+    return NULL;
+}
+
 /* Select quoted CSV without the shared, bounded parse_segment buffer. Tooltips
  * can contain commas and exceed a command-card label's display capacity. */
 static string_t AbilityTextProfileCopy(cstring_t text, uint32_t rank) {

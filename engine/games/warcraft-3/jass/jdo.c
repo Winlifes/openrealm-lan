@@ -1191,8 +1191,7 @@ void jass_runevents(jass_t *j) {
  * ========================================================================= */
 
 static bool jass_evaluatetriggercontext(jass_t *j, jassTriggerContextParams_t const *params) {
-    if (!params->trigger) {
-        /* Retail treats a null trigger as a no-op; maps with optional systems rely on it. */
+    if (!params->trigger || params->trigger->destroyed) {
         return false;
     }
     player_t *player = params->event_player ? params->event_player : jass_eventplayer(params->unit);
@@ -1376,7 +1375,7 @@ bool jass_evaluateplayerinteger(jass_t *j, jassFunc_t const *expr, player_t *pla
 
 static void jass_executetriggercontext(jass_t *j, jassTriggerContextParams_t const *params, bool immediate) {
     jasscoroutine_t *first = NULL, *last = NULL;
-    if (!params->trigger) {
+    if (!params->trigger || params->trigger->destroyed) {
         return;
     }
     FOR_EACH_LIST(gTriggerAction_t, action, params->trigger->actions) {
@@ -1948,6 +1947,38 @@ void jass_invalidateownedhandle(jass_t *j, int index, cstring_t type) {
     /* All copied variables share the same ref. Retain the payload until
      * the VM releases its owners, so saved aliases cannot become UAFs. */
     var->ref->invalid = true;
+}
+
+struct jass_ref *jass_retainownedhandle(jass_t *j, int index, cstring_t type) {
+    jassVar_t const *var = jass_stackvalue(j, index);
+    jassType_t const *expected = find_type(j, type);
+    if (!var || !var->value || !var->ref || !var->ref->size || !var->ref->id ||
+        var->ref->invalid || !var->type || !expected || !is_handle_convertible(var->type, expected))
+        return NULL;
+    var->ref->refs++;
+    return var->ref;
+}
+
+void jass_releaseownedhandle(handle_t value, struct jass_ref *ref) {
+    if (!ref) return;
+    if (ref->refs > 0) {
+        ref->refs--;
+    } else {
+        jass_free(value);
+        jass_free(ref);
+    }
+}
+
+uint32_t jass_pushretainedhandle(jass_t *j, handle_t value, struct jass_ref *ref, cstring_t type) {
+    if (!value || (ref && ref->invalid)) return jass_pushnullhandle(j, type);
+    if (!ref) return jass_pushlighthandle(j, value, type);
+    JASS_ADD_STACK(j, var, jasstype_handle);
+    jass_setnull(var);
+    var->type = find_type(j, type);
+    var->value = value;
+    var->ref = ref;
+    ref->refs++;
+    return 1;
 }
 
 handle_t jass_checkhandle(jass_t *j, int index, cstring_t type) {

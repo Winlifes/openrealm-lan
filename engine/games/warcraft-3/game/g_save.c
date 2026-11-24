@@ -226,7 +226,8 @@ static uint32_t const save_commit = MAKEFOURCC('W', '3', 'O', 'K');
 /* Version 30 retains selection actors independently of the selected unit owner. */
 /* Version 31 declares shared anonymous predicate graphs before native callbacks. */
 /* Version 32 requires Divine Shield immunity to be owned by its timed status. */
-static uint32_t const save_version = 32;
+/* Version 33 preserves the retired state of destroyed triggers. */
+static uint32_t const save_version = 33;
 #else
 /* Version 137 appends Stampede channel, beast and blast callbacks to the save roster. */
 /* Version 138 registers the Lava Spawn split controller callback. */
@@ -260,7 +261,8 @@ static uint32_t const save_version = 32;
 /* Version 169 retains selection actors independently of the selected unit owner. */
 /* Version 170 declares shared anonymous predicate graphs before native callbacks. */
 /* Version 171 requires Divine Shield immunity to be owned by its timed status. */
-static uint32_t const save_version = 171;
+/* Version 172 preserves the retired state of destroyed triggers. */
+static uint32_t const save_version = 172;
 #endif
 /* Winlife native 147/browser 8 persist private AI VMs, HD-water state and the initial lobby roster. */
 #define SAVE_STREAM_BUFFER (1u << 20) // bytes; save files are several MB of field writes, so a large stdio buffer avoids per-4 KB syscalls
@@ -549,6 +551,7 @@ static field_t const save_game_event_fields[] = {
 
 static field_t const trigger_fields[] = {
     F(gtrigger_s, disabled, F_INT),
+    F(gtrigger_s, destroyed, F_INT),
     F(gtrigger_s, actions, F_FUNCTION_LIST),
     F(gtrigger_s, conditions, F_FUNCTION_LIST),
     { NULL, 0, 0, 0, 0, 0 }
