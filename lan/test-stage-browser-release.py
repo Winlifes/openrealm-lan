@@ -74,6 +74,8 @@ class BrowserReleaseInputs(unittest.TestCase):
                                      'updated-browser', '--root', str(root)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('../releases/updated-browser/', (root / 'www/play/game/index.html').read_text())
+            self.assertEqual((root / 'www/play/game/version.json').read_bytes(), version.read_bytes())
+            self.assertTrue((root / 'www/release-notes.json').is_file())
 
             data = root / 'data-current'
             archive = b'map archive'

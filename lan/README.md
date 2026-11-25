@@ -67,6 +67,8 @@ Caddy can serve optional `.gz` sidecars for measured preload files. Keep their u
 
 For a browser-only update that has been tested against the running native version, stage the release with `--server-build CURRENT_NATIVE_BUILD`. The browser then uses that build ID during the WebSocket handshake while the launcher points to the new browser release directory.
 
+Add player-facing changes to `site/release-notes.json` under the new client release. The room list checks `play/game/version.json` for the published client release and offers a manual refresh when it changes. `stage-lan-site.py` copies this file beside the launcher. When a public proxy uses a separate launcher, route its version file to the same directory. Keep both files revalidated at the proxy.
+
 Use `performance.getEntriesByType('mark')` in the browser to inspect the `wc3-resources-start` through `wc3-resources-mounted` interval and the later `wc3-match-loading` through `wc3-match-ready` interval. In the corresponding `development/room-logs/<room-id>.log`, `SV_LobbyStartMatch:` and `Server initialized.` mark the server's world load. The browser's match interval also includes game sign-on and scene registration.
 
 For Linux builds, pass the absolute libmenu shared library path with `--library` to `build-room-catalog.py` and set `WC3_MPQ_LIBRARY` to the same path for `build-browser-bootstrap.py`.
