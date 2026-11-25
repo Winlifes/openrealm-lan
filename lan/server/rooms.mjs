@@ -81,11 +81,15 @@ function stopRoom(room) {
 }
 async function initializeRoom(room) {
   try {
-    room.child = spawn(engine, ['-data', join(root,'data-current'), '+dedicated','1',
+    const args = ['-data', join(root,'data-current'), '+dedicated','1',
       '+game_port',String(room.port), '+fs_expansion','1', '+set','wc3_locale','zhCN',
       '+set','sv_local_signon_batch','1',
-      '+set','com_frame_limit','0', '+set','com_fast_forward','0',
-      '+lobby_start', room.map.path],
+      '+set','com_frame_limit','0', '+set','com_fast_forward','0'];
+    const rate = room.map.publicSnapshotRateBytesPerSecond;
+    if (room.site === publicSite && Number.isInteger(rate) && rate > 0 && rate <= 0x7fffffff)
+      args.push('+set','sv_rate',String(rate));
+    args.push('+lobby_start',room.map.path);
+    room.child = spawn(engine, args,
       {cwd:join(dev,'src'), stdio:['pipe','pipe','pipe']});
     const output = createWriteStream(join(dev, 'room-logs', room.id + '.log'));
     const append = data => {

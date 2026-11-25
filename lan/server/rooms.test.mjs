@@ -36,6 +36,7 @@ test('rooms require the matching build and stay on their originating site', {tim
     await writeFile(engine,`#!/usr/bin/env node
 import readline from 'node:readline';
 if(process.argv.includes('+map')||!process.argv.includes('+lobby_start'))process.exit(1);
+console.log('fixture args: '+JSON.stringify(process.argv.slice(2)));
 console.log('Lobby initialized for test map');
 readline.createInterface({input:process.stdin}).on('line',line=>{
   console.log('fixture command: '+line);
@@ -49,8 +50,9 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
       {player:11,race:4,team:1,color:11,computer:true},
     ];
     await writeFile(join(dev,'maps-catalog.json'),JSON.stringify([
-      {id:'test',name:'Test',path:'Test.w3m',slots:[{player:0,race:1,team:0,color:0,computer:false}]},
-      {id:'scenario',name:'Warchasers',path:'Warchasers.w3m',slots:scenarioSlots},
+      {id:'test',name:'Test',path:'Test.w3m',publicSnapshotRateBytesPerSecond:48000,
+        slots:[{player:0,race:1,team:0,color:0,computer:false}]},
+      {id:'scenario',name:'Warchasers',path:'Warchasers.w3m',publicSnapshotRateBytesPerSecond:48000,slots:scenarioSlots},
     ]));
     const publicOrigin = 'https://wc3-public.test';
     const publicHeaders = {Host:new URL(publicOrigin).host};
@@ -85,6 +87,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
     const path=`/api/rooms/${room.id}/ws`;
     const engineLog=await readFile(join(dev,'room-logs',room.id+'.log'),'utf8');
     assert.ok(engineLog.includes('lobby_config 2 1 "Winlife 测试房间"'),engineLog);
+    assert.ok(!engineLog.includes('"sv_rate"'),engineLog);
     const missing=await upgrade(port,path);
     await delay(50);
     const stale=await upgrade(port,path+'?build=old-client');
@@ -125,6 +128,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
     assert.equal(await upgrade(port,publicPath,publicOrigin),101);
     const scenarioLog=await readFile(join(dev,'room-logs',scenario.id+'.log'),'utf8');
     assert.ok(scenarioLog.includes('lobby_config 2 5 "原版合作图"'),scenarioLog);
+    assert.ok(scenarioLog.includes('"+set","sv_rate","48000"'),scenarioLog);
     for(const [i,s] of scenarioSlots.entries()) {
       const command=`lobby_slot ${i} 1 ${s.player} ${s.computer?2:0} ${s.race} ${s.team} ${s.color} "${s.computer?'电脑':'开放位置'}"`;
       assert.ok(scenarioLog.includes(command),scenarioLog);
