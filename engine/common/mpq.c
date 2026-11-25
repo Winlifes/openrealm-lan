@@ -337,6 +337,8 @@ typedef struct {
     uint32_t memory_pos;
     char filename[256];
     uint32_t base_offset;
+    uint32_t file_size;
+    bool legacy_map_lookup;
     struct mpq_cache_entry **lookup_cache;
     uint32_t lookup_cache_size;
     mpqHeaderV1_t header;
@@ -609,11 +611,44 @@ static bool HasArchiveExtensionAt(cstring_t path, size_t dot)
     return false;
 }
 
+/* Legacy map archives can have more than one neutral entry with the same
+ * hashes. Warcraft III reads the last valid match in the probe chain. */
+static bool FindLegacyMapBlock(mpqArchive_t *mpq, char const *name,
+                               uint32_t hash1, uint32_t hash2, uint32_t *block_index)
+{
+    uint32_t count = mpq->header.dwHashTableSize;
+    uint32_t slot = HashString(name, MPQ_HASH_TABLE_OFFSET) % count;
+    uint32_t found = MPQ_HASH_ENTRY_FREE;
+    for (uint32_t probe = 0; probe < count; probe++) {
+        mpqHashEntry_t const *entry = &mpq->hashtable[slot];
+        uint32_t candidate = entry->dwBlockIndex & MPQ_BLOCK_INDEX_MASK;
+        if (++slot == count) slot = 0;
+        if (entry->dwBlockIndex == MPQ_HASH_ENTRY_FREE) break;
+        if (entry->dwBlockIndex == MPQ_HASH_ENTRY_DELETED ||
+            entry->dwNameHash1 != hash1 || entry->dwNameHash2 != hash2 ||
+            entry->wLocale || entry->bPlatform || candidate >= mpq->header.dwBlockTableSize)
+            continue;
+
+        mpqBlockEntry_t const *block = &mpq->blocktable[candidate];
+        uint32_t offset = mpq->base_offset + block->dwBlockOffset;
+        if ((block->dwFlags & MPQ_FILE_EXISTS) && block->dwFileSize < 0x80000000u &&
+            offset <= mpq->file_size && block->dwBlockSize <= mpq->file_size - offset)
+            found = candidate;
+    }
+    if (found == MPQ_HASH_ENTRY_FREE) return false;
+    *block_index = found;
+    CacheBlockLookup(mpq, name, found);
+    return true;
+}
+
 static bool FindBlockIndex(mpqArchive_t *mpq, char const *fileName, uint32_t hash1, uint32_t hash2, uint32_t *block_index)
 {
     uint32_t hash_pos;
     uint32_t index;
     bool trace = getenv("BZ_MPQ_TRACE") != NULL;
+
+    if (mpq->legacy_map_lookup)
+        return FindLegacyMapBlock(mpq, fileName, hash1, hash2, block_index);
 
     hash_pos = (hash1 & (mpq->header.dwHashTableSize - 1));
     if (trace) {
@@ -1253,6 +1288,16 @@ static bool SFileOpenArchiveSource(mpqArchive_t *mpq, handle_t *archive)
         goto fail;
     }
 
+    mpq->legacy_map_lookup = memcmp(probe, "HM3W", 4) == 0 &&
+        mpq->header.wFormatVersion == 0 &&
+        (mpq->header.dwHashTableSize & ~MPQ_BLOCK_INDEX_MASK) != 0;
+    if (mpq->legacy_map_lookup) {
+        /* Legacy Storm uses a 32-bit byte count for 16-byte hash entries and
+         * only the low byte of the sector shift. */
+        mpq->header.dwHashTableSize &= MPQ_BLOCK_INDEX_MASK;
+        mpq->header.wSectorSizeShift &= 0xff;
+    }
+
     /* Sector size is 512 << wSectorSizeShift. Storm accepts up to shift 15 (16 MiB).
      * Protected maps such as DotA v6.83d use that max; never clamp it down to 4096.
      * Garbage values (w3x protectors scramble the header) fall back to 4096, the
@@ -1280,7 +1325,7 @@ static bool SFileOpenArchiveSource(mpqArchive_t *mpq, handle_t *archive)
      * such archives malformed and clamps the tables to the file, which is what
      * makes Spazzler/w3xmaster-protected maps openable. Mirror that. */
     {
-        uint32_t file_size = MpqArchiveFileSize(mpq);
+        uint32_t file_size = mpq->file_size = MpqArchiveFileSize(mpq);
         uint32_t data_end = (file_size > mpq->base_offset) ? (file_size - mpq->base_offset) : 0; /* table positions are archive-relative */
         if (data_end > 0) {
             if (mpq->header.dwHashTablePos >= data_end ||
@@ -1334,7 +1379,7 @@ static bool SFileOpenArchiveSource(mpqArchive_t *mpq, handle_t *archive)
     DecryptBlock((uint8_t *)mpq->blocktable, mpq->header.dwBlockTableSize * sizeof(mpqBlockEntry_t),
                  MPQ_KEY_BLOCK_TABLE);
 
-    PreloadListfileCache(mpq);
+    if (!mpq->legacy_map_lookup) PreloadListfileCache(mpq);
 
     *archive = (handle_t)mpq;
     return true;
@@ -1592,6 +1637,7 @@ static bool SFileOpenFileDirect(handle_t archive, cstring_t fileName, uint32_t s
     if ((mpqfile->flags & MPQ_FILE_COMPRESS) && !(mpqfile->flags & MPQ_FILE_SINGLE_UNIT)) {
         uint32_t sector_count;
         uint32_t offset_count;
+        uint32_t block_span;
         mpqBlockEntry_t *block;
         bool offsets_valid = false;
 
@@ -1611,10 +1657,17 @@ static bool SFileOpenFileDirect(handle_t archive, cstring_t fileName, uint32_t s
             return false;
         }
 
-        offsets_valid = SectorTableLooksValid(mpqfile->sector_offsets, sector_count, mpqfile->compressed_size);
+        block_span = mpqfile->compressed_size;
+        if (mpq->legacy_map_lookup) {
+            /* Some old maps omit the offset table from the declared length. */
+            uint32_t offset = mpq->base_offset + block->dwBlockOffset;
+            uint32_t available = mpq->file_size - offset;
+            block_span += MIN(offset_count * sizeof(uint32_t), available - block_span);
+        }
+        offsets_valid = SectorTableLooksValid(mpqfile->sector_offsets, sector_count, block_span);
         if (!offsets_valid && (mpqfile->flags & MPQ_FILE_ENCRYPTED)) {
             DecryptBlock((uint8_t *)mpqfile->sector_offsets, offset_count * sizeof(uint32_t), mpqfile->file_key - 1);
-            offsets_valid = SectorTableLooksValid(mpqfile->sector_offsets, sector_count, mpqfile->compressed_size);
+            offsets_valid = SectorTableLooksValid(mpqfile->sector_offsets, sector_count, block_span);
         }
         if (!offsets_valid) {
             free(mpqfile->sector_offsets);

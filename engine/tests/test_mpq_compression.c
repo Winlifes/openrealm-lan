@@ -104,6 +104,72 @@ TEST(mpq_compression, writer_retail_hash_probe) {
     free(hashes);
 }
 
+TEST(mpq_compression, legacy_map_prefers_the_last_matching_block) {
+    char path[] = "/tmp/openrealm-mpq-map-XXXXXX";
+    char const *name = "war3map.wts";
+    uint8_t const prefix[512] = {'H', 'M', '3', 'W'};
+    uint32_t header[8], read;
+    uint8_t body[4096];
+    char input[128], output[128] = {0};
+    handle_t archive, file = NULL;
+    int fd = mkstemp(path);
+
+    T_ASSERT(fd >= 0);
+    close(fd);
+    T_ASSERT(SFileCreateArchive(path, 0, 16, &archive));
+    T_ASSERT(SFileAddFileFromBuffer(archive, "placeholder", "dummy!", 6));
+    memset(input, 'a', sizeof(input));
+    T_ASSERT(SFileAddFileFromBuffer(archive, name, input, sizeof(input)));
+    T_ASSERT(SFileCloseArchive(archive));
+
+    FILE *fp = fopen(path, "rb");
+    T_NOT_NULL(fp);
+    T_EQ(fread(header, sizeof(header), 1, fp), 1);
+    size_t bytes = fread(body, 1, sizeof(body), fp);
+    T_ASSERT(feof(fp));
+    fclose(fp);
+
+    uint32_t count = header[6];
+    uint32_t (*hashes)[4] = malloc(count * sizeof(*hashes));
+    T_NOT_NULL(hashes);
+    memset(hashes, 0xff, count * sizeof(*hashes));
+    uint32_t slot = Mpq_TestHashString(name, 0) & (count - 1);
+    for (uint32_t block = 0; block < 2; block++, slot = (slot + 1) & (count - 1)) {
+        hashes[slot][0] = Mpq_TestHashString(name, 1);
+        hashes[slot][1] = Mpq_TestHashString(name, 2);
+        hashes[slot][2] = 0;
+        hashes[slot][3] = block;
+    }
+    Mpq_TestEncryptBlock((uint8_t *)hashes, count * sizeof(*hashes), 0xc3af3770);
+    memcpy(body + header[4] - sizeof(header), hashes, count * sizeof(*hashes));
+    free(hashes);
+    header[6] |= 0xf0000000u;
+    uint32_t block_table_bytes = header[7] * 16;
+    uint8_t *block_table = body + header[5] - sizeof(header);
+    uint32_t block[4];
+    Mpq_TestDecryptBlock(block_table, block_table_bytes, 0xec83b3a3);
+    memcpy(block, block_table + sizeof(block), sizeof(block));
+    T_EQ(block[3], 0x80000200u);
+    block[1] -= 2 * sizeof(uint32_t); /* Legacy compressed length excludes its offsets. */
+    memcpy(block_table + sizeof(block), block, sizeof(block));
+    Mpq_TestEncryptBlock(block_table, block_table_bytes, 0xec83b3a3);
+    fp = fopen(path, "wb");
+    T_NOT_NULL(fp);
+    T_EQ(fwrite(prefix, sizeof(prefix), 1, fp), 1);
+    T_EQ(fwrite(header, sizeof(header), 1, fp), 1);
+    T_EQ(fwrite(body, 1, bytes, fp), bytes);
+    fclose(fp);
+
+    T_ASSERT(SFileOpenArchive(path, 0, 0, &archive));
+    T_ASSERT(SFileOpenFileEx(archive, name, 0, &file));
+    T_ASSERT(SFileReadFile(file, output, sizeof(output), &read, NULL));
+    T_EQ(read, sizeof(input));
+    T_EQ(memcmp(input, output, sizeof(input)), 0);
+    SFileCloseFile(file);
+    SFileCloseArchive(archive);
+    unlink(path);
+}
+
 TEST(mpq_compression, writer_retail_sector_layout) {
     char path[] = "/tmp/openrealm-mpq-sectors-XXXXXX";
     uint8_t input[9001], output[9001];
