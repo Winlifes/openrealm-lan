@@ -33,6 +33,8 @@ bash lan/build-browser-engine.sh
 bash lan/publish-engine-runtime.sh "$WC3_RELEASE"
 ```
 
+The hosted room client targets wasm32 for browsers such as Safari that lack Memory64. Its static libraries and client files are built under `build/em-web` to keep the browser and Node builds isolated.
+
 The catalog tools read the installed map files. Use the actual map initialization receipts rather than editing a map or labeling an untested map as passed. The audit runs a bounded initialization of each selected map.
 
 ```sh
@@ -76,7 +78,7 @@ node lan/server/rooms.mjs
 caddy run --config lan/Caddyfile.example --adapter caddyfile
 ```
 
-The example listens on loopback and uses Caddy's internal TLS issuer. Open `https://localhost:8444/rooms.html` with a browser that supports cross-origin isolation and WebAssembly MEMORY64. For use on the LAN, set the Caddy site address, bind address, TLS certificate, and `WC3_ORIGIN` to the LAN origin. Make the certificate trusted on the clients and limit site access to your LAN.
+The example listens on loopback and uses Caddy's internal TLS issuer. Open `https://localhost:8444/rooms.html` with a browser that supports cross-origin isolation, WebAssembly, and WebGL 2. For use on the LAN, set the Caddy site address, bind address, TLS certificate, and `WC3_ORIGIN` to the LAN origin. Make the certificate trusted on the clients and limit site access to your LAN.
 
 To use both a LAN origin and a public HTTPS site under `/wc3/`, set `WC3_PUBLIC_ORIGIN` to the public origin (scheme and host only) and `WC3_PUBLIC_PREFIX=/wc3` in the room service. The public proxy strips `/wc3` before forwarding and preserves the public `Host` header. Serve the launcher, release assets and `/api` on that same public origin. Forward WebSocket upgrades and keep the cross-origin isolation headers on the game page. The configured host scopes room listings, room details, and WebSocket admission. Both sites use the same map catalog and share the workstation's room capacity.
 

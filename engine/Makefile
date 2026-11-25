@@ -99,7 +99,8 @@ ifeq ($(EMSCRIPTEN),1)
     NET_LIBS  :=
     EM_FS     ?= node
 ifeq ($(EM_FS),browser)
-    CFLAGS    += -DBZ_WEB_ASYNC_ASSETS
+    # The hosted game must load on WebKit releases that lack Memory64.
+    CFLAGS    += -m32 -DBZ_WEB_ASYNC_ASSETS
     EM_FS_FLAGS := -sEXIT_RUNTIME=0 -lwebsocket.js -lidbfs.js \
                    -sASYNCIFY=1 -sASYNCIFY_IMPORTS=WC3_FetchRemoteFile -sASYNCIFY_STACK_SIZE=1048576 \
                    "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','FS','ENV','addRunDependency','removeRunDependency']"
@@ -108,8 +109,11 @@ else ifeq ($(EM_FS),node-async)
 else
     EM_FS_FLAGS := -sNODERAWFS=1
 endif
+ifneq ($(EM_FS),browser)
+    CFLAGS    += -sMEMORY64=1
+endif
     EM_PRELOAD ?=
-    CFLAGS    += -sMEMORY64=1 -sUSE_SDL=2 -sUSE_ZLIB=1
+    CFLAGS    += -sUSE_SDL=2 -sUSE_ZLIB=1
     EM_JS_LIBRARIES := port/web/src/web_beforeunload.js
     EM_LINK_FLAGS := -sSTACK_SIZE=8388608 -sALLOW_MEMORY_GROWTH=1 -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1 $(EM_FS_FLAGS) $(EM_PRELOAD) $(foreach lib,$(EM_JS_LIBRARIES),--js-library $(lib))
     AR        := $(shell command -v llvm-ar 2>/dev/null || command -v ar)
