@@ -86,6 +86,8 @@ The public edge can redirect the versioned `bootstrap.mpq`, `openwarcraft3.wasm`
 
 The bridge validates that room clients use the server's build name. Its R90 backpressure policy drops UDP datagrams for a congested connection while allowing the engine's own acknowledgements and retransmission to recover. Room transport checking uses `npm --prefix lan/server test`.
 
+The room service sends a WebSocket ping every ten seconds and closes a connection that misses the reply before the next ping. Once the last player disconnects, the room disappears from the list and the native match shuts down. The port is available for a new room once that process exits. A newly created room stays available while the first player connects.
+
 Enter opens an in-game chat field in the browser. The page owns input method composition and hands the finished UTF-8 line to the engine's existing chat command on the game loop. A candidate confirmation keeps the field open. Enter sends after composition finishes, and Escape closes the field.
 
 In Zombie Island III New Century 1.0, the map enables its `我要钱` reward at five-minute intervals. An eligible player can claim it once per interval. The scripts for the first two slots add 176 gold even though the notice describes 88 gold and lumber. The same map uses `pointbreak` and `whosyourdaddy` as defeat triggers.

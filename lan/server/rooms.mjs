@@ -30,6 +30,7 @@ const engine = realpathSync(process.env.WC3_ENGINE || join(root, 'engine-current
 const build = basename(dirname(dirname(engine)));
 const maps = JSON.parse(readFileSync(join(dev, 'maps-catalog.json'), 'utf8'));
 const rooms = new Map();
+const closingPorts = new Map();
 const maxRooms = 4, firstPort = Number(process.env.WC3_GAME_PORT_BASE || 27970);
 if (!Number.isInteger(firstPort) || firstPort<1024 || firstPort+maxRooms>65536)
   throw Error('Invalid WC3_GAME_PORT_BASE');
@@ -57,7 +58,7 @@ function roomDetails(room) {
     build,url:room.site.prefix + '/play/game/?' + new URLSearchParams({room:room.id,map:room.map.path})};
 }
 function writeCommand(room, text) {
-  if (!room.child || room.child.exitCode !== null || !room.child.stdin.writable) throw Error('游戏进程已停止');
+  if (room.stopping || !room.child || room.child.exitCode !== null || !room.child.stdin.writable) throw Error('游戏进程已停止');
   room.child.stdin.write(text + '\n');
 }
 async function waitLog(room, text, timeout = 30000) {
@@ -73,11 +74,22 @@ async function waitLog(room, text, timeout = 30000) {
 function stopRoom(room) {
   if (room.stopping) return;
   room.stopping = true;
-  for (const ws of room.peers) ws.close(1001, '房间已关闭');
-  room.child?.kill('SIGTERM');
-  const child = room.child;
-  setTimeout(() => { if(child && child.exitCode === null)child.kill('SIGKILL'); }, 3000).unref();
   rooms.delete(room.id);
+  for (const ws of room.peers) ws.close(1001, '房间已关闭');
+  const child = room.child;
+  if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
+  const deadline = setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  }, 3000).unref();
+  // Keep the UDP port reserved until the departing native process releases it.
+  closingPorts.set(room.port, new Promise(resolve => {
+    child.once('close', () => {
+      clearTimeout(deadline);
+      closingPorts.delete(room.port);
+      resolve();
+    });
+  }));
+  child.kill('SIGTERM');
 }
 async function initializeRoom(room) {
   try {
@@ -98,6 +110,9 @@ async function initializeRoom(room) {
       room.events.emit('log');
     };
     room.child.stdout.on('data', append); room.child.stderr.on('data', append);
+    room.child.stdin.on('error', error => {
+      if (!room.stopping) console.error('Room console error', room.id, error.message);
+    });
     room.child.on('error', error => { room.error = error.message; room.events.emit('exit'); });
     room.child.on('close', (code, signal) => {
       output.end(`\n[room] process closed: code=${code} signal=${signal}\n`); room.events.emit('exit');
@@ -147,8 +162,12 @@ export const server = http.createServer(async (request,response) => {
       let text=''; for await (const chunk of request) { text+=chunk; if(text.length>4096)throw Error('请求过大'); }
       const input=JSON.parse(text), map=maps.find(m=>m.id===input.mapId);
       if(!map) return json(response,400,{error:'请选择有效地图'});
+      while (rooms.size + closingPorts.size >= maxRooms && closingPorts.size) {
+        await Promise.race(closingPorts.values());
+      }
+      if (!server.listening) return json(response,503,{error:'联机服务正在重启，请重试'});
       if (rooms.size>=maxRooms) return json(response,409,{error:'目前最多同时运行 4 个房间，请等待空闲房间'});
-      const ports=new Set([...rooms.values()].map(r=>r.port));
+      const ports=new Set([...closingPorts.keys(), ...[...rooms.values()].map(room=>room.port)]);
       const port=Array.from({length:maxRooms},(_,i)=>firstPort+i).find(p=>!ports.has(p));
       const room={id:randomBytes(9).toString('hex'),name:safeText(input.name,site.defaultName),site,map,port,status:'starting',
         peers:new Set(),events:new EventEmitter(),logTail:'',emptySince:Date.now(),created:Date.now()};
@@ -160,6 +179,7 @@ export const server = http.createServer(async (request,response) => {
 });
 
 const wss=new WebSocketServer({noServer:true,maxPayload:65507,perMessageDeflate:false});
+const awaitingPong = new WeakSet();
 server.on('upgrade',(request,socket,head)=>{
   const url=new URL(request.url,origin);
   const match=url.pathname.match(/^\/api\/rooms\/([a-f0-9]{18})\/ws$/);
@@ -176,6 +196,7 @@ server.on('upgrade',(request,socket,head)=>{
 });
 wss.on('connection',(ws,room)=>{
   const udp=dgram.createSocket('udp4'); room.peers.add(ws); room.emptySince=null;
+  ws.on('pong', () => awaitingPong.delete(ws));
   let forwarded=0, congestionDrops=0, peakBuffered=0, lastDropLog=0;
   const trace=(event,extra={})=>{
     if(traceTransport || event==='close' || event==='error') console.error('WC3_TRANSPORT '+JSON.stringify({at:new Date().toISOString(),
@@ -183,15 +204,17 @@ wss.on('connection',(ws,room)=>{
   };
   const close=(code,reason)=>{
     trace('close',{code,reason:String(reason||'').slice(0,120),buffered:ws.bufferedAmount});
-    room.peers.delete(ws); if(!room.peers.size)room.emptySince=Date.now();
-    try {
-      const port=udp.address().port;
-      if(!room.stopping) {
+    room.peers.delete(ws);
+    if (!room.peers.size) {
+      stopRoom(room);
+    } else if (!room.stopping) {
+      try {
+        const port=udp.address().port;
         room.consoleQueue=(room.consoleQueue||Promise.resolve()).then(async()=>{
           writeCommand(room,'client_drop_endpoint '+port); await delay(100);
         }).catch(()=>{});
-      }
-    } catch {}
+      } catch {}
+    }
     try{udp.close();}catch{}
   };
   udp.on('message',(message,address)=>{
@@ -214,6 +237,17 @@ wss.on('connection',(ws,room)=>{
   });
   ws.on('close',close); ws.on('error',error=>trace('error',{message:error.message}));
 });
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.readyState !== ws.OPEN) continue;
+    if (awaitingPong.has(ws)) {
+      ws.terminate();
+      continue;
+    }
+    awaitingPong.add(ws);
+    ws.ping();
+  }
+}, 10_000).unref();
 setInterval(()=>{
   for(const room of rooms.values()) {
     if(room.status==='starting' && Date.now()-room.created>45000)stopRoom(room);
@@ -222,6 +256,10 @@ setInterval(()=>{
 },5000).unref();
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{
   for(const room of rooms.values())stopRoom(room);
-  server.close(()=>process.exit(0)); setTimeout(()=>process.exit(0),4000).unref();
+  server.close(async()=>{
+    await Promise.all(closingPorts.values());
+    process.exit(0);
+  });
+  setTimeout(()=>process.exit(0),4000).unref();
 });
 server.listen(Number(process.env.WC3_API_PORT||18780),'127.0.0.1',()=>console.log('WC3 room service ready'));
