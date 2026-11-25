@@ -1513,6 +1513,32 @@ static float SCR_CommandButtonRadialShade(uiFrame_t const *frame) {
     return MIN(1.0f, (float)(uint32_t)(state->radialEndTime - cl.time) / (float)duration);
 }
 
+/* The command already carries the authoritative key from the server. Keep the
+ * lower-right corner free for the existing item or queue count. */
+static void SCR_DrawCommandButtonHotkey(uiFrame_t const *frame, rect_t const *icon) {
+    uiCanvas_t const *canvas = CL_Canvas();
+    rect_t const scene = canvas->scene;
+    if (!re.DrawCharScaled || !re.DrawFill || !SCR_LayoutFrameHasClickCommand(frame) ||
+        frame->hotkey <= ' ' || frame->hotkey > '~' ||
+        scene.w <= 0 || scene.h <= 0 || canvas->window.width <= 0 || canvas->window.height <= 0) return;
+
+    int const key = toupper(frame->hotkey);
+    for (uint32_t i = frame->number + 1; i < SCR_NumFrames(); i++) {
+        uiFrame_t const *later = SCR_Frame(i);
+        if (later && SCR_LayoutFrameHasClickCommand(later) && toupper(later->hotkey) == key) return;
+    }
+
+    float const sx = canvas->window.width / scene.w;
+    float const sy = canvas->window.height / scene.h;
+    float const size = floorf(MIN(icon->w * sx, icon->h * sy) * 0.30f);
+    if (size < 6.0f) return;
+    float const pad = 2.0f;
+    rect_t const box = MAKE(rect_t, icon->x + pad / sx,
+        icon->y + icon->h - (size + pad * 3) / sy, (size + pad * 2) / sx, (size + pad * 2) / sy);
+    re.DrawFill(&box, MAKE(color32_t, 0, 0, 0, 192));
+    re.DrawCharScaled((box.x - scene.x) * sx + pad, (box.y - scene.y) * sy + pad, key, size / 8.0f);
+}
+
 void SCR_LayoutDrawCommandButton(uiFrame_t const *frame, rect_t const *screen) {
     /* The radial overlay replaces the square command-card grid while open. */
     if (gamepad_radial_open && !(frame->flagsvalue & UIFLAG_GAMEPAD_HUD_SHORTCUT)) return;
@@ -1532,6 +1558,7 @@ void SCR_LayoutDrawCommandButton(uiFrame_t const *frame, rect_t const *screen) {
         .shader      = SHADER_COMMANDBUTTON,
         .uActiveGlow = active_glow,
         .uRadialShade = SCR_CommandButtonRadialShade(frame)));
+    SCR_DrawCommandButtonHotkey(frame, &scrn);
 }
 
 void layout_text(uiFrame_t const *frame, rect_t const *screen, cstring_t text) {

@@ -4,6 +4,7 @@
 
 #include "hud_local.h"
 #include "hud_utils.h"
+#include <ctype.h>
 
 typedef struct {
     edict_t *ent;
@@ -289,12 +290,14 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     cstring_t art;
     cstring_t art_path;
     cstring_t buttonpos;
+    cstring_t active_buttonpos;
     cstring_t tip;
     cstring_t ubertip;
     cstring_t hotkey;
     ability_t const *ability;
     UnitProfile_t const *structure = NULL;
     abilityitem_t item;
+    uint32_t rawcode = 0;
     uint32_t ability_code = 0;
     uint32_t text_level = level;
     bool toggle_on = false;
@@ -316,7 +319,7 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     memset(button, 0, sizeof(*button));
     ability = FindAbilityForCommand(code);
     if (strlen(code) == 4) {
-        uint32_t const rawcode = FS_SLKKey(code);
+        rawcode = FS_SLKKey(code);
         if (!ability && !research && G_WorkerCanBuild(ent, rawcode))
             structure = G_UnitProfile(rawcode);
         ability_code = G_AbilityCodeName(code);
@@ -355,9 +358,10 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     /* CommonAbilityFunc authors Rally art as a comma-separated race list. Resolve
      * it to one icon for every command-card path before handing it to the client. */
     if (!strcmp(code, STR_CmdRally)) art = G_RallyCommandArt(ent);
+    active_buttonpos = toggle_on ? FindConfigValue(art_code, STR_UNBUTTONPOS) : NULL;
     buttonpos = G_CommandButtonValue(
         FindConfigValue(art_code, G_ResearchField(STR_BUTTONPOS, research && !upgrade_research)),
-        toggle_on ? FindConfigValue(art_code, STR_UNBUTTONPOS) : NULL, toggle_on);
+        active_buttonpos, toggle_on);
     /* Keep the retail Healing Wave position if a compatibility data set omits
      * its command presentation row. */
     if ((!buttonpos || !*buttonpos) && !research && !strcmp(code, "AChv")) {
@@ -418,8 +422,13 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
         if (structure->hotkey) hotkey = structure->hotkey;
         x = (uint32_t)structure->buttonPosX;
         y = (uint32_t)structure->buttonPosY;
-    } else if (buttonpos && *buttonpos) {
-        sscanf(buttonpos, "%u,%u", &x, &y);
+    } else {
+        if (buttonpos && *buttonpos) sscanf(buttonpos, "%u,%u", &x, &y);
+        if (rawcode) {
+            if (!active_buttonpos || !*active_buttonpos)
+                G_OverrideMapAbilityCommandPosition(rawcode, research && !upgrade_research, false, &x, &y);
+            if (toggle_on) G_OverrideMapAbilityCommandPosition(rawcode, false, true, &x, &y);
+        }
     }
     UI_CopyString(art_level, sizeof(art_level), research ? G_StringForLevel(art, level) : art);
     art_path = G_UIArtPath(art_level);
@@ -428,8 +437,8 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     /* Tip and Ubertip are per-level lists. Live commands are built with level
      * 0, which would print the whole list, so hero skills show their learned
      * rank, or the first entry until one is learned. */
-    if (!research && !text_level && ability_code && G_UnitIsHero(ent)) {
-        text_level = MAX(1u, G_UnitAbilityLevel(ent, ability_code));
+    if (!research && !text_level && rawcode && G_UnitIsHero(ent)) {
+        text_level = MAX(1u, G_UnitAbilityLevel(ent, rawcode));
     }
     UI_CopyString(button->tooltip, sizeof(button->tooltip), G_CleanTooltipString(tip, text_level));
     UI_CopyString(button->ubertip, sizeof(button->ubertip), G_CleanTooltipString(ubertip, text_level));
@@ -470,7 +479,17 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
         button->alternate_active = active ? 1 : 0;
     }
     hotkey = research ? G_StringForLevel(hotkey, level) : hotkey;
-    button->hotkey = hotkey && *hotkey ? *hotkey : '\0';
+    button->hotkey = *G_RemoveQuotes(hotkey);
+    /* Some maps put a standalone highlighted key at the end of the title.
+     * It can be stale when the actual binding was inherited or rebound. */
+    size_t const hint_length = sizeof(" |cffffcc00X|r") - 1;
+    size_t const title_length = strlen(button->tooltip);
+    if (title_length >= hint_length && button->hotkey > ' ' && button->hotkey <= '~') {
+        char *hint = button->tooltip + title_length - hint_length;
+        size_t const letter = sizeof(" |cffffcc00") - 1;
+        if (!strncasecmp(hint, " |cffffcc00", letter) && isalnum((unsigned char)hint[letter]) &&
+            !strcmp(hint + letter + 1, "|r")) hint[letter] = toupper((unsigned char)button->hotkey);
+    }
     button->x = x == UINT_MAX ? 255 : (uint8_t)MIN(x, 3);
     button->y = y == UINT_MAX ? 255 : (uint8_t)MIN(y, 2);
     button->research = research ? 1 : 0;
@@ -487,8 +506,8 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     } else if (!research && ability && ability->proc == CAbilityHoldPosition) {
         button->engaged = ent->orders->holding_position ? 1 : 0;
     }
-    if (ability_code) {
-        button->manacost = S_SpellNumber(ability_code, ABILITY_NUMBER_COST, text_level);
+    if (rawcode) {
+        button->manacost = S_SpellNumber(rawcode, ABILITY_NUMBER_COST, text_level);
     }
     if (!button->art[0]) {
         fprintf(stderr,

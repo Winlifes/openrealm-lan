@@ -109,6 +109,11 @@ static texture_t const *test_scroll_tex[3];
 static uint32_t test_scroll_draws;
 static uint32_t test_command_button_draws;
 static void capture_command_button_draw(drawImage_t const *draw) { (void)draw; test_command_button_draws++; }
+static int test_command_button_key;
+static void capture_command_button_key(float x, float y, int key, float scale) {
+    (void)x; (void)y; (void)scale;
+    test_command_button_key = key;
+}
 static drawText_t test_textarea_draw;
 static uint32_t test_textarea_draws;
 static drawText_t test_listbox_draw[8];
@@ -2002,6 +2007,27 @@ TEST(client_layout, radial_menu_keeps_persistent_hud_shortcuts_visible) {
 
     SCR_GamepadRadialCancel();
     re.DrawImageEx = old_draw;
+}
+
+TEST(client_layout, command_button_shows_its_enabled_hotkey) {
+    uiFrame_t command = { .flags = { .type = FT_COMMANDBUTTON }, .color = COLOR32_WHITE,
+                          .onclick = "button AQA8", .hotkey = 'e' };
+    rect_t screen = { 0.1f, 0.1f, 0.03f, 0.03f };
+
+    test_client_stubs_init();
+    test_client_stubs_set_window_size(1024, 768);
+    CL_CanvasInit();
+    re.DrawImageEx = capture_command_button_draw;
+    re.DrawCharScaled = capture_command_button_key;
+    test_command_button_key = 0;
+    SCR_LayoutDrawCommandButton(&command, &screen);
+    T_EQ(test_command_button_key, 'E');
+
+    command.flagsvalue |= UIFRAME_DISABLED;
+    test_command_button_key = 0;
+    SCR_LayoutDrawCommandButton(&command, &screen);
+    T_EQ(test_command_button_key, 0);
+    test_client_stubs_init();
 }
 
 TEST(net, window_edit_text_does_not_leak_into_same_number_hud_frame) {

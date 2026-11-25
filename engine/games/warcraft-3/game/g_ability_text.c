@@ -38,7 +38,7 @@ static unitData_t const *AbilityTextMapRecord(uint32_t ability) {
     return NULL;
 }
 
-cstring_t G_MapAbilityCommandText(cstring_t category, cstring_t field) {
+cstring_t G_MapAbilityCommandText(cstring_t category, cstring_t field, uint32_t *parent) {
     static struct { cstring_t profile; uint32_t object_field; } const fields[] = {
         { "Art", MAKEFOURCC('a','a','r','t') },
         { "Unart", MAKEFOURCC('a','u','a','r') },
@@ -47,24 +47,57 @@ cstring_t G_MapAbilityCommandText(cstring_t category, cstring_t field) {
         { "Unhotkey", MAKEFOURCC('a','u','h','k') },
         { "Researchhotkey", MAKEFOURCC('a','r','h','k') },
         { "ResearchHotkey", MAKEFOURCC('a','r','h','k') },
+        { "Buttonpos", 0 },
+        { "UnButtonpos", 0 },
+        { "ResearchButtonpos", 0 },
+        { "Researchbuttonpos", 0 },
     };
+    *parent = 0;
     if (!category || !field || strlen(category) != 4) return NULL;
-    uint32_t mod_id = 0;
-    FOR_LOOP(i, sizeof(fields) / sizeof(*fields)) {
-        if (!strcmp(fields[i].profile, field)) { mod_id = fields[i].object_field; break; }
-    }
-    if (!mod_id) return NULL;
+    uint32_t index = 0;
+    while (index < sizeof(fields) / sizeof(*fields) && strcmp(fields[index].profile, field)) index++;
+    if (index == sizeof(fields) / sizeof(*fields)) return NULL;
 
     uint32_t id;
     memcpy(&id, category, sizeof(id));
     unitData_t const *record = AbilityTextMapRecord(id);
     if (!record) return NULL;
+    if (record->newUnitID && record->originalUnitID != id) *parent = record->originalUnitID;
+    uint32_t const mod_id = fields[index].object_field;
+    if (!mod_id) return NULL;
     FOR_LOOP(i, record->numbeOfModifications) {
         unitModification_t const *mod = record->modifications + i;
         if (mod->modID == mod_id && mod->type == mod_string && mod->data)
             return G_LevelString((cstring_t)mod->data);
     }
     return NULL;
+}
+
+void G_OverrideMapAbilityCommandPosition(uint32_t ability, bool research, bool activated, uint32_t *x, uint32_t *y) {
+    unsigned char const prefix = research ? 'r' : activated ? 'u' : 'b';
+    unsigned char const field = activated ? 'b' : 'p';
+    uint32_t const column = MAKEFOURCC('a', prefix, field, 'x');
+    uint32_t const row = MAKEFOURCC('a', prefix, field, 'y');
+    /* W3A stores the two axes separately. Keep the inherited profile axis
+     * when only one coordinate was modified by the map. */
+    bool has_x = false, has_y = false;
+    for (uint32_t depth = 0; depth < 16 && !(has_x && has_y); depth++) {
+        unitData_t const *record = AbilityTextMapRecord(ability);
+        if (!record) break;
+        FOR_LOOP(i, record->numbeOfModifications) {
+            unitModification_t const *mod = record->modifications + i;
+            if (mod->type != mod_int || !mod->data) continue;
+            if (!has_x && mod->modID == column) {
+                *x = *(uint32_t const *)mod->data;
+                has_x = true;
+            } else if (!has_y && mod->modID == row) {
+                *y = *(uint32_t const *)mod->data;
+                has_y = true;
+            }
+        }
+        if (!record->newUnitID || record->originalUnitID == ability) break;
+        ability = record->originalUnitID;
+    }
 }
 
 /* Select quoted CSV without the shared, bounded parse_segment buffer. Tooltips

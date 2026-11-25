@@ -95,6 +95,12 @@ these exact-ID rows before falling back to the base-SLK/custom-ID remap. Ability
 `alev`/`arlv`/`alsk`/`apri`, leveled `amcs`/`acas`/`adur`/`ahdu`/`acdn`/`aare`/`aran`/`atar`, and DataA–I via
 `dataPointer`+`level`. Full AbilityMetaData-driven field coverage remains follow-up work.
 
+Custom command buttons use their `war3map.w3a` art, hotkey and position overrides. Unset fields inherit from the source ability profile. The source ability can differ from the mechanic alias in `AbilityData.slk`. The map stores command positions as separate coordinates, so one axis can inherit while the other is overridden.
+
+Spell targeting recognizes `enemy` and `enemies` as the same relationship, and does the same for `ally` and `allies`. Target class, hero eligibility and resistance duration come from the ability data and its spell rules.
+
+`ChooseRandomCreep` draws from valid editor-visible neutral creeps of the requested level in the map's terrain set. TFT stores the terrain sets in `UnitBalance`. RoC can store them in `UnitUI`. Level `-1` accepts any available level. An empty pool returns zero. This lets maps such as Darwin's Island use their authored random spawns alongside their fixed critter spawns.
+
 The same map-load pass parses `war3map.w3t` into `MAPINFO.originalItems` / `userCreatedItems` and builds stable per-map `ItemData_t`
 rows. Original-item edits are applied before custom items inherit their base row. `G_ItemData(id)` therefore sees map-authored item
 prices, models, stock maximum/replenish/start fields, and other registered `ItemData` modifications before falling back to the base

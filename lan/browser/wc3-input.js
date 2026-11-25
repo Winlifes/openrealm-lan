@@ -60,7 +60,10 @@
   const fullscreenButton = document.getElementById('fullscreen-button');
   const lockButton = document.getElementById('pointer-lock-button');
   const displayStatus = document.getElementById('display-status');
+  const canLockPointer = !touchOn && typeof canvas.requestPointerLock === 'function';
+  const lockedStatus = 'Esc 释放鼠标';
   let statusTimeout;
+  let fullscreenLock = null;
   function showDisplayStatus(message, temporary = false) {
     clearTimeout(statusTimeout);
     displayStatus.textContent = message;
@@ -70,41 +73,60 @@
   function isFullscreen() {
     return (document.fullscreenElement || document.webkitFullscreenElement) === container;
   }
+  function releaseFullscreenLock() {
+    if (!fullscreenLock) return;
+    // The browser can grant the pointer lock after a fullscreen request fails.
+    fullscreenLock = 'release';
+    if (document.pointerLockElement === canvas) document.exitPointerLock();
+  }
+  function reportPointerLockError() {
+    fullscreenLock = null;
+    showDisplayStatus('当前浏览器无法锁定鼠标', true);
+  }
+  async function lockPointer() {
+    try {
+      canvas.focus();
+      const rect = canvas.getBoundingClientRect();
+      dispatchMouse('mousemove', rect.left + rect.width / 2, rect.top + rect.height / 2, 0);
+      // SDL applies relative motion to its absolute cursor and clamps to the canvas.
+      await canvas.requestPointerLock();
+    } catch (_) {
+      reportPointerLockError();
+    }
+  }
   function syncFullscreen() {
     const active = isFullscreen();
     container.classList.toggle('is-fullscreen', active);
     fullscreenButton.textContent = active ? '退出全屏' : '全屏';
     fullscreenButton.setAttribute('aria-pressed', String(active));
+    if (!active) releaseFullscreenLock();
   }
   fullscreenButton.addEventListener('click', async () => {
+    const entering = !isFullscreen();
     try {
-      const target = isFullscreen() ? document : container;
-      const toggle = isFullscreen() ? document.exitFullscreen || document.webkitExitFullscreen :
-        container.requestFullscreen || container.webkitRequestFullscreen;
+      const target = entering ? container : document;
+      const toggle = entering ? container.requestFullscreen || container.webkitRequestFullscreen :
+        document.exitFullscreen || document.webkitExitFullscreen;
       if (!toggle) throw new Error('Fullscreen unavailable');
+      if (entering && canLockPointer && !fullscreenLock && !document.pointerLockElement) {
+        fullscreenLock = 'requested';
+        // Both requests use the same click. Fullscreen consumes its activation.
+        void lockPointer();
+      }
       await toggle.call(target);
       canvas.focus();
     } catch (_) {
+      if (entering) releaseFullscreenLock();
       showDisplayStatus('当前浏览器无法切换全屏', true);
     }
   });
   document.addEventListener('fullscreenchange', syncFullscreen);
   document.addEventListener('webkitfullscreenchange', syncFullscreen);
 
-  if (!touchOn && canvas.requestPointerLock) {
+  if (canLockPointer) {
     lockButton.hidden = false;
-    lockButton.addEventListener('click', async () => {
-      try {
-        canvas.focus();
-        const rect = canvas.getBoundingClientRect();
-        dispatchMouse('mousemove', rect.left + rect.width / 2, rect.top + rect.height / 2, 0);
-        // SDL applies relative motion to its absolute cursor and clamps to the canvas.
-        await canvas.requestPointerLock();
-      } catch (_) {
-        showDisplayStatus('当前浏览器无法锁定鼠标', true);
-      }
-    });
-    document.addEventListener('pointerlockerror', () => showDisplayStatus('当前浏览器无法锁定鼠标', true));
+    lockButton.addEventListener('click', lockPointer);
+    document.addEventListener('pointerlockerror', reportPointerLockError);
     document.addEventListener('keydown', event => {
       if (event.key !== 'Escape' || document.pointerLockElement !== canvas) return;
       event.preventDefault();
@@ -113,9 +135,15 @@
     }, true);
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === canvas;
+      if (locked && fullscreenLock === 'release') {
+        document.exitPointerLock();
+        return;
+      }
+      if (!locked) fullscreenLock = null;
       container.classList.toggle('is-pointer-locked', locked);
       lockButton.setAttribute('aria-pressed', String(locked));
-      showDisplayStatus(locked ? 'Esc 释放鼠标' : '');
+      if (locked) showDisplayStatus(lockedStatus);
+      else if (displayStatus.textContent === lockedStatus) showDisplayStatus('');
     });
   }
 

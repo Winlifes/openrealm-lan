@@ -2820,10 +2820,12 @@ static cstring_t MapBuffText(cstring_t category, cstring_t field, uint32_t *pare
 }
 
 cstring_t FindConfigValue(cstring_t category, cstring_t field) {
+    char ability_base[5] = {0};
+    uint32_t ability_parent;
     cstring_t value;
     uint32_t buff_parent = 0;
 
-    if ((value = G_MapAbilityCommandText(category, field))) return value;
+    if ((value = G_MapAbilityCommandText(category, field, &ability_parent))) return value;
     if ((value = G_MapItemText(category, field))) return value;
     if ((value = MapBuffText(category, field, &buff_parent))) return value;
     if (buff_parent) {
@@ -2847,11 +2849,16 @@ cstring_t FindConfigValue(cstring_t category, cstring_t field) {
         }
     }
 
-    FOR_LOOP(i, abilityConfigTableCount) {
-        value = Stb_IniCacheFind(abilityConfigTables + i, category, field);
-        if (value) {
-            return value;
+    FOR_LOOP(depth, 16) {
+        FOR_LOOP(i, abilityConfigTableCount) {
+            if ((value = Stb_IniCacheFind(abilityConfigTables + i, category, field))) return value;
         }
+        if (!ability_parent) break;
+        /* Follow the editor template, which can differ from the runtime
+         * mechanic alias in AbilityData.slk. */
+        memcpy(ability_base, &ability_parent, 4);
+        category = ability_base;
+        if ((value = G_MapAbilityCommandText(category, field, &ability_parent))) return value;
     }
     return NULL;
 }

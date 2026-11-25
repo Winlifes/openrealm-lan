@@ -1474,8 +1474,26 @@ uint32_t PlaceRandomItem(jass_t *j) {
     return item ? jass_pushlighthandle(j, item, "item") : jass_pushnullhandle(j, "item");
 }
 uint32_t ChooseRandomCreep(jass_t *j) {
-    //int32_t level = jass_checkinteger(j, 1);
-    return jass_pushinteger(j, 0);
+    int32_t const requested_level = jass_checkinteger(j, 1);
+    char const ground = level.mapinfo ? level.mapinfo->mainGroundType : 0;
+    uint32_t selected = 0, count = 0;
+    if (!ground || requested_level == 0 || requested_level < -1) return jass_pushinteger(j, 0);
+    FOR_LOOP(i, g_UnitBalanceCount) {
+        uint32_t const id = g_UnitBalance[i].id;
+        UnitBalance_t const *balance = G_UnitBalance(id);
+        if (!id || balance->level < 1 ||
+            (requested_level != -1 && balance->level != requested_level)) continue;
+        UnitData_t const *data = G_UnitData(id);
+        if (!data->valid || !data->race || strcasecmp(data->race, "creeps")) continue;
+        if (G_UnitIsBuilding(id) || balance->strength > 0 || balance->agility > 0 || balance->intelligence > 0) continue;
+        UnitUI_t const *ui = G_UnitUI(id);
+        if (!ui->inEditor || ui->hiddenInEditor || ui->campaign || (ui->special && atoi(ui->special))) continue;
+        // The tileset list moved from UnitUI in RoC to UnitBalance in TFT.
+        cstring_t const tilesets = balance->tilesets && *balance->tilesets ? balance->tilesets : ui->tilesets;
+        if (!tilesets || (!strchr(tilesets, ground) && !strchr(tilesets, '*'))) continue;
+        if ((uint32_t)rand() % ++count == 0) selected = id;
+    }
+    return jass_pushinteger(j, (int32_t)selected);
 }
 uint32_t ChooseRandomNPBuilding(jass_t *j) {
     return jass_pushinteger(j, 0);

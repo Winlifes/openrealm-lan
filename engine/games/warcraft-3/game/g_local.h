@@ -3706,7 +3706,8 @@ ability_t const *FindAbilityByClassname(cstring_t);
 ability_t const *FindAbilityForCommand(cstring_t);
 /* The caller frees a non-NULL copy with gi.MemFree. NULL means no authored text. */
 string_t G_CopyAbilityTooltipText(uint32_t, abilityTextField_t, int32_t rank, int32_t player);
-cstring_t G_MapAbilityCommandText(cstring_t category, cstring_t field);
+cstring_t G_MapAbilityCommandText(cstring_t category, cstring_t field, uint32_t *parent);
+void G_OverrideMapAbilityCommandPosition(uint32_t ability, bool research, bool activated, uint32_t *x, uint32_t *y);
 bool G_SetAbilityTooltipText(uint32_t, abilityTextField_t, int32_t rank, int32_t player, cstring_t);
 void G_ClearAbilityTooltipText(void);
 bool G_ValidateAbilityTooltipText(void);

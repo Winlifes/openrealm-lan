@@ -98,6 +98,38 @@ TEST(wc3_spell, ensnare_aliases_share_procedure) {
     T_EQ(S_AbilityItem(BZ_ANEN).ability->proc, CAbilityEnsnare);
 }
 
+TEST(wc3_spell, custom_ensnare_accepts_enemy_heroes_and_rejects_unauthored_targets) {
+    uint32_t const net = MAKEFOURCC('A','Q','A','9');
+    unitModification_t mods[] = {
+        { .modID=MAKEFOURCC('a','t','a','r'), .type=mod_string, .level=1, .data="air,enemies,neutral" },
+    };
+    unitData_t custom = {
+        .originalUnitID=BZ_AENS, .newUnitID=net, .numbeOfModifications=1, .modifications=mods,
+    };
+    ensFix_t fix;
+    ens_setup(&fix, ENS_SLK);
+    mapInfo_t *map = (mapInfo_t *)level.mapinfo;
+    map->num_userCreatedAbilities = 1;
+    map->userCreatedAbilities = &custom;
+    G_SetMapAbilityOverrides(map);
+    fix.caster->unit_state->ranks[0].code = net;
+    UnitBalance_t hero = *fix.flyer->data.UnitBalance;
+    hero.strength = 1;
+    fix.flyer->data.UnitBalance = &hero;
+    T_ASSERT(G_UnitIsHero(fix.flyer));
+    T_ASSERT(!S_CastUnitTargetSpell(fix.caster, net, fix.ground));
+    fix.flyer->s.player = 0;
+    T_ASSERT(!S_CastUnitTargetSpell(fix.caster, net, fix.flyer));
+    fix.flyer->s.player = 1;
+    T_ASSERT(S_CastUnitTargetSpell(fix.caster, net, fix.flyer));
+    T_ASSERT(S_UnitIsEnsnared(fix.flyer));
+
+    G_SetMapAbilityOverrides(NULL);
+    map->num_userCreatedAbilities = 0;
+    map->userCreatedAbilities = NULL;
+    ens_done(fix);
+}
+
 /* Naga Myrmidon's ANen row omits BuffID. The Bens fallback still owns the
  * standard ensnare target art and must attach it to the ensnared unit. */
 TEST(wc3_spell, naga_ensnare_shows_fallback_buff_target_effect) {

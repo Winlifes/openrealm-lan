@@ -421,6 +421,8 @@ bool S_SpellIsFriend(edict_t *caster, edict_t *target) {
 bool S_SpellTargetHasToken(cstring_t targets, cstring_t full, cstring_t short_name) {
     char token[32];
     cstring_t cursor = targets;
+    bool const enemy = !strcmp(full, "enemy");
+    bool const ally = !strcmp(full, "ally");
 
     while (cursor && *cursor) {
         size_t len = 0;
@@ -429,9 +431,29 @@ bool S_SpellTargetHasToken(cstring_t targets, cstring_t full, cstring_t short_na
         while (len && isspace((unsigned char)token[len - 1])) len--;
         token[len] = '\0';
         if (!strcasecmp(token, full) || (short_name && !strcasecmp(token, short_name))) return true;
+        /* Custom object data and stock SLKs use both forms. */
+        if (enemy && (!strcasecmp(token, "enemies") || !strcasecmp(token, "enem"))) return true;
+        if (ally && (!strcasecmp(token, "allies") || !strcasecmp(token, "alli"))) return true;
         while (*cursor && *cursor != ',') cursor++;
     }
     return false;
+}
+
+static bool spell_allows_relationship(cstring_t mask, edict_t *caster, edict_t *target) {
+    bool const friend = S_SpellTargetHasToken(mask, "friend", NULL);
+    bool const own = S_SpellTargetHasToken(mask, "player", NULL);
+    bool const ally = S_SpellTargetHasToken(mask, "ally", NULL);
+    bool const enemy = S_SpellTargetHasToken(mask, "enemy", NULL);
+    bool const neutral = S_SpellTargetHasToken(mask, "neutral", NULL);
+    if (friend && S_SpellIsFriend(caster, target)) return true;
+    if (own && caster && target->s.player == caster->s.player) return true;
+    if (ally && caster && target->s.player != caster->s.player &&
+        caster->s.player < MAX_PLAYERS && target->s.player < MAX_PLAYERS &&
+        G_PlayerTreatsPlayerAsAlly(caster->s.player, target->s.player)) return true;
+    if (enemy && S_SpellIsEnemy(caster, target)) return true;
+    if (neutral && target->s.player < MAX_PLAYERS && level.mapinfo &&
+        level.mapinfo->players[target->s.player].playerType == kPlayerTypeNeutral) return true;
+    return !friend && !own && !ally && !enemy && !neutral;
 }
 
 bool S_UnitInvulnerable(edict_t const *unit) {
@@ -553,26 +575,7 @@ bool S_SpellAllowsAttackTarget(uint32_t code, edict_t *caster, edict_t *target) 
     /* organic/mechanical are targtype tokens, not air/ground; TFT Cyclone authors organic. */
     if (strstr(targets, "organic") && target->targtype == TARG_MECHANICAL) return false;
     if (strstr(targets, "mechanical") && target->targtype != TARG_MECHANICAL) return false;
-    if (strstr(targets, "friend") && S_SpellIsFriend(caster, target)) {
-        return true;
-    }
-    if (strstr(targets, "player") && caster && target->s.player == caster->s.player) {
-        return true;
-    }
-    if (strstr(targets, "ally") && caster && target->s.player != caster->s.player &&
-        caster->s.player < MAX_PLAYERS && target->s.player < MAX_PLAYERS &&
-        G_PlayerTreatsPlayerAsAlly(caster->s.player, target->s.player)) {
-        return true;
-    }
-    if (strstr(targets, "enemy") && S_SpellIsEnemy(caster, target)) {
-        return true;
-    }
-    if (strstr(targets, "neutral") && target->s.player < MAX_PLAYERS && level.mapinfo &&
-        level.mapinfo->players[target->s.player].playerType == kPlayerTypeNeutral) {
-        return true;
-    }
-    return !strstr(targets, "friend") && !strstr(targets, "player") && !strstr(targets, "ally") &&
-        !strstr(targets, "enemy") && !strstr(targets, "neutral");
+    return spell_allows_relationship(targets, caster, target);
 }
 
 static bool spell_allows_corpse_target(uint32_t code, edict_t *caster, edict_t *target, bool stored) {
@@ -594,13 +597,7 @@ static bool spell_allows_corpse_target(uint32_t code, edict_t *caster, edict_t *
     if (strstr(targets, "organic") && target->targtype == TARG_MECHANICAL) return false;
     if (strstr(targets, "mechanical") && target->targtype != TARG_MECHANICAL) return false;
 
-    if (strstr(targets, "player") && target->s.player == caster->s.player) return true;
-    if (strstr(targets, "friend") && S_SpellIsFriend(caster, target)) return true;
-    if (strstr(targets, "enemy") && S_SpellIsEnemy(caster, target)) return true;
-    if (strstr(targets, "neutral") && target->s.player < MAX_PLAYERS && level.mapinfo &&
-        level.mapinfo->players[target->s.player].playerType == kPlayerTypeNeutral) return true;
-    return !strstr(targets, "player") && !strstr(targets, "friend") &&
-        !strstr(targets, "enemy") && !strstr(targets, "neutral");
+    return spell_allows_relationship(targets, caster, target);
 }
 
 bool S_SpellAllowsCorpseTarget(uint32_t code, edict_t *caster, edict_t *target) {

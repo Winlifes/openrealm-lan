@@ -4,6 +4,8 @@ The native process runs the match. Each browser connects over WebSocket to the r
 
 The room service starts the dedicated engine with `+lobby_start <map>`. The room loads its lobby metadata at that point. The host's Start command loads the world and runs its game scripts. The browser reports `Ping` next to FPS and Drawcalls using recent acknowledgements from the game connection.
 
+On desktop browsers with Pointer Lock, entering fullscreen also locks the mouse to the game. Escape releases it. The mouse can be locked again with the input control after release.
+
 The room service uses 8 KiB sign-on datagrams on its loopback UDP hop. Larger batches reduce the number of WebSocket round trips needed to initialize the map.
 
 ## Prepare the runtime directory
@@ -58,6 +60,8 @@ For room downloads, pass `--preload-index /path/to/preload.index.json` with a JS
 The download screen checks the client, shared bundle, selected map archive, and selected map bundle before joining. The browser downloads only the room's selected map and expands individual bundled files as the engine opens them. Creating a room starts the native server after the host's download succeeds. An unpacked release with a preload index downloads the listed files individually before joining. Files needed later in a match still load on demand. The in-game loading bar covers server world initialization, sign-on, and scene registration.
 
 Add measured command-card and other interface paths to `retainAfterLoad` under the map's archive path in the preload index. Include each retained path in the same map's preload or the shared lobby preload. The browser keeps those entries available after the first game frame and releases the rest of the startup bundles.
+
+Measure in-match resource requests and frame intervals before extending a map preload. A chain of requests for a new unit's model, portrait, textures and effects can suspend engine frames while the page continues to respond. Add the measured files to the selected map's preload and `retainAfterLoad`, then repeat the same cold-cache play sequence. Keep unrelated maps out of the bundle.
 
 Caddy can serve optional `.gz` sidecars for measured preload files. Keep their uncompressed originals in the served mirror.
 

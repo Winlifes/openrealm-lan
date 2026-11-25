@@ -85,9 +85,11 @@ TEST(wc3_api, custom_ability_command_card_uses_map_object_art) {
     const uint32_t id = MAKEFOURCC('A','Q','A','7');
     char icon[] = "ReplaceableTextures\\CommandButtons\\BTNImpale.blp";
     char hotkey[] = "T";
+    uint32_t mana = 73;
     unitModification_t mods[] = {
         { .modID=MAKEFOURCC('a','a','r','t'), .type=mod_string, .data=icon },
         { .modID=MAKEFOURCC('a','h','k','y'), .type=mod_string, .data=hotkey },
+        { .modID=MAKEFOURCC('a','m','c','s'), .type=mod_int, .level=1, .data=&mana },
     };
     unitData_t custom = { .originalUnitID=MAKEFOURCC('A','H','h','b'), .newUnitID=id,
         .numbeOfModifications=sizeof(mods)/sizeof(*mods), .modifications=mods };
@@ -103,9 +105,45 @@ TEST(wc3_api, custom_ability_command_card_uses_map_object_art) {
     T_ASSERT(G_BuildCommandButton(hero, "AQA7", false, 0, &button));
     T_STREQ(button.art, icon);
     T_EQ(button.hotkey, 'T');
+    T_FEQ(button.manacost, 73.0f, 0.001f);
     G_SetMapAbilityOverrides(NULL);
     info->num_userCreatedAbilities = 0;
     info->userCreatedAbilities = NULL;
+}
+
+TEST(wc3_api, custom_ability_command_card_inherits_art_and_uses_map_position) {
+    int32_t column = 1;
+    unitModification_t mods[] = {
+        { .modID=MAKEFOURCC('a','b','p','x'), .type=mod_int, .data=&column },
+    };
+    unitData_t custom = { .originalUnitID=MAKEFOURCC('A','C','e','n'), .newUnitID=MAKEFOURCC('A','Q','A','8'),
+        .numbeOfModifications=sizeof(mods)/sizeof(*mods), .modifications=mods };
+    cstring_t icon = "ReplaceableTextures\\CommandButtons\\BTNEnsnare.blp";
+    gameCommandButton_t button;
+
+    reset_entities();
+    setup_test_world();
+    mapInfo_t *info = (mapInfo_t *)level.mapinfo;
+    info->num_userCreatedAbilities = 1;
+    info->userCreatedAbilities = &custom;
+    G_SetMapAbilityOverrides(info);
+    T_ASSERT(G_TestPushAbilityConfig("[ACen]\nArt=ReplaceableTextures\\CommandButtons\\BTNEnsnare.blp\n"
+                                    "Buttonpos=0,2\nHotkey=\"E\"\n"
+                                    "[AQA8]\nTip=Net |cffffcc00Z|r\n"));
+    edict_t *unit = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 0, 0);
+    bool const visible = G_BuildCommandButton(unit, "AQA8", false, 0, &button);
+    G_TestPopAbilityConfig();
+    G_SetMapAbilityOverrides(NULL);
+    info->num_userCreatedAbilities = 0;
+    info->userCreatedAbilities = NULL;
+
+    T_ASSERT(visible);
+    T_STREQ(button.art, icon);
+    T_STREQ(button.command, "AQA8");
+    T_STREQ(button.tooltip, "Net |cffffcc00E|r");
+    T_EQ(button.hotkey, 'E');
+    T_EQ(button.x, 1);
+    T_EQ(button.y, 2);
 }
 
 TEST(wc3_api, ability_tooltip_changes_reach_command_card) {
@@ -4387,6 +4425,69 @@ TEST(wc3_api, createunit_static_scenery_keeps_requested_spawn) {
     free_slk_rows(balance_rows);
     free_slk_rows(weapons_rows);
     free_slk_rows(old_data); free_slk_rows(old_balance); free_slk_rows(old_weapons);
+}
+
+TEST(wc3_api, random_creeps_use_neutral_units_at_the_requested_level_and_tileset) {
+    static cstring_t const data =
+        "ID;PWXL;N;EBB;Y6;X3\n"
+        "C;Y1;X1;K\"unitID\"\nC;X2;K\"race\"\nC;X3;K\"valid\"\n"
+        "C;Y2;X1;K\"nqa1\"\nC;X2;K\"creeps\"\nC;X3;K1\n"
+        "C;Y3;X1;K\"nqa2\"\nC;X2;K\"creeps\"\nC;X3;K1\n"
+        "C;Y4;X1;K\"nqb1\"\nC;X2;K\"creeps\"\nC;X3;K1\n"
+        "C;Y5;X1;K\"nqc1\"\nC;X2;K\"creeps\"\nC;X3;K1\n"
+        "C;Y6;X1;K\"nqd1\"\nC;X2;K\"orc\"\nC;X3;K1\nE\n";
+    static cstring_t const balance =
+        "ID;PWXL;N;EBB;Y6;X3\n"
+        "C;Y1;X1;K\"unitBalanceID\"\nC;X2;K\"level\"\nC;X3;K\"tilesets\"\n"
+        "C;Y2;X1;K\"nqa1\"\nC;X2;K1\nC;X3;K\"L,Z\"\n"
+        "C;Y3;X1;K\"nqa2\"\nC;X2;K1\nC;X3;K\"*\"\n"
+        "C;Y4;X1;K\"nqb1\"\nC;X2;K3\n"
+        "C;Y5;X1;K\"nqc1\"\nC;X2;K1\nC;X3;K\"N\"\n"
+        "C;Y6;X1;K\"nqd1\"\nC;X2;K1\nC;X3;K\"Z\"\nE\n";
+    static cstring_t const ui =
+        "ID;PWXL;N;EBB;Y6;X3\n"
+        "C;Y1;X1;K\"unitUIID\"\nC;X2;K\"inEditor\"\nC;X3;K\"tilesets\"\n"
+        "C;Y2;X1;K\"nqa1\"\nC;X2;K1\n"
+        "C;Y3;X1;K\"nqa2\"\nC;X2;K1\n"
+        "C;Y4;X1;K\"nqb1\"\nC;X2;K1\nC;X3;K\"Z\"\n"
+        "C;Y5;X1;K\"nqc1\"\nC;X2;K1\n"
+        "C;Y6;X1;K\"nqd1\"\nC;X2;K1\nE\n";
+    const cstring_t tables[] = { "UnitData", "UnitBalance", "UnitUI" };
+    const cstring_t configs[] = { data, balance, ui };
+    slkTestData_t *old[3];
+
+    reset_entities(); setup_test_world();
+    mapInfo_t *info = (mapInfo_t *)level.mapinfo;
+    char const saved_ground = info->mainGroundType;
+    info->mainGroundType = 'Z';
+    FOR_LOOP(i, 3) {
+        slkTestData_t *rows = parse_slk_string(configs[i]);
+        old[i] = G_SetSLKRows(tables[i], rows);
+        free_slk_rows(rows);
+    }
+    T_ASSERT(run_test_jass(
+        "function main takes nothing returns nothing\n"
+        " local integer i = 0\n"
+        " local integer id = 0\n"
+        " local boolean first = false\n"
+        " local boolean second = false\n"
+        " loop\n"
+        "   exitwhen i >= 64\n"
+        "   set id = ChooseRandomCreep(1)\n"
+        "   call BJassAssert(id == 'nqa1' or id == 'nqa2', \"level-one pool\")\n"
+        "   set first = first or id == 'nqa1'\n"
+        "   set second = second or id == 'nqa2'\n"
+        "   set i = i + 1\n"
+        " endloop\n"
+        " call BJassAssert(first and second, \"both eligible types sampled\")\n"
+        " call BJassAssert(ChooseRandomCreep(3) == 'nqb1', \"exact level with legacy tileset field\")\n"
+        " call BJassAssert(ChooseRandomCreep(2) == 0, \"empty level returns zero\")\n"
+        "endfunction\n"));
+    info->mainGroundType = saved_ground;
+    FOR_LOOP(i, 3) {
+        free_slk_rows(G_SetSLKRows(tables[i], old[i]));
+        free_slk_rows(old[i]);
+    }
 }
 
 TEST(wc3_api, createunit_custom_static_scenery_keeps_requested_spawn) {

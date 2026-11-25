@@ -12,10 +12,11 @@ static bool self_destruct_allows(uint32_t code, edict_t *caster, edict_t *target
 		!(strstr(targets, "ground") && G_UnitTargetType(target) == TARG_GROUND) &&
 		!(strstr(targets, "structure") && G_UnitIsStructure(target)))
 		return false;
-	if (strstr(targets, "enemy") && S_SpellIsEnemy(caster, target)) return true;
+	bool const allows_enemy = S_SpellTargetHasToken(targets, "enemy", NULL);
+	if (allows_enemy && S_SpellIsEnemy(caster, target)) return true;
 	if (strstr(targets, "neutral") && target->s.player < MAX_PLAYERS && level.mapinfo &&
 		level.mapinfo->players[target->s.player].playerType == kPlayerTypeNeutral) return true;
-	return !strstr(targets, "friend") && !strstr(targets, "enemy") && !strstr(targets, "neutral");
+	return !strstr(targets, "friend") && !allows_enemy && !strstr(targets, "neutral");
 }
 
 /* Destructables use their own damage lifecycle and have no player alliance.
