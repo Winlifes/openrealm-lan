@@ -684,35 +684,65 @@ void build_menu_selectlocation(edict_t *ent, uint32_t building_id) {
 }
 
 void ui_builds(gameClient_t *client) {
+    enum { COLS = 4, ROWS = 3, CELLS = COLS * ROWS };
     edict_t *ent = G_GetMainSelectedUnit(client);
     gameClient_t *owner = ent ? G_GetPlayerClientByNumber(ent->s.player) : NULL;
     cstring_t builds = ent ? G_UnitProfile(ent->class_id)->builds : NULL;
+    gameCommandButton_t buttons[CELLS - 1], cancel;
+    uint16_t occupied;
+    uint32_t count = 0, next_free = 0;
+    bool has_cancel;
+
     if (!G_UnitCanSpendResources(client, ent) || !owner ||
         owner->ps.number != ent->s.player || !builds)
         return;
-    UI_SetGamepadBuildMenu(true);
+    has_cancel = G_BuildCommandButton(ent, STR_CmdCancel, false, 0, &cancel);
+    if (!has_cancel || cancel.x >= COLS || cancel.y >= ROWS) {
+        cancel.x = COLS - 1;
+        cancel.y = ROWS - 1;
+    }
+    occupied = (uint16_t)(1u << (cancel.x + cancel.y * COLS));
     PARSE_LIST(builds, build, parse_segment) {
         uint32_t building_id = 0;
         gameCommandButton_t button;
         buildCommandState_t state;
         char reason[128];
-        size_t used;
+        uint32_t cell;
 
+        if (count == CELLS - 1) break;
         if (strlen(build) != 4) continue;
         memcpy(&building_id, build, sizeof(building_id));
         state = G_GetBuildCommandState(owner, ent, building_id, reason, sizeof(reason));
         if (state == BUILD_COMMAND_ABSENT || state == BUILD_COMMAND_HIDDEN) continue;
         if (!G_BuildCommandButton(ent, build, false, 0, &button)) continue;
         if (state == BUILD_COMMAND_DISABLED) {
+            size_t const used = strlen(button.ubertip);
             button.disabled = 1;
-            used = strlen(button.ubertip);
             snprintf(button.ubertip + used, sizeof(button.ubertip) - used,
                      "%s|cffffcc00%s|r", used ? "|n" : "", reason);
         }
-        UI_WriteCommandButtonFrame(&button);
+        cell = button.x + button.y * COLS;
+        if (button.x < COLS && button.y < ROWS && !(occupied & (1u << cell)))
+            occupied |= (uint16_t)(1u << cell);
+        else
+            button.x = button.y = UINT8_MAX;
+        buttons[count++] = button;
+    }
+
+    /* Reserve each available authored position before filling conflicts. */
+    UI_SetGamepadBuildMenu(true);
+    FOR_LOOP(i, count) {
+        gameCommandButton_t *button = &buttons[i];
+        if (button->x == UINT8_MAX) {
+            while (occupied & (1u << next_free)) next_free++;
+            occupied |= (uint16_t)(1u << next_free);
+            button->x = next_free % COLS;
+            button->y = next_free / COLS;
+        }
+        UI_WriteCommandButtonFrame(button);
     }
     UI_SetGamepadBuildMenu(false);
-    UI_AddCommandButton(STR_CmdCancel);
+    if (has_cancel) UI_WriteCommandButtonFrame(&cancel);
     UI_WriteTooltipFrame();
 }
 

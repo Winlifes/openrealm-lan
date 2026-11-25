@@ -4668,6 +4668,117 @@ TEST(wc3_building, enable_user_ui_does_not_block_build_command_button) {
     client->no_ui = false;
 }
 
+static struct {
+    char command[32];
+    int16_t x, y;
+    uint8_t hotkey;
+} build_menu_frames[12];
+static uint32_t build_menu_frame_count;
+
+static void building_capture_build_menu(pfWriteType_t type, void const *value) {
+    uiFrame_t const *frame = value;
+    uint32_t index = build_menu_frame_count;
+
+    if (type != PF_UIFRAME || !frame || frame->flags.type != FT_COMMANDBUTTON ||
+        !frame->onclick || index >= sizeof(build_menu_frames) / sizeof(build_menu_frames[0]))
+        return;
+    snprintf(build_menu_frames[index].command, sizeof(build_menu_frames[index].command),
+             "%s", frame->onclick);
+    build_menu_frames[index].x = frame->points.x[FPP_MIN].offset;
+    build_menu_frames[index].y = frame->points.y[FPP_MIN].offset;
+    build_menu_frames[index].hotkey = frame->hotkey;
+    build_menu_frame_count++;
+}
+
+TEST(wc3_building, custom_construction_buttons_use_map_positions_without_overlap) {
+    static char const profiles[] =
+        "ID;PWXL;N;E\nB;X4;Y6;D0\n"
+        "C;X1;Y1;K\"id\"\nC;X2;K\"Builds\"\nC;X3;K\"Art\"\nC;X4;K\"Buttonpos\"\n"
+        "C;X1;Y2;K\"hpea\"\nC;X2;K\"hhou,hkee,nWll,hbar,nWhr\"\n"
+        "C;X1;Y3;K\"hhou\"\nC;X3;K\"TestTown.blp\"\nC;X4;K\"0,0\"\n"
+        "C;X1;Y4;K\"hkee\"\nC;X3;K\"TestKeep.blp\"\nC;X4;K\"1,2\"\n"
+        "C;X1;Y5;K\"ndrk\"\n"
+        "C;X1;Y6;K\"hbar\"\nC;X3;K\"TestBarracks.blp\"\nC;X4;K\"3,2\"\nE\n";
+    static char const balance[] =
+        "ID;PWXL;N;E\nB;X2;Y5;D0\n"
+        "C;X1;Y1;K\"unitBalanceID\"\nC;X2;K\"isbldg\"\n"
+        "C;X1;Y2;K\"hhou\"\nC;X2;K1\n"
+        "C;X1;Y3;K\"hkee\"\nC;X2;K1\n"
+        "C;X1;Y4;K\"ndrk\"\nC;X2;K1\n"
+        "C;X1;Y5;K\"hbar\"\nC;X2;K1\nE\n";
+    int32_t mine_row = 1;
+    unitModification_t mine_mods[] = {
+        { .modID = MAKEFOURCC('u','b','p','y'), .type = mod_int, .data = &mine_row },
+        { .modID = MAKEFOURCC('u','h','o','t'), .type = mod_string, .data = "R" },
+    };
+    unitModification_t wall_mod = {
+        .modID = MAKEFOURCC('u','i','c','o'), .type = mod_string, .data = "TestWall.blp"
+    };
+    unitModification_t warehouse_mod = {
+        .modID = MAKEFOURCC('u','n','a','m'), .type = mod_string, .data = "Storehouse"
+    };
+    unitData_t mine = {
+        .originalUnitID = MAKEFOURCC('h','k','e','e'),
+        .numbeOfModifications = sizeof(mine_mods) / sizeof(mine_mods[0]),
+        .modifications = mine_mods
+    };
+    unitData_t wall = {
+        .originalUnitID = MAKEFOURCC('n','d','r','k'), .newUnitID = MAKEFOURCC('n','W','l','l'),
+        .numbeOfModifications = 1, .modifications = &wall_mod
+    };
+    unitData_t warehouse = {
+        .originalUnitID = MAKEFOURCC('n','d','r','k'), .newUnitID = MAKEFOURCC('n','W','h','r'),
+        .numbeOfModifications = 1, .modifications = &warehouse_mod
+    };
+    unitData_t custom_units[] = {wall, warehouse};
+    mapInfo_t const mapinfo = {
+        .num_originalUnits = 1, .originalUnits = &mine,
+        .num_userCreatedUnits = sizeof(custom_units) / sizeof(custom_units[0]),
+        .userCreatedUnits = custom_units
+    };
+    cstring_t const commands[] = {
+        "button hhou", "button hkee", "button nWll", "button hbar", "button nWhr", "button CmdCancel"
+    };
+    int const slots[][2] = { {0, 0}, {1, 1}, {1, 0}, {2, 0}, {3, 0}, {3, 2} };
+    slkTestData_t *profile_rows = parse_slk_string(profiles);
+    slkTestData_t *balance_rows = parse_slk_string(balance);
+    slkTestData_t *old_profiles = G_SetProfileRows(profile_rows);
+    slkTestData_t *old_balance = G_SetSLKRows("UnitBalance", balance_rows);
+    void (*old_write)(pfWriteType_t, void const *) = gi.Write;
+    int (*old_image_index)(cstring_t) = gi.ImageIndex;
+    edict_t *clent = &g_edicts[0];
+    edict_t *worker;
+
+    setup_test_world();
+    G_SetMapUnitOverrides(&mapinfo);
+    clent->inuse = true;
+    clent->client->connected = true;
+    worker = alloc_test_unit(MAKEFOURCC('h','p','e','a'), 0, 0);
+    worker->data.UnitProfile = (UnitProfile_t *)G_UnitProfile(worker->class_id);
+    worker->s.player = clent->client->ps.number;
+    G_SelectEntity(clent->client, worker);
+    build_menu_frame_count = 0;
+    memset(build_menu_frames, 0, sizeof(build_menu_frames));
+    gi.Write = building_capture_build_menu;
+    gi.ImageIndex = building_test_image_index;
+    G_ClientCommand(clent, 2, (cstring_t[]){"button", STR_CmdBuild});
+    gi.Write = old_write;
+    gi.ImageIndex = old_image_index;
+    G_SetMapUnitOverrides(NULL);
+    G_SetProfileRows(old_profiles);
+    G_SetSLKRows("UnitBalance", old_balance);
+    free_slk_rows(profile_rows);
+    free_slk_rows(balance_rows);
+
+    T_EQ(build_menu_frame_count, sizeof(commands) / sizeof(commands[0]));
+    FOR_LOOP(i, sizeof(commands) / sizeof(commands[0])) {
+        T_STREQ(build_menu_frames[i].command, commands[i]);
+        T_EQ(build_menu_frames[i].x, (int16_t)((0.6175f + (float)slots[i][0] * 0.0434f) * UI_FRAMEPOINT_SCALE));
+        T_EQ(build_menu_frames[i].y, (int16_t)(-(0.4660f + (float)slots[i][1] * 0.0440f) * UI_FRAMEPOINT_SCALE));
+    }
+    T_EQ(build_menu_frames[1].hotkey, 'R');
+}
+
 TEST(wc3_building, disabled_command_button_is_inert_and_available_button_is_clickable) {
     void (*old_write)(pfWriteType_t, void const *) = gi.Write;
     int (*old_image_index)(cstring_t) = gi.ImageIndex;

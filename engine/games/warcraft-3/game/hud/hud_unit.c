@@ -293,6 +293,7 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     cstring_t ubertip;
     cstring_t hotkey;
     ability_t const *ability;
+    UnitProfile_t const *structure = NULL;
     abilityitem_t item;
     uint32_t ability_code = 0;
     uint32_t text_level = level;
@@ -315,6 +316,9 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     memset(button, 0, sizeof(*button));
     ability = FindAbilityForCommand(code);
     if (strlen(code) == 4) {
+        uint32_t const rawcode = FS_SLKKey(code);
+        if (!ability && !research && G_WorkerCanBuild(ent, rawcode))
+            structure = G_UnitProfile(rawcode);
         ability_code = G_AbilityCodeName(code);
         base_code = GetClassName(ability_code);
         upgrade_research = research && G_UpgradeData(ability_code)->id == ability_code;
@@ -398,12 +402,27 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
     hotkey = G_CommandButtonValue(
         FindConfigValue(art_code, G_ResearchField(STR_HOTKEY, research && !upgrade_research)),
         toggle_on ? FindConfigValue(art_code, STR_UNHOTKEY) : NULL, toggle_on);
-    UI_CopyString(art_level, sizeof(art_level), research ? G_StringForLevel(art, level) : art);
-    art_path = G_UIArtPath(art_level);
-
-    if (buttonpos && *buttonpos) {
+    if (structure) {
+        if (structure->art) art = structure->art;
+        if (!art || !*art) {
+            static uint32_t last_missing_structure_art;
+            art = FindConfigValue(G_CommandArtCode(ent, STR_CmdBuild), STR_ART);
+            if (art && *art && last_missing_structure_art != structure->id) {
+                fprintf(stderr, "G_BuildCommandButton: using build icon for structure %.4s without art\n", code);
+                last_missing_structure_art = structure->id;
+            }
+        }
+        if (structure->tip) tip = structure->tip;
+        else if (structure->name) tip = structure->name;
+        if (structure->uberTip) ubertip = structure->uberTip;
+        if (structure->hotkey) hotkey = structure->hotkey;
+        x = (uint32_t)structure->buttonPosX;
+        y = (uint32_t)structure->buttonPosY;
+    } else if (buttonpos && *buttonpos) {
         sscanf(buttonpos, "%u,%u", &x, &y);
     }
+    UI_CopyString(art_level, sizeof(art_level), research ? G_StringForLevel(art, level) : art);
+    art_path = G_UIArtPath(art_level);
 
     UI_CopyString(button->art, sizeof(button->art), art_path);
     /* Tip and Ubertip are per-level lists. Live commands are built with level

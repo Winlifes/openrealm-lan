@@ -23,7 +23,8 @@ typedef struct {
     uint32_t id;
     cstring_t name, properNames, builds, trains;
     cstring_t animProps, art, itemArt, attachmentAnimProps, attachmentLinkProps, awakenTip;
-    cstring_t boneProps, buildingSoundLabel, buttonPosX, buttonPosY;
+    cstring_t boneProps, buildingSoundLabel;
+    int32_t buttonPosX, buttonPosY;
     cstring_t casterUpgradeArt, casterUpgradeName, casterUpgradeTip, dependencyOr;
     cstring_t description, editorSuffix, hotkey, loopingSoundFadeIn, loopingSoundFadeOut;
     cstring_t makeItems, movementSoundLabel, randomSoundLabel;

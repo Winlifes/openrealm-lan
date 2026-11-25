@@ -8,6 +8,8 @@ Command-card activation is independent of JASS `EnableUserUI`. `button CmdBuild`
 
 Build-menu state and command-bar transport also have separate lifecycles. `AbilityBuild_Command()` installs its `cmdbutton`/`refresh` callbacks even for a reserved player slot that has not completed `ClientBegin`, but only serializes `LAYER_COMMANDBAR` when `client->connected` is true. This keeps in-engine command tests and pre-connect state changes from touching the server message buffer while preserving the menu state that a connected client will render.
 
+Construction buttons take their artwork, text, hotkey and position from the resolved unit profile, including map object overrides. A buildable structure with no authored icon uses the builder's construction icon and keeps its own tooltip and command. The stock `Buttonpos` pair initializes both coordinates. The integer `ubpx` and `ubpy` fields can override either coordinate independently. The server reserves the Cancel position and keeps the first command in each available authored position before assigning free cells to overlapping buttons.
+
 The runtime developer override is:
 
 ```sh
