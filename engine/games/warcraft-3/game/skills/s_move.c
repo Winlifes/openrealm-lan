@@ -2006,6 +2006,15 @@ static void ai_move_walk(edict_t *ent) {
         return;
     }
 
+    /* An interrupted walk can lose its target before its next simulation
+     * frame. Retire the old order so a queued order can still take over. */
+    if (!ent->goalentity) {
+        if (ent->orders->guard_state == GUARD_RETURNING) ent->orders->guard_state = GUARD_IDLE;
+        move_route_wait_diag(ent, false, MOVE_DIAG_NONE);
+        ent->stand(ent);
+        return;
+    }
+
     if (move_should_arrive(ent, move_distance)) {
 #ifdef WC3_DEBUG_BUILD
         if (ent->class_id == MAKEFOURCC('h','p','e','a'))

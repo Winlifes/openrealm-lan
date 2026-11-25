@@ -109,6 +109,35 @@ TEST(wc3_order_lifecycle, optional_movement_stop_pause_arrival_and_reuse) {
     T_NULL(unit->wander);
 }
 
+TEST(wc3_order_lifecycle, walk_without_goal_advances_the_queued_order) {
+    reset_entities();
+    setup_test_world();
+    edict_t *unit = review_order_unit(0, 0);
+    vec2_t const initial = { 300, 0 }, next = { 450, 0 };
+    unit->think = monster_think;
+    T_ASSERT(unit_issueorder(unit, "move", &initial));
+    T_ASSERT(G_IssueUnitPointOrder(unit, "move", &next, true, 0, 0.0f));
+    T_EQ(G_UnitQueuedOrderCount(unit), 1u);
+
+    /* A target can be cleared after the order starts and before the unit's
+     * next think. Keep running the real entity scheduler on that frame. */
+    unit->goalentity = NULL;
+    level.time += FRAMETIME;
+    G_RunEntities();
+    T_EQ(G_UnitQueuedOrderCount(unit), 0u);
+    T_ASSERT(move_is_active_order_walk(unit));
+    T_NOT_NULL(unit->goalentity);
+    if (unit->goalentity) T_FEQ(unit->goalentity->s.origin2.x, next.x, 0.001f);
+    T_FEQ(unit->s.origin2.x, 0, 0.001f);
+
+    unit->goalentity = NULL;
+    level.time += FRAMETIME;
+    G_RunEntities();
+    T_ASSERT(!move_is_active_order_walk(unit));
+    T_NULL(unit->movement);
+    T_FEQ(unit->s.origin2.x, 0, 0.001f);
+}
+
 TEST(wc3_order_lifecycle, stationary_follow_retains_intent_without_travel_scratch) {
     reset_entities();
     setup_test_world();

@@ -1809,6 +1809,16 @@ void CL_Frame(uint32_t msec) {
     cl_realtime += msec;
     cl.time += msec;
 
+#ifdef __EMSCRIPTEN__
+    /* A closed WebSocket is definitive. Waiting for packet silence would
+     * leave the last snapshot on screen under a running render FPS counter. */
+    if (cls.state != ca_disconnected && cls.netchan.remote_address.type == NA_IP &&
+        !NET_IsConfigured(NS_CLIENT)) {
+        CL_Disconnect("Connection to host closed.", true);
+        return;
+    }
+#endif
+
     netadr_t online_host;
     if (Online_TakeConnection(&online_host)) {
         cstring_t address = NET_AdrToString(&online_host);

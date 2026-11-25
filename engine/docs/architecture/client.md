@@ -160,7 +160,7 @@ components, not interchangeable native gameplay angles.
 
 ## Entity Interpolation
 
-The client keeps two snapshots per entity: `prev` and `current`. `CL_PrepRefresh` blends between them using a fraction derived from `cl.time` and the server frame interval, producing smooth motion even when the client render rate exceeds the server tick rate.
+The client keeps two poses per entity, `prev` and `current`. `V_RenderView` blends between them using a fraction derived from `cl.time` and the server frame interval. When a continuous snapshot is encoded against an older acknowledged frame, the client restores that base to decode the message, then takes the previous render pose from the most recently applied snapshot for models with a matching entity identity.
 
 Rebuilding a full snapshot or an older acknowledged delta base can remove an entity that appeared in the previous display frame. If the new packet adds it again, `CL_ReadPacketEntities` decodes against the spawn baseline and starts both render poses at the decoded state. A consecutive frame number does not imply that the restored base contains the entity. `client_frames.recovered_snapshot_does_not_animate_building_from_baseline` exercises both recovery paths.
 

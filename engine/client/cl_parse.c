@@ -116,6 +116,7 @@ typedef struct {
     player_t playerstate;
 } frameHistory_t;
 static frameHistory_t cl_frame_history[UPDATE_BACKUP];
+static frameHistory_t const *cl_previous_pose_frame;
 static uint32_t cl_frame_history_next; /* oldest slot, replaced first: frames arrive in increasing order */
 static bool cl_frame_discard;          /* the frame being parsed deltas against a frame not held: read past it */
 static bool cl_nodelta_requested;      /* "nodelta" sent; cleared once a full frame arrives */
@@ -133,6 +134,7 @@ void CL_ResetFrameHistory(void) {
         cl_frame_history[i] = (frameHistory_t){ 0 };
     }
     cl_frame_history_next = 0;
+    cl_previous_pose_frame = NULL;
     cl_frame_discard = cl_nodelta_requested = false;
     cl.frame.valid = false;
 }
@@ -296,6 +298,18 @@ static void CL_ReadPacketEntities(sizeBuf_t *msg) {
         cl_frame_discard = false;
         return;
     }
+    /* The acknowledged frame is a decoding input. Interpolate from the last
+     * displayed simulation frame even when decoding needed an older base. */
+    if (cl_previous_pose_frame) {
+        FOR_LOOP(i, cl_previous_pose_frame->count) {
+            entityState_t const *previous = &cl_previous_pose_frame->entities[i];
+            centity_t *ent = &cl.ents[previous->number];
+            if (previous->model && previous->model == ent->current.model &&
+                previous->class_id == ent->current.class_id)
+                ent->prev = *previous;
+        }
+        cl_previous_pose_frame = NULL;
+    }
     if (cl.frame.oldclientframe == -1) cl_nodelta_requested = false;
     if (cls.netchan.remote_address.type == NA_IP) CL_SaveFrameHistory();
     if (debug_entities > 1 && (added || removed || changed)) {
@@ -446,10 +460,12 @@ void CL_ParseFrame(sizeBuf_t *msg) {
     cl.frame.valid = true;
     cl.time = cl.frame.servertime;
     cl_frame_discard = false;
+    cl_previous_pose_frame = NULL;
     /* The server deltas against the newest frame it saw acknowledged. If packets were lost that is older than the last
      * frame applied here, so rebuild that frame's state first. A first frame or a full snapshot (-1) starts empty. */
-    if ((cl.frame.oldclientframe == -1 ? had_frame : (!had_frame || cl.frame.oldclientframe != previous_frame)) &&
-        !CL_RestoreDeltaBase(cl.frame.oldclientframe)) {
+    bool const rebuild = cl.frame.oldclientframe == -1 ? had_frame :
+                         (!had_frame || cl.frame.oldclientframe != previous_frame);
+    if (rebuild && !CL_RestoreDeltaBase(cl.frame.oldclientframe)) {
         fprintf(stderr, "CL_ParseFrame: delta base frame %d is not held (last applied %d)\n", cl.frame.oldclientframe, previous_frame);
         /* Lossless transports keep no history; their base is always the frame just applied. Over UDP the frame is
          * undecodable (Q2 marks it invalid and asks for -1). Applying it onto the current state, as this used to,
@@ -465,6 +481,9 @@ void CL_ParseFrame(sizeBuf_t *msg) {
                 cl_nodelta_requested = true;
             }
         }
+    } else if (rebuild && had_frame && cl.frame.oldclientframe >= 0 &&
+               (uint32_t)cl.frame.serverframe - (uint32_t)previous_frame == 1) {
+        cl_previous_pose_frame = CL_FindFrameHistory(previous_frame);
     }
     
     if (cls.state != ca_active && cl.refresh_prepped) {
@@ -1632,6 +1651,7 @@ TEST(client_frames, delta_against_older_acknowledged_frame_rebuilds_that_frame) 
     test_apply_frame(&msg);
     T_EQ(cl.num_active, 2);
     T_ASSERT(test_entity_is(5, 12)); T_ASSERT(test_entity_is(6, 20)); T_ASSERT(!cl.ents[7].current.model);
+    T_FEQ(cl.ents[5].prev.origin.x, 11, 0.01f); /* Show motion from frame 2, not the frame 1 decode base. */
 
     SZ_Init(&msg, data, sizeof(data)); /* frame 4 (base 3): ordinary delta, entity 6 removed */
     test_frame_header(&msg, 4, 3);
@@ -1793,6 +1813,7 @@ TEST(client_frames, entities_without_a_model_survive_delta_base_rebuild) {
     test_apply_frame(&msg);
     T_EQ(cl.ents[8].current.sound, 3); T_FEQ(cl.ents[8].current.origin.x, 41, 0.01f);
     T_ASSERT(test_entity_is(5, 10));
+    T_FEQ(cl.ents[5].prev.origin.x, 11, 0.01f); /* The latest pose still exists even when no delta field was sent. */
 
     SZ_Init(&msg, data, sizeof(data)); /* frame 4 (base 3): an ordinary delta against the emitter's current state */
     test_frame_header(&msg, 4, 3);
