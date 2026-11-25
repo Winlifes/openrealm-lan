@@ -53,6 +53,24 @@ static void G_RefreshPauseState(void);
 static void G_CheckTimeOfDayEvents(float before, float after);
 static void InitConstants(void);
 static void G_ApplyMapGameDataSet(mapInfo_t const *mapinfo);
+static stbIniCache_t map_presentation_text;
+static PATHSTR map_presentation_path;
+static struct { uint64_t hash; cstring_t translation; } map_text_lookup[512];
+
+static void G_LoadMapPresentationText(cstring_t filename) {
+    cstring_t base = filename;
+    PATHSTR path = { 0 };
+    cstring_t locale = gi.CvarString ? gi.CvarString("wc3_locale", "enUS") : NULL;
+    if (locale && !strcmp(locale, "zhCN")) {
+        for (cstring_t p = filename; *p; p++) if (*p == '/' || *p == '\\') base = p + 1;
+        snprintf(path, sizeof(path), "Localization\\Maps\\zhCN\\%s.txt", base);
+    }
+    if (!strcmp(path, map_presentation_path)) return;
+    Stb_IniCacheFree(&map_presentation_text);
+    memset(map_text_lookup, 0, sizeof(map_text_lookup));
+    strlcpy(map_presentation_path, path, sizeof(map_presentation_path));
+    if (*path) Stb_IniCacheLoad(&map_presentation_text, path);
+}
 
 #define WC3_CHEAT_STARTING_RESOURCE_BONUS 5000 /* gold/lumber units added once when map gameplay becomes controllable */
 /* Pending scripted save and dependent map change are transient and deliberately
@@ -842,6 +860,7 @@ void G_ApplyTilesetWaterHeight(mapInfo_t const *info) {
 static bool G_LoadMap(cstring_t mapFilename) {
     double const map_start = GAME_MAP_LOAD_NOW();
     double stage_start = map_start;
+    G_LoadMapPresentationText(mapFilename);
     if (!CM_LoadMap(mapFilename, gi.LoadingFrame)) {
         GAME_MAP_LOAD_REPORT(mapFilename, "CM_LoadMap-failed", stage_start);
         G_SetMapUnitOverrides(NULL);
@@ -1173,6 +1192,9 @@ static void G_InitGame(void) {
 }
 
 static void G_ShutdownGame(void) {
+    Stb_IniCacheFree(&map_presentation_text);
+    map_presentation_path[0] = '\0';
+    memset(map_text_lookup, 0, sizeof(map_text_lookup));
     G_ResetScriptSave();
     G_ResetScoreTransition();
     G_ResetDifficultyTransition();
@@ -2150,6 +2172,30 @@ cstring_t G_MapString(mapInfo_t const *info, cstring_t name) {
 
 cstring_t G_LevelString(cstring_t name) { return G_MapString(level.mapinfo, name); }
 
+/* Resolve localized presentation after WTS, outside the script VM. Exact
+ * source keys keep chat triggers, rawcodes, and gameplay string comparisons
+ * independent of the current display language. */
+cstring_t G_MapPresentationString(mapInfo_t const *info, cstring_t text) {
+    cstring_t source = G_MapString(info, text);
+    if (!source || !*source || !map_presentation_text.source) return source;
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (cstring_t p = source; *p; p++) {
+        hash ^= (unsigned char)*p;
+        hash *= UINT64_C(1099511628211);
+    }
+    uint32_t slot = hash % (sizeof(map_text_lookup) / sizeof(*map_text_lookup));
+    if (map_text_lookup[slot].hash != hash || hash == 0) {
+        char key[17];
+        snprintf(key, sizeof(key), "%016llx", (unsigned long long)hash);
+        map_text_lookup[slot].hash = hash;
+        map_text_lookup[slot].translation = Stb_IniCacheFind(&map_presentation_text, "Text", key);
+    }
+    cstring_t translated = map_text_lookup[slot].translation;
+    return translated && *translated ? translated : source;
+}
+
+cstring_t G_PresentationString(cstring_t text) { return G_MapPresentationString(level.mapinfo, text); }
+
 /* UnitProfile names may be map overrides, so resolve their TRIGSTR token from the active WTS table before presentation. */
 cstring_t G_UnitName(uint32_t id) {
     UnitProfile_t const *profile = G_UnitProfile(id);
@@ -2341,6 +2387,7 @@ static void G_ClientBegin(edict_t *edict) {
 static bool G_PrepareMap(cstring_t filename) {
     mapInfo_t info;
     if (!CM_ReadMapInfo(filename, &info)) return false;
+    G_LoadMapPresentationText(filename);
     UI_ResetHud();
     UI_LoadHudLoading();
     /* Loading precedes LoadMap: resolve the same lobby roster before publishing its presentation. */
@@ -2486,7 +2533,7 @@ static void G_CustomizeEntity(uint32_t player, edict_t const *ent, entityState_t
         G_FowPlayerCanHoverEntity(player, ent);
 
     state->flags &= ~(EF_HOVER_HEALTH | EF_HOVER_MANA | EF_HOSTILE | EF_NEUTRAL | EF_ALLIED |
-                      EF_OVERLAY_A | EF_OVERLAY_B | EF_OVERLAY_C | EF_OVERLAY_MANA);
+                      EF_OVERLAY_A | EF_OVERLAY_B | EF_OVERLAY_C | EF_OVERLAY_MANA | EF_PLAYER_LABEL);
     state->name = state->flags & EF_NAMED_ATTACHMENT ? ent->s.name : 0;
     state->hover_value = state->flags & EF_NAMED_ATTACHMENT ? ent->s.hover_value : 0;
     state->stats[ENT_CARGO] = 0;
@@ -2567,7 +2614,7 @@ static void G_CustomizeEntity(uint32_t player, edict_t const *ent, entityState_t
         }
         /* The client has no MAPINFO WTS table; the old path published raw TRIGSTR_* tokens in CS_GENERAL. */
         /* Name remains the hover gate for invulnerable units with no mana bar. */
-            state->name = G_NameConfigstring(G_UnitName(ent->s.class_id));
+        state->name = G_NameConfigstring(G_PresentationString(G_UnitName(ent->s.class_id)));
         state->hover_value = G_HoverResourceValue(ent);
         /* Retail names a Hero by its proper name with a "Level N" line, and
          * the world hover shows only the health bar, never mana. */
@@ -2575,8 +2622,13 @@ static void G_CustomizeEntity(uint32_t player, edict_t const *ent, entityState_t
             cstring_t proper = ent->unit_state->proper_name && *ent->unit_state->proper_name
                 ? ent->unit_state->proper_name
                 : G_LevelString(G_UnitProfile(ent->class_id)->properNames);
-            if (proper && *proper) state->name = G_NameConfigstring(proper);
+            if (proper && *proper) state->name = G_NameConfigstring(G_PresentationString(proper));
             state->hover_value = ENT_HOVER_LABELED_VALUE | MAX(1u, ent->unit_state->hero.level);
+            uint32_t const owner = ent->s.player;
+            if (owner != player && owner < MAX_PLAYERS && owner < MAX_CLIENTS && game.clients[owner].connected) {
+                cstring_t label = gi.GetConfigstring(CS_PLAYER_LABELS + owner);
+                if (label && *label) state->flags |= EF_PLAYER_LABEL;
+            }
         }
         if (!S_UnitInvulnerable(ent)) state->flags |= EF_HOVER_HEALTH;
     }

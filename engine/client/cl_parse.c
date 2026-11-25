@@ -329,6 +329,10 @@ static void CL_ParseConfigString(sizeBuf_t *msg) {
     }
     if (index >= CS_GENERAL && index < CS_GENERAL + CS_MAX_NAMES / ENT_NAMES_PER_CS)
         entity_name_pool_decode(cl.configstrings[index]);
+#ifdef __EMSCRIPTEN__
+    if (index == CS_MATCH_LOADING) Sys_UpdateMatchLoadingPlayers(cl.configstrings[index]);
+    if (index >= CS_PLAYER_LABELS) Sys_UpdateRoomPlayerName(index - CS_PLAYER_LABELS, cl.configstrings[index]);
+#endif
     if (cl.refresh_prepped)
         CL_UpdateConfigString(index, olds);
     if (index == CS_MINIMAP && cl.refresh_prepped && strcmp(olds, cl.configstrings[index]))

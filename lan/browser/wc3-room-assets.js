@@ -59,7 +59,7 @@ const wc3RoomAssets = (() => {
 
   function retain(assets, paths) {
     for (const [path, asset] of assets) {
-      if (!paths.has(path)) {
+      if (paths && !paths.has(path)) {
         assets.delete(path);
       } else if (!(asset instanceof Uint8Array)) {
         // Release the original bundle buffer while keeping this compressed entry.

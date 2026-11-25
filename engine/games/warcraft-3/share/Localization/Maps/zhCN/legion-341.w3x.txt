@@ -1,0 +1,354 @@
+// Simplified Chinese display overrides. Keys are FNV-1a of the resolved UTF-8 source.
+[Text]
+// WTS 4218
+04ec3cfff259808c=列半圆( 暗)
+// map UI
+053dc77b1e87c923=HostBot 已进入游戏-mode: |cffFFcc00
+// WTS 4210
+056690f9dde92ccc=居中点
+// WTS 6220
+059149205a064959=国王盔甲(30)
+// map UI
+0ad267c3f06f942c=强盗岭
+// WTS 6802
+0c76ec07dcf5d08b=将Wisp收获的木材数量增加1个
+// map UI
+0d913d09a6f4c96a=雷根国王: |cffFFcc00
+// WTS 4510
+0d92c55e21204fc7=[|cffFF0000调试|r吓坏了，有秩序: LKKK
+// WTS 6211
+0e376e205eeb800b=国王盔甲(21)
+// WTS 6210
+0e3b12205eeecc8e=国王(20)
+// WTS 6213
+0e3e7a205ef1b31d=国王盔甲(23)
+// WTS 6212
+0e418e205ef40af0=国王盔甲(22)
+// WTS 6215
+0e44f6205ef6f17f=国王盔甲(25)
+// WTS 6214
+0e489a205efa3e02=国王(24)
+// WTS 6217
+0e4c12205efd3fc1=盔甲国王(27)
+// WTS 6216
+0e4f76205f001f84=国王盔甲(26)
+// WTS 6219
+0e528e205f027e23=盔甲国王(29)
+// WTS 6218
+0e55f2205f055de6=国王盔甲(28)
+// WTS 4262
+125328fa87ba71e8=下一波进入
+// map UI
+128929823747e466=木材
+// WTS 4264
+1390f13670097c5e=|cff00FF00你赢了!|r
+// WTS 5433
+13cccd74b1b2a775=你的转弯
+// map UI
+15ce6878e1cd6a9a=下一波( 下一轮 )|cffFFcc00
+// map UI
+192e9a9d690969b8=藏宝海湾
+// WTS 4507
+1992f40c92fdec0c=[|cffFF0000调试|r错误 -在悬崖上召唤
+// WTS 1278
+1a8a2fef3c6f0a05=2v2, 3v3, 4v4 (英语).
+// WTS 4217
+23bdf7973cfa7bdf=拱门(暗处)
+// WTS 5895
+23e3b65c75b1885f=将Wisp收获的木材数量增加1.
+// WTS 5407
+286c161f2986dfe7=[|cffFF0000调试|r东王现在可以被杀了
+// map UI
+290402ea7624cd0f=切换
+// WTS 5409
+3057385289332b92=[|cffFF0000调试|r国王痊愈了
+// map UI
+333dc56ddffd8ea0=玩家
+// WTS 6200
+36c1d2963377b35e=更改构建器
+// WTS 1
+3817fd31d1f7a5c3=玩家 1
+// WTS 1223
+3817fe31d1f7a776=玩家 2
+// WTS 1224
+3817ff31d1f7a929=玩家 3
+// WTS 1225
+38180031d1f7aadc=玩家 4
+// WTS 1226
+38180131d1f7ac8f=玩家 5
+// WTS 1227
+38180231d1f7ae42=玩家 6
+// WTS 1228
+38180331d1f7aff5=玩家 7
+// WTS 2050
+38180431d1f7b1a8=玩家 8
+// WTS 5007
+3c62a1f13dcdf896=调试命令
+// map UI
+3d4bc87e0b81dca7=你的团队的国王学会了 |cff3333AA
+// WTS 4278
+3d59137bf20daded=别离开你的地盘!
+// WTS 4265
+3e2b7dc62682e3c9=|cffFF0000你输了!|r
+// map UI
+3ef1bd9a5524e56b=国王 HP : |cffFFcc00
+// WTS 4883
+4035e8f3574ca449=指定一个关卡( ex : -info 5)
+// WTS 4866
+42b992d5a34cfdb0=[|cffFF0000调试|r]游戏重新开始. (注: King 升级不重设).
+// WTS 4334
+4534e8200da1d1a7=[|cffFF0000调试|r你的建筑师被换成了赛车手
+// WTS 4243
+482e5d02595315d7=左派团队没有玩家，左派团队的王被升级，收入被禁用.
+// map UI
+4d70f28403559dae=你收到了吗? |cffFFcc00
+// WTS 4515
+4edafe22b7340f8b=|cff3333AA短模式|r:各回合之间准备的时间减少，所有单位移动，攻击，再生的mana更快15%. King的生命值少了30%.
+// WTS 4220
+503fc3cd434cda3f=双柱( 暗)
+// WTS 5411
+518ac4908b10cff4=[|cffFF0000调试|r西王痊愈了
+// WTS 4216
+51cb2503cdfcb145=方尖碑( 光线)
+// WTS 4211
+54d3bada96254f37=拱门(灯光)
+// WTS 1280
+5550e2344ea8e801=万亚克
+// WTS 5406
+558512904d8421fd=[|cffFF0000调试|r西王现在可以被杀了
+// map UI
+562df9206f1a7a05=双河流域
+// WTS 7868
+564ed1886901a398=弹弓石( 南)
+// WTS 7888
+58075996f0f5f523=|cff00FF00战斗!|r
+// map UI
+5d89fc6f93934b66=国王损害 : |cffFFcc00
+// map UI
+5eac56eb4a4c6eb7=扭曲草地
+// WTS 5464
+5f2c42ff4867f3df=|CFFFF0000-mm|r: 策划者|n|CFFFF0000-hg|r: 小时玻璃|n|CFFFF0000-cb|r: 更改构建器|n|CFFFF0000-x3|r: 3个时间蠕动产卵|n|CFFFF0000-ni|r:无收入|n|CFFFF0000-nm|r:无中间|n|CFFFF0000-sm|r: 短模式( 少木材)
+// WTS 4221
+5fb88e5f17db7752=喷泉( 灯光)
+// WTS 4224
+600a4da23bb90212=注:       |cffFF0000这是一个测试版本。如果您找到任何错误或有任何反馈，请发电子邮件给 HuanAk@gmail.com 。|r
+// map UI
+634ae1d701f6d195=[|cffFF0000调试|r]
+// WTS 4313
+641eb19120e594b0=小学|n|cffFFcc00-ap|r: 全部选取( 容易 - 5%)|n|cffFFcc00-sd|r: 单一草稿(正常为0%)|n|cffFFcc00-ar|r: 全部随机(硬度5%)
+// WTS 4294
+691a9eba67a597a4=命令移动到 RKing
+// WTS 5466
+6adb202216a21494=[|cffFF0000调试|r西方敌人清除。
+// WTS 5465
+6db3af2f88d7469a=[|cffFF0000调试|r[东方敌人清除。
+// WTS 4332
+6eeca221b5b16037=[|cffFF0000调试|r给左金刚加了个能力
+// WTS 5449
+70eccdcb7b74bc5e=[|cffFF0000调试|r关卡开始。
+// WTS 4209
+71ec41101104b12e=闪光点
+// map UI
+72c72f630e8a15c4=游戏将在30秒内断开。
+// WTS 9130
+74d315b2eca82513=雷彻在这里 \\ 2
+// WTS 4514
+78ff0404812dbad7=[|cffFF0000调试|r你现在有100个食物帽
+// WTS 4214
+7a944481fe3b327d=列半圆( 暗可走)
+// WTS 2355
+7b2be610161de8db=Khit 点数( 28)
+// WTS 2356
+7b2f4a101620c89e=King Hit 点数( 29)
+// WTS 2348
+7b4a6a101637c6b6=King Hit 点数( 21)
+// WTS 2349
+7b4dd210163aad45=Khit 点数( 22)
+// WTS 2350
+7b514610163da838=King Hit 点数( 23)
+// WTS 2351
+7b546e1016402207=Khit 点数( 24)
+// WTS 2352
+7b57d210164301ca=Khit 点数( 25)
+// WTS 2353
+7b5b6a10164639e9=Khit 点数( 26)
+// WTS 2354
+7b5ece10164919ac=Khit 点数( 27)
+// map UI
+7bdd50538f13bd09=[|cffFF0000调试|r下一层设置为
+// WTS 2184
+7bde6e7d2cbd802f=选择您的构建者 。
+// WTS 4722
+7c34b2d4a9de7208=[|cffFF0000调试|r你不能再在其他玩家的领域建设了
+// WTS 8846
+805bc55f77e91c8e=战斗机攻击
+// WTS 112
+81728efaddd7faee=城市输入垂直
+// WTS 5421
+81a89f048615efe2=[|cffFF0000调试|r你现在有200个食物帽
+// WTS 2357
+82aa0f101a076148=Khit 点数( 30)
+// WTS 5436
+83dbc01311880db2=|cff3333AA无中间|r:敌人到达中间(暗草),杀死时不给黄金.
+// WTS 4219
+83f2bd678df3a723=列半圆( 轻型可行走)
+// WTS 5494
+8433b11fb4a52c4f=右队没有玩家，右队的王获得升级.
+// map UI
+8b5f0e68cfaa3546=级别 : |cffFF8700
+// WTS 4213
+8d08b5da31fc7eaa=列半圆( 浅)
+// WTS 5423
+9042a8b4adff9aa5=|cff3333BB草稿完成|r
+// map UI
+92a354b8d2783e80=投票失败!
+// WTS 4496
+93929a3615d58271=低墙( Horizontal)无碰撞
+// WTS 4322
+940155b4e3f56b49=检查您的构建器的 TXT 能力以获取可用的命令 。
+// map UI
+94a4a0b3d784700d=战败
+// map UI
+9b0c180237f7fb88=木材
+// WTS 5435
+9cf481ad1798bf4c=|cffFFcc00固定随机|r: 瞬间会给您一个随机的构建者。每个玩家会有不同的种族 。
+// WTS 7913
+a1631824a8488103=自动反-stuck 触发
+// map UI
+a377b992a5d3c966=被踢伤了。
+// map UI
+a7ebde56ad0db823=|r 已经投票 |c00ff0202yes|r.
+// WTS 4511
+a9b818c55ca6b03d=[|cffFF0000调试|r吓坏了，有秩序的，RKING
+// map UI
+aa8aa81ad6f055fd=等级
+// WTS 5493
+aae3ff37a87fea9b=左派队没有玩家，左派队的王牌已经升级.
+// WTS 4718
+adaeabd5d3a5d3e1=[|cffFF0000调试|r所有产卵都启用
+// WTS 4328
+b0df0b25b79a1462=[|cffFF0000调试|r收入残疾
+// WTS 4327
+b2a36078c46f9227=[|cffFF0000调试|r获得收入
+// WTS 4293
+b36fe1841728a3ca=命令迁移到 LKK
+// map UI
+b8471269c5291cc1=|r 能力。 能力。
+// WTS 5405
+b8d8e0ff1a86357e=[|cffFF0000调试|r西王现在无敌了
+// WTS 6766
+b8dc941da6cd6caa=高级伐木工培训9
+// WTS 5576
+b8dc951da6cd6e5d=高级伐木工人培训8
+// map UI
+ba1e8892999bb878=电脑
+// map UI
+ba7c931542ddc52f=|r|cFF00FF00 没有 :
+// WTS 6283
+bc5f5c5f316c9c02=克里普斯 HP 修改器
+// WTS 4723
+bf0b8f09733cbde4=[|cffFF0000调试|r你现在可以在其他玩家的领域建起来
+// map UI
+c0849927e70201e5=英雄
+// map UI
+c18b63200f0b1afc=|r 已经投票 |c000041ffno|r.
+// map UI
+c416c97e0d3218b3=金币
+// WTS 111
+c5ac68bb8035e7fc=城市输入水平
+// WTS 4892
+c678b781550f8d2f=楼梯
+// map UI
+c6c6163a3fa8355c=胜利
+// map UI
+c858e9562e6600b7=|r 开始投票踢球! (20秒后投票结束)
+// WTS 4719
+c89f41e80f46ff6c=[|cffFF0000调试|r⁇ 子归正.
+// map UI
+cb1635bb039a169f=|cFFC0C000票数 :|r |cFFFF0000对:
+// WTS 8844
+cc3dda4f31d6dc3d=自动协助启动
+// WTS 5458
+ceb889ec20bda473=|cffFFcc00随机草稿 :|r 轮到你了 |cff33FF33双击|r a 构建器来选择它。每个团队的起草顺序是随机的。
+// WTS 4286
+cecaaecf56068901=|cffFFcc00卖不出去，已经开工了|r
+// map UI
+d10d017231c38a58=|r 阿雷纳战役中的黄金
+// map UI
+d48e0fefb8cd81d8=[|cffFF0000调试|r] Spawn
+// WTS 4331
+d522f7e2ecb4a622=[|cffFF0000调试|r向右金刚加持能力.
+// map UI
+d579803b434fe68f=对局结束
+// map UI
+d6556614b1d45be0=|r 黄金套装为
+// map UI
+d69efb0607e12ac5=|r 收入设定为:
+// map UI
+d867f44c1bb7a49d=|r 木材装配到
+// WTS 5410
+dced6a70335b3dde=[|cffFF0000调试|r东王痊愈了
+// WTS 7437
+e3adeb3ba9e659e3=将构建器更改为 Mercenary
+// WTS 4577
+e3f37109828f063e=输入在 50 至 450 之间的缩放% 。 (默认为 100 )
+// map UI
+e43721183806770e=总杀: |cffFFcc00
+// WTS 5408
+e45c996cff709ac8=[|cffFF0000调试|r东王现在无所不能
+// WTS 4244
+e779b89135909d3b=右派团队没有玩家，右派团队的王被提升，收入被取消.
+// map UI
+e77d776f2ba03007=|r 投票结果:我不在乎。
+// WTS 4323
+e994059547722ec4=[|cffFF0000单队]|r 关卡开始 。
+// WTS 4333
+e9efc4900f4d8f02=[|cffFF0000调试|r所有敌人都清空了
+// WTS 5457
+ea73a9665ddc806e=双击选择
+// WTS 6772
+ec2138626ef8a6c6=高级伐木工人培训 10
+// WTS 8821
+ee75d1092c01ed5c=我无所谓!
+// WTS 6208
+f349f3204f66f06b=国王(18)
+// WTS 6209
+f34d17204f69636e=国王盔甲(19)
+// WTS 6201
+f36877204f80ce46=国王(11)
+// WTS 6202
+f36b9f204f834815=国王盔甲(12)
+// WTS 6203
+f36f13204f864308=国王盔甲(13)
+// WTS 6204
+f3727b204f892997=国王(14)
+// WTS 6205
+f3761f204f8c761a=国王(15)
+// WTS 6206
+f37977204f8f4179=国王(16)
+// WTS 6207
+f37c9b204f91b47c=国王(17)
+// WTS 5503
+f5bf8ab912992981=|cffFFcc00无法投出能力 回合已经开始了|r
+// WTS 4222
+f78cafeafdab9264=喷泉( 暗)
+// map UI
+f8bb1e7a1e20a61e=战斗器值 : |cffFFcc00
+// map UI
+fb06ac15d8b056af=|r 已经离开了游戏。
+// WTS 4324
+fc0a33d0fe4ef3d0=[|cffFF0000单玩家]|r 关卡开始 。
+// map UI
+fc20dfd3eea80ae6=|c00FF0000投票时间不多了，投票取消
+// WTS 4660
+fc24e8ff2e1b8cec=路径阻断器(两块) (Huge)
+// WTS 4215
+fc2cd528156d7a6d=方尖碑(暗处)
+// WTS 9129
+fce201d9190d14ac=投踢菜单弹出.
+// WTS 4212
+fda9fcce6f3aa617=双列( 亮)
+// WTS 8843
+ff489d03f16881b6=到达这里
+// map UI
+ffa8f712ab2687a0=投票失败!

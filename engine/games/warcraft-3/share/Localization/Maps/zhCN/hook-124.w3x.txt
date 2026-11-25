@@ -1,0 +1,142 @@
+// Simplified Chinese display overrides. Keys are FNV-1a of the resolved UTF-8 source.
+[Text]
+// map UI
+01f4d2dceb586c03=头部拍摄
+// map UI
+0760ca3c631c1bf3=你想选择游戏类型吗?
+// map UI
+07e1da2b3f6fc5f1=拒绝者|r
+// map UI
+0ad267c3f06f942c=强盗岭
+// map UI
+128929823747e466=木材
+// map UI
+13552d49a3b7fb15=警告，队伍
+// map UI
+14e7c2e8d911a64b=|r 升级
+// map UI
+192e9a9d690969b8=藏宝海湾
+// map UI
+1abf4d198a9091a5=选择示例模式 : -|cffff0000km|r|cff0000ff060|r|cffff0000nt|r 将给出一个60杀游戏，没有重生计时器
+// map UI
+1ff344c1ab318c17=|cff5BD0ED损害:|r
+// map UI
+26a8d3f477c54d79=|cff8888ff托斯洛克语Name|r 礼物 : |cffff0055
+// map UI
+27d72904e1a11a85=|cff5BD0ED范围|r
+// WTS 1
+2da0eaee4c07c711=|cff0060ff勾肥大战 1.24
+// map UI
+3287a9d93a2d3886=|cff5BD0ED半径|r
+// map UI
+333dc56ddffd8ea0=玩家
+// WTS 5
+3817fd31d1f7a5c3=玩家 1
+// WTS 6
+3817fe31d1f7a776=玩家 2
+// WTS 7
+3817ff31d1f7a929=玩家 3
+// WTS 8
+38180031d1f7aadc=玩家 4
+// WTS 9
+38180131d1f7ac8f=玩家 5
+// WTS 10
+38180231d1f7ae42=玩家 6
+// WTS 11
+38180331d1f7aff5=玩家 7
+// WTS 12
+38180431d1f7b1a8=玩家 8
+// WTS 13
+38180531d1f7b35b=玩家 9
+// map UI
+3e7b0dffa9f7f586=使用 -|cff00ff00rm|r|cff0000ffXXX|r for |cff00ff00回合|r 模式为 |cff0000ffXXX|r 回合
+// map UI
+41121c9df4121efe=杀人
+// map UI
+41431f2bbdc5fd3d=攻击
+// map UI
+45497bfdfd72a659=附加修饰符在数字之后。当前修饰符是 |cffff0000nt|r (无计时器模式，复发计时器为各级5)和 |cffff0000bm|r (bosted模式，从250金开始)
+// map UI
+483006dc64f79d7c=杀人|r
+// WTS 16
+48692ca7c7cef883=玩家 12
+// WTS 15
+48692da7c7cefa36=玩家 11
+// WTS 14
+48692ea7c7cefbe9=玩家 10
+// map UI
+4899dab02f0524ae=你想要多长时间?
+// map UI
+533d33cca0e44ebb=电源
+// map UI
+562df9206f1a7a05=双河流域
+// map UI
+5eac56eb4a4c6eb7=扭曲草地
+// map UI
+63060f4389248d8f=|cff5BD0ED速度|r
+// map UI
+69cc876c36eb7b05=|cff5BD0ED损害|r
+// map UI
+6f3190120dcac288=|cff5BD0ED移动速度 :|r
+// map UI
+75aea3e55e5fd876=第一队胜出 |cffff0000
+// map UI
+7c2fdaff4db69797=|cff5BD0ED范围 :|r
+// map UI
+849a99c3cd1469ea=|r 赢了!
+// map UI
+8b1b4b5ece05b251=请在主机选择模式时等待...
+// map UI
+9081d7033d0b3748=|cff5BD0ED半径 :|r
+// map UI
+94a4a0b3d784700d=战败
+// map UI
+956c5a9fb7ee0b23=手动
+// map UI
+975c229203f91c8b=|cffff0000杀死样式|r
+// map UI
+98042f183328960e=第一个杀的球队 |cffff0000
+// map UI
+9b0c180237f7fb88=木材
+// map UI
+a0c39c8bcf7b389f=手工输入
+// map UI
+a62adae4ec4b2e4d=|r 敌人赢了!
+// map UI
+aa8aa81ad6f055fd=等级
+// map UI
+ac6bdc71f750ac96=中型
+// map UI
+af7472b8f6ac1a98=回合
+// map UI
+b3f005357fe9194a=|r 留下来!
+// map UI
+b6513caf69971fb5=短数
+// map UI
+ba1e8892999bb878=电脑
+// map UI
+bbb97b1c63507dc0=数目
+// map UI
+c0849927e70201e5=英雄
+// map UI
+c416c97e0d3218b3=金币
+// map UI
+c6c6163a3fa8355c=胜利
+// map UI
+c7cd2de83a3ea846=|r 回合获胜!
+// map UI
+d579803b434fe68f=对局结束
+// map UI
+ed8ec5e3c64fa25d=共计
+// map UI
+f6eb78bbdc6f8e1d=|cff5BD0ED速度 :|r
+// map UI
+fb06b115d8b05f2e=|r 已经离开了游戏!
+// map UI
+fb53ad452de95cd0=你想玩哪种模式?
+// map UI
+fb720fc010661f17=升级
+// map UI
+fc6febf0810fe320=死亡人数|r
+// map UI
+fda827eb947fc00b=使用 -|cffff0000km|r|cff0000ffXXX|r for |cffff0000杀人|r 模式为 |cff0000ffXXX|r 杀人

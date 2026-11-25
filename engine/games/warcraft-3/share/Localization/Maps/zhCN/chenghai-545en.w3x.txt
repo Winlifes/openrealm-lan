@@ -1,0 +1,448 @@
+// Simplified Chinese display overrides. Keys are FNV-1a of the resolved UTF-8 source.
+[Text]
+// map UI
+0028297a5d2d6244=现在有一个英雄邀请单人，请等待邀请参加比赛。 |r
+// map UI
+00b951ee0d9c8d0a=QQCFFF77700轻排第4名英雄，目前球队获得经验的亮度384%.
+// map UI
+0176b2e143737bda=羞愧地逃离竞技场的挑战...
+// map UI
+03354f7f7cfc7d91=|r 为游戏选择了模式 |c00ff0000 比赛模式...
+// map UI
+03bf0cb03da8a20a=接受挑战者邀请的勇气 奖励200枚金币现在他们开始...
+// map UI
+06c5dea2d3d050fd=|r |r 从手买的，200金币赌给胜利者
+// map UI
+07a451cf1a345a4e=QQ R 已选择一个 |c00ff0000 团队模式。
+// map UI
+0ad267c3f06f942c=强盗岭
+// map UI
+0b9eda5b0e967363=|r |cffffcc99在房间里的命运 瞬间死亡
+// map UI
+0bada8c9d0740fd7=轻城堡被摧毁了
+// map UI
+0dbaf248602a1a2f=现在保持模式
+// map UI
+128929823747e466=木材
+// map UI
+12cec735ec378a22=|r已选择了用于自由的英雄模式 |c00ff0000 (所有玩家选择英雄).
+// map UI
+13367fbacc40efe4=Bet(200枚硬币).
+// map UI
+157600197779a624=|c00ffff00建筑防御力量 暗号升级完成，目前评分为10分.
+// map UI
+1678be947628dd1c=原模式中的重组
+// map UI
+189cc7d1ba019d13=|r |cffffcc99命运不能进入房间，你被邀请单身。
+// map UI
+18d50834db6a5a03=请选择英雄选择模式 :
+// map UI
+192e9a9d690969b8=藏宝海湾
+// map UI
+1ad3fae04bdd675b=C44400000 黑暗团队为1名英雄，目前的黑暗体验的组合为105%
+// map UI
+1d25e72eb00fd17e=黑暗城堡在最后20秒的胜利中被摧毁了
+// map UI
+1fd8ddb6f7b3995f=|c00ffff00轻型建筑防御部队升级完成，目前评分为10分.
+// map UI
+1fe8fb67382e40cf=隐藏模式的改变
+// map UI
+20056d035e01858c=没有邀请，英雄是电脑-controlled 玩家已经离开了游戏!
+// map UI
+20ee691e46c40e52=单曲
+// map UI
+20fb3adb84064f1d=|r正在选择要共享的项目，请稍候...
+// map UI
+217718d4a7448494=|r 是 TP 将选择卷，请稍候...
+// map UI
+21d3b8e5cdae6837=使用分配给另一队平均7000枚金币 用于购买英雄英雄失败金币的关系
+// map UI
+21eb07221d30c437=暗黑的队伍逃走了
+// map UI
+233e35d31b0b86a5=QQCFFF77700 轻排7号英雄，目前亮度为球队获得经验595%.
+// map UI
+23783b51d0657d7f=R敢不打，给挑战者100金币
+// map UI
+26b897f4af9e3c6e=|r |cffffcc99房间的命运是物品: 生活糖浆
+// map UI
+27b19d5f849fde7d=完成了1000金币的巡演
+// map UI
+292c5036aa7f338c=现在的选项模型数|r
+// map UI
+29ce309f475bc18b=|r |cffffcc99被送进房间不是什么好东西但他是所有500块金币奖金的敌人
+// map UI
+2b734e5bfba0c3c5=|r |cffffcc99房间的命运是物品:QQ r 知识类书籍+20
+// map UI
+2c044876d22e9b94=光明城堡被摧毁了 黑暗力量在最后10秒的胜利中
+// map UI
+2cb5db363c7ed11c=没有邀请! 英雄正在邀请团体参加比赛 r
+// map UI
+2d4e93cc1fbb2c4c=|r |cffffcc99房间的命运是: 球的诅咒
+// map UI
+2f3daca4aa3f92de=|c00ff0000说加班!  |r
+// map UI
+2ffc63366616c70b=|c00ff0000说加班!  |r
+// map UI
+311dc1fa07a1f01c=|r |cffffcc99房间的命运转移到了中路
+// map UI
+330bc72934008116=|r |cffffcc99房间的命运是: 球的残废
+// map UI
+333dc56ddffd8ea0=玩家
+// map UI
+3473c36b0c118f13=R不敢打架 付100金币吉他挑战者
+// map UI
+3786f199188ff929=联合对抗模式的投票结果
+// map UI
+3a6197616085488a=|r已选择随机选择英雄模式 |c00ff0000 (所有玩家都是随机选择的) |cFFFFFF00 全部数 r |c00ff0000 请等等...
+// map UI
+3b7cb061f875889e=请选择共享模式 :
+// map UI
+3bdb1ebbeea1ff05=C44400000 黑暗团队为8名英雄，目前的黑暗体验的组合为650%
+// map UI
+3bdc7278ec26af7a=C44400000 黑暗团队为3名英雄，当前的黑暗体验的组合为294%
+// map UI
+3c3f4b33012245aa=黑暗潮流团队获得760%的经验
+// map UI
+3ca85363b50f23d2=|rTP被选为  |c00ff0000没有TP...
+// map UI
+3f2087be6b9be12c=|c00ffff00轻型建筑 防御部队 建筑升级完成，目前评分
+// map UI
+40528d06f312ec95=|r |cffffcc99房间里的命是东西:****** 隐形糖浆*
+// map UI
+40b9345d7b2943a2=|c00ffff00轻力升级完成，目前评分
+// map UI
+40c3f1a607471b1f=R邀请单曲!
+// map UI
+41701bf913c56ba8=|r |cffffcc99转会到光之总部
+// map UI
+425477bb93b8417f=已经委托给计算机控制中心了
+// map UI
+43061478b4ee76dc=R正在选择是否进入团队模式，请等待...
+// map UI
+447d57493b05ff0e=在店里买一只小黑猪
+// map UI
+44df3003d5a01bd9=他的每个盟友都是他的成绩X
+// map UI
+44e6e5250f3c0824=命运室重新开放了
+// map UI
+45a4d651d10c50ff=保持结果现在模式
+// map UI
+466b89931ef05aec=|r |cffffcc99房间的命运是东西: 球的腐蚀
+// map UI
+487b018762aabecc=|r |cffffcc99房间里的宿命是东西:
+// map UI
+4a1ef1a6b272c860=|r |cffffcc99房间里的宿命转移到了怪物洞穴
+// map UI
+4a2a58bd25b0f62c=请选择 TP 模式 :
+// map UI
+4b16191559bf1f33=|r |cffffcc99房间里的宿命是物品:  ⁇   ⁇   ⁇   ⁇   ⁇   ⁇
+// map UI
+4b51fc01d6ab8292=光明队参加比赛的人数
+// map UI
+4d9bf259ce8f0df4=|r选定项目已共享模式 GS |c00ff0000 (项目可以共享).
+// map UI
+5158aec01a8edfa0=未在确定提取结果规定的时间内作出决定的R。
+// map UI
+52d9c5663a17a5ee=联合对抗模式
+// map UI
+55ca23382c4d73f6=|r |cffffcc99房间的宿命是物品: 躲过胡福
+// map UI
+562df9206f1a7a05=双河流域
+// map UI
+56617fafc8df5452=书的光亮强度是购买60秒后-emergence.
+// map UI
+566754f405e14743=学习技能附加费系统自动属性附加费将减少，敏捷性，强度，智能，分数2分.
+// map UI
+578f029998f63c6e=由于没有足够的硬币可以买到对方的基地英雄，购买失败. 7000金币平均球员分配到对方.
+// map UI
+587d12a619670c3f=|r |cffffcc99房间的命运是物品:
+// map UI
+598d1f6fe55eca0c=QQCFFF77700 轻排第9名英雄，当前亮度为球队获得经验705%.
+// map UI
+5a9a81f8f35ffc90=团队轻松体验 760%
+// map UI
+5c2cb2760d979393=联合对抗模式的投票结果
+// map UI
+5e63259c4aa76ff2=|r |cffffcc99房间里的宿命 转到了台湾的黑暗英雄选举中
+// map UI
+5e93f31d0ddc38c8=英雄受罚了!
+// map UI
+5eac56eb4a4c6eb7=扭曲草地
+// map UI
+5f0af5691538c51e=|c00ffff00建筑物防御力量 黑暗升级完成，目前评分
+// map UI
+6045423b4c8a2514=光亮的团队 英雄们都死了 黑暗的团队以5000个奖金
+// map UI
+60657964fdee6a39=光队逃走了
+// map UI
+6221f59359c35209=|r 从手买的，200金币赌给胜利者
+// map UI
+64c9e710287961d6=|cFFFFFF00同时，需要举起双方胜利的旗帜才能进入.
+// map UI
+64fde23b8bf57065=恢复原型号
+// map UI
+655440a101625868=C44400000黑队2名英雄，目前黑暗经历的特质占202%
+// map UI
+65818897274fa3a4=|r |cffffcc99房间里的宿命是物品 抗体糖浆
+// map UI
+65baf3a3fb67c9c5=逃跑后，他把硬币交给同盟会的观众
+// map UI
+6a5d3134e1762bf9=|r |cffffcc99房间的命运是物品: 黑暗力量升级
+// map UI
+6afae310f912eda5=你至少15级才能进入!
+// map UI
+6be5075e82524f77=硬币分级差额，红利
+// map UI
+6ca41401357b4419=恢复原型号...
+// map UI
+6e08aedac2d02208=|r |cffffcc99转会到光之总部的 房间里的命运
+// map UI
+6e2fd51f516a775a=离线玩家
+// map UI
+6f5267b506a45009=|r |cffffcc99房间里的命是东西: 烧了刀子
+// map UI
+701ec38b7d5d1922=滑动模式选择
+// map UI
+708c93a4f89cd97b=QQCFFF77700 光线排行榜第3位英雄，当前亮度让球队获得体验 294%
+// map UI
+7384dfd90440413f=|r选项是选中的英雄模式，请稍候...
+// map UI
+75e8ff0a36ba0dfe=|c00ffff00Light Force 升级完成，当前评分为 10_Q
+// map UI
+7628dd05977928f6=|r |cffffcc99转会到黑暗总部
+// map UI
+771a6a57ba009814=更新本书的黑暗力量是购买60秒后-emergence.
+// map UI
+778dc6c32c7a8b7b=|r |cffffcc99房间的命运是物品: 医疗石头
+// map UI
+7932608953a6b27f=离线不是英雄
+// map UI
+799b377f35a72119=光亮的团队，所有英雄都死了 团队比赛取消了
+// map UI
+7b8f75cbb137593f=黑暗势力摧毁了一座建筑...
+// map UI
+7ba384a66d2139b9=关节模式的改变...
+// map UI
+7d221151fe9ecc36=|r |cffffcc99房间里的宿命转移到了黑暗的总部
+// map UI
+7e530e63df985fed=|r 从手头买来的! 200金币赌注比赛 Drawn
+// map UI
+7f6d7f25a3481dbc=|r 是1000金币奖的胜利
+// map UI
+807b455d72f668dd=黑暗城堡被毁了
+// map UI
+825fad26c9c51895=|r 任何华希单挑进入体育场，闲暇，他都会受到惩罚! 时间90秒~~~~~~.
+// map UI
+82f884769fa2294f=在店里买个小白洋沙
+// map UI
+866db046da5e75ec=|c00ffff00暗力升级完成，当前评分为10.
+// map UI
+89080e0fe85371b7=|cFFF77700光线排队英雄
+// map UI
+8c95abf86225c20e=|r |cffffcc99房间的命运是物品: 幻影警棍
+// map UI
+8cf377ce7f26ea8a=|r |cffffcc99房间的命运是物品: 神秘的腰带
+// map UI
+8e8be9ca41888850=|r 单在体育场被打昏了，
+// map UI
+9236a5410ffa8575=[原型，现为模式]相同票数的结果，是由计算机模型随机选择的.
+// map UI
+93585afe418a34bf=票数相同的三种模式的投票结果，由计算机模型随机选择.
+// map UI
+94a4a0b3d784700d=战败
+// map UI
+95c9f88c325dc1bb=|r |cffffcc99房间里的宿命转移到了游戏场
+// map UI
+96908d53dd5027f4=|r |cffffcc99房间的命运是物品: 治疗警卫
+// map UI
+97273779b6ab1578=|r |cffffcc99房间的命运是物品: 勇敢地培养一个书本英雄。
+// map UI
+97c7c79de2fd5aa5=|r |cffffcc99在房间外的缘分。
+// map UI
+980d5700982ce959=|c00ffff00轻防升级的公路建设部队完成，目前评分
+// map UI
+9b0c180237f7fb88=木材
+// map UI
+9ba69711d5f5d6e7=|r |cffffcc99房间的命运是东西: 球减速
+// map UI
+9c4537aaa5bbffce=QQCFFF77700 轻排第5名英雄，当前亮度为球队获得经验475%.
+// map UI
+9d67245c4cd1201b=请选择游戏模式 :
+// map UI
+9fa667f106928e2b=现在的队伍比赛数 黑暗
+// map UI
+a0031292bfbda611=你至少20级才能进入!
+// map UI
+a039b96e80d015bb=C44400000黑队4名英雄，黑暗经验的特质384%
+// map UI
+a268eb73ebbec1b6=|c00ff0000说加班吧! |r
+// map UI
+a28d57b783a048d0=选择模式超时
+// map UI
+a4904dac861f13de=英雄们
+// map UI
+a5ca3008d07a1520=|r |cffffcc99房间的命运是物品: 飓风警棍
+// map UI
+a77cd95d570125c1=轻型部队摧毁了一座建筑...
+// map UI
+a789114d7a4011c3=|r |cffffcc99房间里的宿命是物品: 逃生匕首
+// map UI
+a7c6d7b829ab2f22=|r 没有选择模式 默认
+// map UI
+a8ba75621911ff48=|r 选入英雄，扰乱社会秩序的，将处罚他!90次第二次处罚!
+// map UI
+a8baccfde19b0d22=QQCFFF77700轻排第6名英雄，当前亮度让球队获得540%的体验.
+// map UI
+aa87acde7b6e227b=|c44400000球队的黑暗英雄
+// map UI
+aa8aa81ad6f055fd=职等
+// map UI
+ac347960db3c7e3c=离线英雄
+// map UI
+adb1d85272938e83=|r |cffffcc99房间的命运是物品:  ⁇  r 轻力升级
+// map UI
+adcefac2d1451f98=|r 不赌，拒绝赌博!
+// map UI
+afd364f79ce6ba34=|r |cffffcc99房间的命运转移到了南都洞穴
+// map UI
+b0317769a38b26e9=|c00ffff00黑暗力量升级完成，目前评分
+// map UI
+b0a5c6df259e0e45=命运室已经关闭，30秒后将再次开放.
+// map UI
+b170140e421f4a06=|r |cffffcc99房间的命运是物品: +20本书的QQ r强度
+// map UI
+b1cca61bf5008a67=赌( 200 枚硬币)
+// map UI
+b2382550a9cda5c5=起来啦!
+// map UI
+b4e9218847706d3c=|r |cffffcc99房间的宿命是物品:####################################################################################################################################
+// map UI
+b70a4d5b63a20c00=相同票数的[原型，联合型]结果由计算机型号随机选择.
+// map UI
+b99127ae6bf4719d=|r已选择共享模式 NGNS 的项目 |c00ff0000 (项目不得共享).
+// map UI
+ba1e8892999bb878=电脑
+// map UI
+bae739f03cee3a45=保持模式，祝大家开心
+// map UI
+bbcfb299cc7d914a=黑暗的团队，所有英雄都死了，聪明的团队5000个奖金
+// map UI
+bc5486a446e50471=|r |cffffcc99房间里的宿命转移到了石洞里
+// map UI
+c0849927e70201e5=英雄们
+// map UI
+c12644ba26a0470b=|rTP被选为  |c00ff0000TP .
+// map UI
+c196ad7e3518b1a7=|r |cffffcc99房间的命运是麻醉剂 力量 智慧 速度越小 5分
+// map UI
+c1e4ee7ae6037a19=|r |cffffcc99房间的命运是物品:  ⁇  r 传输棒
+// map UI
+c416c97e0d3218b3=黄金
+// map UI
+c515152809fa79b5=竞技场已经投入使用请等待邀请参加比赛|r
+// map UI
+c59fa71b00baf92d=|r正在选择游戏模式，请稍候...
+// map UI
+c5f241e74487c663=|r |cffffcc99房间的命运是: \\\ n书的领头人+15
+// map UI
+c6c6163a3fa8355c=胜利
+// map UI
+c6d6780eebe8ed37=在他们进入之前至少40分!
+// map UI
+ca50d751d14c2a93=|r |cffffcc99房间的命运是: 球的毒液
+// map UI
+cbc4362fb5cfaf30=|r |cffffcc99房间的宿命是: 球的霜冻
+// map UI
+cbcf7709bec38cfc=QQ R 已选择一个 |c00ff0000 常规模式。
+// map UI
+ce2985d065fb69d5=未邀请比赛，双方至少需要两组观众完毕. QQ R.
+// map UI
+cf6c0b9222fe2565=现在队伍的比赛次数 轻
+// map UI
+cfaed82fa0696b4d=有英雄被邀请竞争。|r
+// map UI
+cff9f0b2c0af759d=|r |cffffcc99房间里的命是东西: 球的火焰
+// map UI
+d05dbb3e12e18ba3=|c00ffff00建筑物防御部队 Light升级完成，目前评分为10分.
+// map UI
+d13a5870d03f95ce=你至少30级才能进入!
+// map UI
+d1d89dfb56b9bf7e=|c00ff0000说加班吧!  |r
+// map UI
+d22286e6f5a5ec6b=|c00ffff00轻力升级完成，目前评分为10分.
+// map UI
+d411869eb63cbf09=先知和客人见面，请等等...
+// map UI
+d4a998f94c4a6511=恢复原型的投票
+// map UI
+d515861c67c96d00=|c00ff0000说加班!  |r
+// map UI
+d579803b434fe68f=对局结束
+// map UI
+d75bfec5073fbb92=|r 选择
+// map UI
+d81cc6140cc84f05=英雄们
+// map UI
+da41f6b75497198b=联合选择型号|r
+// map UI
+da57744b64c6d3bc=|r 赌注比赛 Drawn获得 QQ c00ffff001000 r Gold Coin
+// map UI
+dbf7ec3d584fa321=|r |cffffcc99房间的命运是物品: r Agile书+20
+// map UI
+dc5391955c436ce0=[目前模式，联合模式]相同票数的结果是由计算机模型随机选择的.
+// map UI
+dd64a678935186a7=|r |cffffcc99房间的命运是东西: 球的黑暗
+// map UI
+ddd618f38d75dd91=|r |cffffcc99房间的宿命是物品:###############
+// map UI
+dedb74396baf0788=竞争团体
+// map UI
+e11e15ab607108e2=黑暗队参加比赛的人数
+// map UI
+e4028882b59d3614=|r |cffffcc99转会到台湾参加光明英雄选举
+// map UI
+e582042e35c0465e=|r为游戏选择了模式 |c00ff0000 娱乐模式..
+// map UI
+e61085a13c38490f=|r  从手买的，200金币赌给胜利者
+// map UI
+e68269c863a184f3=黑暗的队伍，所有的英雄都死了，队伍比赛取消了
+// map UI
+e68b8d9a51945cda=已被杀死
+// map UI
+ea04ff01a0f30eaf=10秒后被委托给计算机控制器.
+// map UI
+ea11ed656a4cc63c=|r |cffffcc99命运在房间里 转移到了中路
+// map UI
+eb8148d1ed3fa8e7=选择原模型的编号|r
+// map UI
+eba51bd83363e39a=|c00ffff00黑暗力量升级完成，目前评分
+// map UI
+ee123e867b1b1100=|r |cffffcc99命运在房间里转移到了怪物洞穴
+// map UI
+eee32947bb374bb5=玩家购买时间英雄遗迹被随机选择
+// map UI
+ef3e28e2ee284966=|c00ffff00黑暗力量升级完成 10QQ的当前评级
+// map UI
+ef7fb8708cf20763=ch3c.cn (中文(简体) ).
+// map UI
+f02deec59d3ba9ce=羞愧地逃离竞技场的挑战...
+// map UI
+f1c55bb81505b2eb=圣骑士号发射了神圣的盔甲，而不是攻击建筑物.
+// map UI
+f416f9c2bfedb495=|r |cffffcc99房间里的宿命被转移到头骨洞穴
+// map UI
+f5f657986b42d79b=|c00ffff00黑暗防守升级的筑路部队已经完成，目前评分
+// map UI
+f701443eb74fb93d=PK团体是应竞争邀请发行的。|r
+// map UI
+f79220c1109ae26d=QQCFFF77700轻排2号英雄，当前亮度让球队获得202%的体验.
+// map UI
+f8df566674e48f91=被赋予了控制权
+// map UI
+f90f5d41f65f1a7c=死了，他打败了
+// map UI
+fa3a91b9a43b3053=|c00ffff00黑暗升级的建筑物防御力量完成，目前评分为10。
+// map UI
+fde9ba74621f7787=|r |cffffcc99房间的命运是物品: 加快手套的速度
+// map UI
+fdf741d8159f97e9=C44400000 黑暗团队9名英雄，目前的黑暗体验 705%

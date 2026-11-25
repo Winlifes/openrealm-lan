@@ -79,12 +79,18 @@ void SV_Baselines_f(client_t *cl, int argc, cstring_t *argv) {
     Netchan_Transmit(NS_SERVER, &cl->netchan);
 }
 
-void SV_Begin_f(client_t *cl, int argc, cstring_t *argv) {
+void SV_PublishRoomPlayerName(client_t const *cl) {
+    if (cl->playernum >= MAX_CLIENTS || !cl->name[0]) return;
+    UINAME label;
+    strlcpy(label, cl->name, sizeof(label));
+    /* Player-entered names use the same font as map text without its
+     * inline icon, color, and line-break markup. */
+    for (char *p = label; *p; p++) if (*p == '|' || *p == '<') *p = ' ';
+    SV_SetConfigString(CS_PLAYER_LABELS + cl->playernum, label, (uint32_t)strlen(label) + 1);
+}
+
+void SV_ActivateClient(client_t *cl) {
     uint32_t playernum;
-
-    (void)argc;
-    (void)argv;
-
     if (!cl->edict) {
         playernum = SV_ClientPlayerNumber(cl);
         cl->edict = SV_ClientEdict(cl);
@@ -96,6 +102,23 @@ void SV_Begin_f(client_t *cl, int argc, cstring_t *argv) {
     cl->state = cs_spawned;
     cl->lastframe = (uint32_t)-1;
     ge->ClientBegin(cl->edict);
+}
+
+void SV_Begin_f(client_t *cl, int argc, cstring_t *argv) {
+    (void)argc;
+    (void)argv;
+    if (sv.waiting_for_players) {
+        if (cl->state == cs_connected) cl->match_ready = true;
+        return;
+    }
+    SV_ActivateClient(cl);
+}
+
+static void SV_ReportLoadingProgress_f(client_t *cl, int argc, cstring_t *argv) {
+    if (!sv.waiting_for_players || cl->state != cs_connected || cl->match_ready || argc != 2 || !argv[1][0]) return;
+    char *end;
+    long percent = strtol(argv[1], &end, 10);
+    if (!*end && percent > cl->loading_progress && percent < 100) cl->loading_progress = (uint8_t)percent;
 }
 
 /* The client could not decode a snapshot because it does not hold its delta base (Q2 sends -1 as its last frame).
@@ -180,6 +203,7 @@ ucmd_t ucmds[] = {
     { "baselines", SV_Baselines_f },
     { "playerinfo", SV_PlayerInfo_f },
     { "begin", SV_Begin_f },
+    { "loading_progress", SV_ReportLoadingProgress_f },
     { "nodelta", SV_NoDelta_f },
     { "disconnect", SV_Disconnect_f },
     { "lobby_say", SV_LobbySayClient_f },
@@ -278,6 +302,6 @@ void SV_ExecuteUserCommand(sizeBuf_t *msg, client_t *client) {
         }
     }
     /* Map restart can leave a stringcmd queued before playerinfo assigns the edict. */
-    if (!client->edict) return;
+    if (!client->edict || (sv.waiting_for_players && strcmp(argv[0], "ui_canvas"))) return;
     ge->ClientCommand(client->edict, argc, argv);
 }

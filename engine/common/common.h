@@ -207,6 +207,8 @@ void Com_Quit(void);
 void Sys_Quit(void);
 #ifdef __EMSCRIPTEN__
 void Sys_UpdateLoadingPresentation(bool active, float progress, bool loading_screen_submitted);
+void Sys_UpdateMatchLoadingPlayers(cstring_t progress);
+void Sys_UpdateRoomPlayerName(uint32_t player, cstring_t name);
 #else
 static inline void Sys_UpdateLoadingPresentation(bool active, float progress, bool loading_screen_submitted) {
     (void)active;

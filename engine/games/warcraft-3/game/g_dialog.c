@@ -325,11 +325,12 @@ void UI_JassDialogShow(edict_t *ent, jassDialog_t const *dialog) {
     }
     snprintf(message->Name, sizeof(message->Name), "JassChoiceMessage");
     DialogStyleText(message);
-    UI_SetText(message, "%s", dialog->message);
+    cstring_t presentation_message = G_PresentationString(dialog->message);
+    UI_SetText(message, "%s", presentation_message);
     /* The native fallback text has no authored anchor; give it the stock title position so rows can hang from it. */
     if (!message->AnyPointsSet || !message->Points.y[FPP_MIN].used)
         UI_SetPoint(message, FRAMEPOINT_TOP, root, FRAMEPOINT_TOP, 0, -0.03f);
-    content_height = DialogMessageBottom(message, dialog->message, root->Width) + 0.016f;
+    content_height = DialogMessageBottom(message, presentation_message, root->Width) + 0.016f;
     FOR_LOOP(i, level.dialog_button_count) {
         jassDialogButton_t const *entry = &level.dialog_buttons[i];
         frameDef_t *button, *text;
@@ -367,7 +368,7 @@ void UI_JassDialogShow(edict_t *ent, jassDialog_t const *dialog) {
         snprintf(text->Name, sizeof(text->Name), "JassChoiceButtonText%u", n);
         UI_SetPoint(text, FRAMEPOINT_CENTER, button, FRAMEPOINT_CENTER, 0, 0);
         DialogStyleText(text);
-        UI_SetText(text, "%s", entry->text);
+        UI_SetText(text, "%s", G_PresentationString(entry->text));
         snprintf(button->Button.NormalText.frame, sizeof(button->Button.NormalText.frame), "%s", text->Name);
         UI_SetOnClick(button, UI_WINDOW_CLOSE_COMMAND_PREFIX "jassdialog %u %u", dialog->id, entry->id);
         DialogDebug("ui_button dialog=%u player=%u button=%u label=\"%s\" disabled=%u ui_flags=0x%08x onclick=\"%s\"",

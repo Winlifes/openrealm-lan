@@ -3114,6 +3114,8 @@ void G_SetQuestDialogOpen(edict_t *player, bool open);
 TARGTYPE G_GetTargetType(cstring_t);
 uint32_t G_TargetFlagForType(TARGTYPE);
 cstring_t G_LevelString(cstring_t);
+cstring_t G_MapPresentationString(mapInfo_t const *info, cstring_t text);
+cstring_t G_PresentationString(cstring_t text);
 cstring_t G_MapString(mapInfo_t const *info, cstring_t name);
 cstring_t G_UnitName(uint32_t);
 bool G_SkipCutscene(void);

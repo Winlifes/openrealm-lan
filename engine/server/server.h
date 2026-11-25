@@ -91,6 +91,8 @@ struct client {
     uint32_t playernum;
     uint32_t lobby_slot;
     uint32_t drop_time;
+    bool match_ready;
+    uint8_t loading_progress;
     char userinfo[256];
     UINAME name;
     reliableUnicast_t *reliable_unicast_head, *reliable_unicast_tail;
@@ -125,6 +127,7 @@ extern struct server {
     uint32_t framenum;
     uint32_t time;
     bool paused;
+    bool waiting_for_players;
     uint32_t next_frame_msec; /* real-time deadline for the next simulation frame */
     uint32_t pause_msec; /* wall-clock accumulator used only for paused keepalive snapshots */
     uint32_t keepalive; /* real-time deadline for connected clients without gameplay snapshots */
@@ -148,6 +151,10 @@ static inline uint32_t SV_ClampSimulationDeadline(uint32_t realtime, uint32_t de
 }
 
 extern struct game_export *ge;
+
+void SV_Begin_f(client_t *cl, int argc, cstring_t *argv);
+void SV_ActivateClient(client_t *cl);
+void SV_PublishRoomPlayerName(client_t const *cl);
 
 // sv_init.c
 void SV_StartLobby(cstring_t mapFilename);

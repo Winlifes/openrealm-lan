@@ -15,4 +15,16 @@ void Sys_UpdateLoadingPresentation(bool active, float progress, bool loading_scr
     if (active) emscripten_sleep(16);
 #endif
 }
+
+void Sys_UpdateMatchLoadingPlayers(cstring_t progress) {
+    MAIN_THREAD_ASYNC_EM_ASM({
+        if (typeof window !== 'undefined') window.openrealmMatchLoadingPlayers?.(UTF8ToString($0));
+    }, progress);
+}
+
+void Sys_UpdateRoomPlayerName(uint32_t player, cstring_t name) {
+    MAIN_THREAD_ASYNC_EM_ASM({
+        if (typeof window !== 'undefined') window.openrealmRoomPlayerName?.($0, UTF8ToString($1));
+    }, player, name);
+}
 #endif

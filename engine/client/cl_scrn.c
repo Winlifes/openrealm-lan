@@ -281,7 +281,7 @@ void SCR_UpdateScreen(uint32_t msec) {
     no_refresh_elapsed = 0; no_refresh_frames = 0;
 
     if (cls.disable_screen) {
-        if (SDL_GetTicks() - cls.disable_screen > 120000) {
+        if (SDL_GetTicks() - cls.disable_screen > 120000 && !Cvar_Integer("cl_report_loading", 0)) {
             cls.disable_screen = 0;
             fprintf(stderr, "Loading plaque timed out.\n");
         }
@@ -2459,10 +2459,42 @@ static void SCR_DrawEntityOverlays(void) {
     SCR_SetEntityOverlayContext(false);
 }
 
+static void SCR_DrawPlayerLabels(void) {
+    int const font = atoi(cl.configstrings[CS_PLAYER_LABEL_FONT]);
+    if (font <= 0 || font >= MAX_FONTSTYLES || !cl.fonts[font] || !re.DrawText || !re.GetEntityOverheadPosition ||
+        ((1u << LAYER_WORLD_HOVER) & cl.playerstate.uiflags)) return;
+    uint32_t const overlays = CL_EntityOverlayMask();
+    FOR_LOOP(i, cl.viewDef.num_entities) {
+        renderEntity_t const *render = &cl.viewDef.entities[i];
+        if (!render->number || render->number >= MAX_CLIENT_ENTITIES) continue;
+        entityState_t const *entity = &cl.ents[render->number].current;
+        if (!(entity->flags & EF_PLAYER_LABEL) || entity->player >= MAX_CLIENTS) continue;
+        cstring_t name = cl.configstrings[CS_PLAYER_LABELS + entity->player];
+        vec3_t top;
+        vec2_t screen;
+        if (!*name || !re.GetEntityOverheadPosition(render, &top) || !SCR_ProjectWorldPoint(&top, &screen)) continue;
+        bool const hover = render->number == cl.hover_entity || (entity->flags & overlays);
+        drawText_t text = {
+            .font = cl.fonts[font], .text = name,
+            .rect = { screen.x - 0.21f, screen.y - (hover ? 0.073f : 0.026f), 0.42f, 0.019f },
+            .halign = FONT_JUSTIFYCENTER, .valign = FONT_JUSTIFYMIDDLE,
+            .color = MAKE(color32_t, 0, 0, 0, 240),
+        };
+        text.rect.x += 0.001f;
+        text.rect.y += 0.001f;
+        re.DrawText(&text);
+        text.rect.x -= 0.001f;
+        text.rect.y -= 0.001f;
+        text.color = COLOR32_WHITE;
+        re.DrawText(&text);
+    }
+}
+
 void SCR_DrawLayout(void) {
     active_tooltip = NULL;
     SCR_BeginSelectedEntityDraw();
     SCR_DrawEntityOverlays();
+    SCR_DrawPlayerLabels();
 
     /* Script panels (multiboard, leaderboard, timers) go under the HUD layers: the command card's
      * tooltip is drawn in its own layer and has to stay readable above a multiboard. */

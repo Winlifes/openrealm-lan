@@ -33,7 +33,9 @@ void UI_LoadHudLoading(void) {
     }
 }
 
-static cstring_t loading_text(mapInfo_t const *info, cstring_t text) { return text && *text ? G_MapString(info, text) : " "; }
+static cstring_t loading_text(mapInfo_t const *info, cstring_t text) {
+    return text && *text ? G_MapPresentationString(info, text) : " ";
+}
 
 /* Repeat native rows using their authored stride; only participating lobby slots enter this list. */
 static void loading_players(mapInfo_t const *info) {

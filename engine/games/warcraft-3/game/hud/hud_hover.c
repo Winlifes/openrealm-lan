@@ -124,6 +124,14 @@ void UI_WriteHoverLayout(edict_t *ent) {
             .textaligny = FONT_JUSTIFYMIDDLE),
         .padding_x = 0.008f,
         .padding_y = 0.006f);
+    cstring_t label = ent->client->ps.number < MAX_CLIENTS
+        ? gi.GetConfigstring(CS_PLAYER_LABELS + ent->client->ps.number) : NULL;
+    cstring_t label_font = gi.GetConfigstring(CS_PLAYER_LABEL_FONT);
+    if (label && *label && (!label_font || !*label_font)) {
+        char font[16];
+        snprintf(font, sizeof(font), "%u", (unsigned)data.text.font);
+        gi.configstring(CS_PLAYER_LABEL_FONT, font);
+    }
     UI_SetFramePoint(&frame.points.x[FPP_MID], FPP_MID, 0, 0.0f, false);
     UI_SetFramePoint(&frame.points.y[FPP_MAX], FPP_MIN, health_row, 0.0f, true);
     UI_WriteProxyFrame(&frame, &data, sizeof(data));

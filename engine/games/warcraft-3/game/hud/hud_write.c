@@ -31,7 +31,7 @@ cstring_t UI_LevelStringSafe(cstring_t text) {
     if (!text || !*text) {
         return " ";
     }
-    return G_LevelString(text);
+    return G_PresentationString(text);
 }
 
 void UI_SetCurrentClient(gameClient_t *client) {

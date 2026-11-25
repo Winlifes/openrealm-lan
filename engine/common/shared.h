@@ -239,6 +239,7 @@ enum {
     FLAG(EF_OVERLAY_B, 24), /* game-authored entity overlay category B */
     FLAG(EF_OVERLAY_C, 25), /* game-authored entity overlay category C */
     FLAG(EF_OVERLAY_MANA, 26), /* entity overlay may display the authored mana value */
+    FLAG(EF_PLAYER_LABEL, 27), /* visible entity may display its owner's room name */
 };
 
 enum {
@@ -308,6 +309,8 @@ enum {
     /* Generic scene water tint: "r g b a" as normalized floats. Empty means neutral white. */
     CS_SCENE_WATER_COLOR = 14,
     CS_COMMANDBAR_HOTKEY_COMMAND = 15, // optional command name for authoritative command-bar keys
+    CS_MATCH_LOADING = 16, // ready count, total count, then player number and percentage pairs
+    CS_PLAYER_LABEL_FONT = 17, // optional font index for persistent player name labels
     CS_MAXCLIENTS = 30,
     CS_MAPCHECKSUM = 31,        // for catching cheater maps
     CS_MODELS = 32,
@@ -317,7 +320,8 @@ enum {
     CS_ITEMS = (CS_FONTS+MAX_FONTSTYLES),
     CS_PLAYERSKINS = (CS_ITEMS+MAX_ITEMS),
     CS_GENERAL = (CS_PLAYERSKINS+MAX_CLIENTS),
-    MAX_CONFIGSTRINGS = (CS_GENERAL+MAX_GENERAL),
+    CS_PLAYER_LABELS = (CS_GENERAL+MAX_GENERAL),
+    MAX_CONFIGSTRINGS = (CS_PLAYER_LABELS+MAX_CLIENTS),
 };
 
 #define ID_MDLX MAKEFOURCC('M','D','L','X')

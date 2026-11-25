@@ -618,11 +618,22 @@ static void CL_UICvarRegister(cstring_t name, cstring_t default_value, uint32_t 
     Cvar_Get(name, default_value, flags);
 }
 
+void CL_SendCmd(void);
+
 void CL_SetLoadingProgress(float progress) {
     if (progress < 0.0f) progress = 0.0f;
     if (progress > 1.0f) progress = 1.0f;
     if (progress <= cl.loading_progress) return;
     cl.loading_progress = progress;
+    if (cls.state == ca_connected && Cvar_Integer("cl_report_loading", 0)) {
+        char command[32];
+        unsigned percent = MIN(99u, (unsigned)(progress * 100.f + 0.5f));
+        snprintf(command, sizeof(command), "loading_progress %u", percent);
+        sizeBuf_t *reliable = Netchan_Reliable(&cls.netchan);
+        MSG_WriteByte(reliable, clc_stringcmd);
+        MSG_WriteString(reliable, command);
+        CL_SendCmd();
+    }
     SCR_UpdateLoadingPlaque();
 }
 

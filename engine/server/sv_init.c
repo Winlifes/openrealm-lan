@@ -378,6 +378,7 @@ void SV_DirectConnect(netadr_t const *from, cstring_t userinfo) {
         Netchan_OutOfBandPrint(NS_SERVER, existing->netchan.remote_address, "client_connect %d", BZ_PROTOCOL_VERSION);
         return;
     }
+    if (sv.waiting_for_players) return;
     if ((Cvar_Integer("online_mode", 0) && from->type != NA_EOS && from->type != NA_LOOPBACK) ||
         (from->type == NA_EOS && sv.state != ss_lobby)) {
         fprintf(stderr, "SV_DirectConnect: Internet games admit lobby members before match start\n");
@@ -520,6 +521,11 @@ void SV_Map(cstring_t mapFilename) {
     }
     SV_CreateBaseline();
 //    SV_LoadModels(); // model animation data is loaded lazily by game modules now
+    sv.waiting_for_players = had_lobby && num_lobby_clients && Cvar_Integer("sv_wait_for_players", 0);
+    if (sv.waiting_for_players) FOR_LOOP(i, svs.num_clients) {
+        client_t const *cl = &svs.clients[i];
+        if (cl->state == cs_connected) SV_PublishRoomPlayerName(cl);
+    }
     sv.next_frame_msec = svs.realtime;
     sv.state = ss_game;
     /* Q2 defers at the map transition: loading-screen callbacks can repeat and must not replace this tail. */
@@ -553,7 +559,8 @@ static bool SV_BeginLobby(cstring_t mapFilename, bool local_only) {
     snprintf(sv.configstrings[CS_WORLD], sizeof(sv.configstrings[CS_WORLD]), "%s", mapFilename);
     SV_LobbyInit(mapFilename);
     SV_InitMulticast();
-    SV_ClientConnect();
+    /* Hosted rooms have no in-process player to receive loading messages. */
+    if (!Cvar_Integer("dedicated", 0) || !Cvar_Integer("sv_wait_for_players", 0)) SV_ClientConnect();
     fprintf(stderr, "Lobby initialized for %s\n", mapFilename);
     return true;
 }

@@ -235,6 +235,63 @@ TEST(server_net, ready_wait_keeps_handshake_alive_without_advancing_simulation) 
     SV_Shutdown(); NET_Shutdown();
 }
 
+static uint32_t synchronized_begins;
+static void test_synchronized_begin(edict_t *ent) {
+    (void)ent;
+    synchronized_begins++;
+}
+
+TEST(server_net, lobby_start_does_not_advance_until_all_loading_clients_are_ready) {
+    static struct client_s players[3];
+    NET_Shutdown(); reset_server_state(3);
+    SV_InitGame();
+    SV_CreateBaseline();
+    memset(players, 0, sizeof(players));
+    sv.state = ss_game;
+    sv.waiting_for_players = true;
+    svs.num_clients = 3;
+    test_ge.ClientBegin = test_synchronized_begin;
+    synchronized_begins = 0;
+    FOR_LOOP(i, 3) {
+        svs.clients[i].state = cs_connected;
+        svs.clients[i].playernum = i;
+        svs.clients[i].edict = &test_edicts[i];
+        test_edicts[i].client = &players[i];
+        svs.clients[i].netchan.remote_address.type = NA_LOOPBACK;
+        SZ_Init(&svs.clients[i].netchan.message, svs.clients[i].netchan.message_buf, MAX_MSGLEN);
+    }
+
+    SV_Begin_f(&svs.clients[0], 0, NULL);
+    SV_Frame(3000);
+    T_EQ(synchronized_begins, 0);
+    T_EQ(sv.framenum, 0);
+    T_EQ(svs.clients[0].state, cs_connected);
+    T_STREQ(sv.configstrings[CS_MATCH_LOADING], "1 3 0 100 1 0 2 0");
+
+    uint8_t command[64];
+    sizeBuf_t progress = { .data = command, .maxsize = sizeof(command) };
+    MSG_WriteString(&progress, "loading_progress 42");
+    SV_ExecuteUserCommand(&progress, &svs.clients[1]);
+    SV_Frame(FRAMETIME);
+    T_STREQ(sv.configstrings[CS_MATCH_LOADING], "1 3 0 100 1 42 2 0");
+
+    SV_Begin_f(&svs.clients[1], 0, NULL);
+    SV_Frame(FRAMETIME);
+    T_EQ(synchronized_begins, 0);
+    T_EQ(sv.time, 0);
+    T_STREQ(sv.configstrings[CS_MATCH_LOADING], "2 3 0 100 1 100 2 0");
+
+    SV_DropClient(&svs.clients[2]);
+    SV_Frame(FRAMETIME);
+    T_EQ(synchronized_begins, 2);
+    T_EQ(svs.clients[0].state, cs_spawned);
+    T_EQ(svs.clients[1].state, cs_spawned);
+    T_EQ(sv.framenum, 1);
+    T_EQ(sv.time, FRAMETIME);
+    T_STREQ(sv.configstrings[CS_MATCH_LOADING], "2 2 0 100 1 100");
+    SV_Shutdown(); NET_Shutdown();
+}
+
 static uint32_t restore_map_calls, restore_user_notifications, restore_script_notifications;
 static bool restore_file_succeeds;
 

@@ -456,12 +456,12 @@ static bool G_BuildCommandButtonState(edict_t *ent, cstring_t code, bool researc
          * as a CSV list would lose literal commas or an explicit empty edit. */
         if (title) {
             UI_CopyString(button->tooltip, sizeof(button->tooltip),
-                G_FormatTooltipLevel(G_ProcessTooltipString(title), rank));
+                G_FormatTooltipLevel(G_ProcessTooltipString(G_PresentationString(title)), rank));
             gi.MemFree(title);
         }
         if (body) {
             UI_CopyString(button->ubertip, sizeof(button->ubertip),
-                G_FormatTooltipLevel(G_ProcessTooltipString(body), rank));
+                G_FormatTooltipLevel(G_ProcessTooltipString(G_PresentationString(body)), rank));
             gi.MemFree(body);
         }
     }

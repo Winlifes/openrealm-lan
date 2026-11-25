@@ -95,7 +95,7 @@ async function initializeRoom(room) {
   try {
     const args = ['-data', join(root,'data-current'), '+dedicated','1',
       '+game_port',String(room.port), '+fs_expansion','1', '+set','wc3_locale','zhCN',
-      '+set','sv_local_signon_batch','1',
+      '+set','sv_local_signon_batch','1', '+set','sv_wait_for_players','1',
       '+set','com_frame_limit','0', '+set','com_fast_forward','0'];
     const rate = room.map.publicSnapshotRateBytesPerSecond;
     if (room.site === publicSite && Number.isInteger(rate) && rate > 0 && rate <= 0x7fffffff)

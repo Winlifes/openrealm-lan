@@ -8,6 +8,8 @@ On desktop browsers with Pointer Lock, entering fullscreen also locks the mouse 
 
 The room service uses 8 KiB sign-on datagrams on its loopback UDP hop. Larger batches reduce the number of WebSocket round trips needed to initialize the map.
 
+The browser rooms retain the match loading screen until each connected human has finished registering the scene. The server keeps sign-on and disconnect handling active while it waits, then starts the match scripts and clock. The loading screen shows how many players are ready.
+
 ## Prepare the runtime directory
 
 Set the following values from the repository root. Use a dedicated runtime directory outside the checkout.
@@ -59,15 +61,17 @@ For room downloads, pass `--preload-index /path/to/preload.index.json` with a JS
 
 The download screen checks the client, shared bundle, selected map archive, and selected map bundle before joining. The browser downloads only the room's selected map and expands individual bundled files as the engine opens them. Creating a room starts the native server after the host's download succeeds. An unpacked release with a preload index downloads the listed files individually before joining. Files needed later in a match still load on demand. The in-game loading bar covers server world initialization, sign-on, and scene registration.
 
-Add measured command-card and other interface paths to `retainAfterLoad` under the map's archive path in the preload index. Include each retained path in the same map's preload or the shared lobby preload. The browser keeps those entries available after the first game frame and releases the rest of the startup bundles.
+Include measured command-card and other interface assets in the selected map bundle. The browser keeps downloaded entries compressed until the engine opens them. Once an entry is mounted, it drops the cached copy. After loading, any unopened entries stay available for the match.
 
-Measure in-match resource requests and frame intervals before extending a map preload. A chain of requests for a new unit's model, portrait, textures and effects can suspend engine frames while the page continues to respond. Add the measured files to the selected map's preload and `retainAfterLoad`, then repeat the same cold-cache play sequence. Keep unrelated maps out of the bundle.
+Measure in-match resource requests and frame intervals before extending a map preload. A chain of requests for a new unit's model, portrait, textures and effects can suspend engine frames while the page continues to respond. Add the measured files to the selected map's preload, then repeat the same cold-cache play sequence. Keep unrelated maps out of the bundle.
 
 Caddy can serve optional `.gz` sidecars for measured preload files. Keep their uncompressed originals in the served mirror.
 
 For a browser-only update that has been tested against the running native version, stage the release with `--server-build CURRENT_NATIVE_BUILD`. The browser then uses that build ID during the WebSocket handshake while the launcher points to the new browser release directory.
 
 Add player-facing changes to `site/release-notes.json` under the new client release. The room list checks `play/game/version.json` for the published client release and offers a manual refresh when it changes. `stage-lan-site.py` copies this file beside the launcher. When a public proxy uses a separate launcher, route its version file to the same directory. Keep both files revalidated at the proxy.
+
+Simplified Chinese map display overrides live in the Warcraft III share directory under `Localization/Maps/zhCN`. Each file matches an archive filename and uses the 16-digit FNV-1a hash of the resolved UTF-8 text as its lookup key. Translations are applied when publishing map text and tooltips to the interface. Chat commands and JASS string lookups use the archive values.
 
 Use `performance.getEntriesByType('mark')` in the browser to inspect the `wc3-resources-start` through `wc3-resources-mounted` interval and the later `wc3-match-loading` through `wc3-match-ready` interval. In the corresponding `development/room-logs/<room-id>.log`, `SV_LobbyStartMatch:` and `Server initialized.` mark the server's world load. The browser's match interval also includes game sign-on and scene registration.
 

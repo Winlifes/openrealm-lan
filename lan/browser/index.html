@@ -33,6 +33,18 @@
   #room-loading-actions a:hover, #room-loading-actions button:hover { background: #2b3a50; }
   #early-map-loading { gap: 14px; }
   #early-map-progress { width: min(360px, 74vw); height: 12px; accent-color: #c8a765; }
+  #match-players { position: absolute; z-index: 11; bottom: 7%; left: 50%; transform: translateX(-50%);
+                   width: min(430px, 90vw); box-sizing: border-box; padding: 12px 16px;
+                   background: #18150f; color: #f5e6bc; border: 1px solid #b89651; border-radius: 4px;
+                   font: 14px/1.5 system-ui, sans-serif; }
+  #match-players header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  #match-players a { color: inherit; flex: none; }
+  #match-player-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 35vh; overflow: auto; }
+  #match-player-list li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(50px, 1fr) 4em;
+                          align-items: center; gap: 10px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+  #match-player-list li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #match-player-list progress { width: 100%; height: 8px; accent-color: #c8a765; }
+  #match-player-list li span:last-child { text-align: right; }
   #game-controls { position: absolute; z-index: 40; top: 42px; right: 8px; display: flex; gap: 5px; }
   #game-controls button { height: 30px; padding: 0 8px; border: 1px solid rgba(220,230,245,.55);
             border-radius: 4px; background: rgba(0,0,0,.65); color: #fff; font: 12px/1 system-ui, sans-serif;
@@ -68,6 +80,10 @@
     <span id="early-map-phase" role="status">正在载入对局…</span>
     <progress id="early-map-progress" max="1" aria-label="对局加载进度"></progress>
   </div>
+  <section id="match-players" aria-labelledby="match-player-count" hidden>
+    <header><strong id="match-player-count" role="status"></strong><a id="match-loading-back">返回大厅</a></header>
+    <ul id="match-player-list"></ul>
+  </section>
   <div id="game-controls">
     <button id="pointer-lock-button" type="button" title="按 Esc 释放鼠标" aria-pressed="false" hidden disabled>锁定鼠标</button>
     <button id="fullscreen-button" type="button" aria-pressed="false">全屏</button>
@@ -110,7 +126,6 @@
   let assetVersion;
   let loadFailed = false;
   const warmAssets = new Map();
-  let matchAssetPaths = new Set();
   function setStatus(status) {
     if (loadFailed) return;
     window.__status = status;
@@ -145,6 +160,46 @@
   function mark(name) { performance.mark(name); }
   const presentMapLoading = window.openrealmEarlyMapLoading;
   const mapPhase = document.getElementById('early-map-phase');
+  const matchPlayers = document.getElementById('match-players');
+  const matchPlayerList = document.getElementById('match-player-list');
+  const matchPlayerNames = new Map();
+  let matchPlayerProgress;
+  document.getElementById('match-loading-back').href = sitePath('rooms.html');
+  function showMatchLoadingPlayers() {
+    if (!isRoom || !loadingMatch || loadFailed || !matchPlayerProgress) return;
+    const [ready,total,...players] = matchPlayerProgress;
+    if (!total || players.length !== total * 2) return;
+    document.getElementById('match-player-count').textContent = ready === total
+      ? '所有玩家已就绪，即将开局' : `等待玩家加载 · ${ready} / ${total} 已就绪`;
+    const rows = [];
+    for (let i = 0; i < players.length; i += 2) {
+      const player = players[i];
+      const percent = players[i + 1];
+      const name = matchPlayerNames.get(player) || `玩家 ${player + 1}`;
+      const row = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = name;
+      label.title = name;
+      const progress = document.createElement('progress');
+      progress.max = 100;
+      progress.value = percent;
+      progress.setAttribute('aria-label', name + '的开局加载进度');
+      const status = document.createElement('span');
+      status.textContent = percent === 100 ? '已就绪' : `${percent}%`;
+      row.append(label, progress, status);
+      rows.push(row);
+    }
+    matchPlayerList.replaceChildren(...rows);
+    matchPlayers.hidden = false;
+  }
+  window.openrealmMatchLoadingPlayers = state => {
+    matchPlayerProgress = state.trim().split(/\s+/).map(Number);
+    showMatchLoadingPlayers();
+  };
+  window.openrealmRoomPlayerName = (player, name) => {
+    matchPlayerNames.set(player, name);
+    showMatchLoadingPlayers();
+  };
   let watchingRoom = isRoom;
   let loadingMatch = false;
   window.openrealmEarlyMapLoading = function (active, progress, submitted) {
@@ -153,12 +208,15 @@
       watchingRoom = false;
       mapPhase.textContent = progress >= 1 ? '正在进入对局…' : '正在载入对局…';
     } else {
-      wc3RoomAssets.retain(warmAssets, matchAssetPaths);
+      matchPlayers.hidden = true;
+      matchPlayerProgress = null;
+      wc3RoomAssets.retain(warmAssets);
     }
     if (active !== loadingMatch) {
       loadingMatch = active;
       mark(active ? 'wc3-match-loading' : 'wc3-match-ready');
     }
+    if (active) showMatchLoadingPlayers();
     presentMapLoading?.(active, progress, submitted);
   };
 
@@ -262,6 +320,7 @@
     const message = error?.message || '资源初始化失败，请重试';
     window.__errors.push(message);
     watchingRoom = false;
+    matchPlayers.hidden = true;
     warmAssets.clear();
     finishDownloadProgress();
     presentMapLoading?.(false, 0, false);
@@ -310,7 +369,12 @@
     const path = filename.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
     if (!Module.WC3_ASSET_INDEX.has(path)) return 0;
     const cached = warmAssets.get(path);
-    if (cached instanceof Uint8Array) return mountLooseAsset(diskPath, cached);
+    const mountCached = bytes => {
+      const size = mountLooseAsset(diskPath, bytes);
+      if (size) warmAssets.delete(path);
+      return size;
+    };
+    if (cached instanceof Uint8Array) return mountCached(cached);
     const fetchMissing = () => downloadLooseAsset(path, Module.WC3_B64_SET).then(bytes => {
       const size = mountLooseAsset(diskPath, bytes);
       if (size) console.debug('[fetch-on-demand] ' + path + ' (' + size + ' bytes)');
@@ -321,8 +385,8 @@
     });
     if (!cached) return fetchMissing();
     const expanded = wc3RoomAssets.inflate(cached);
-    if (expanded instanceof Uint8Array) return mountLooseAsset(diskPath, expanded);
-    return expanded.then(bytes => mountLooseAsset(diskPath, bytes)).catch(error => {
+    if (expanded instanceof Uint8Array) return mountCached(expanded);
+    return expanded.then(mountCached).catch(error => {
       console.warn('解压开局资源失败', path, error.message);
       return fetchMissing();
     });
@@ -367,7 +431,6 @@
     if (isRoom && !mapPaths.includes(roomMap)) throw new Error('当前版本找不到房间地图，请返回房间列表');
     const plan = isRoom ? JSON.parse(preloadText) : null;
     const mapFiles = plan && Object.hasOwn(plan.maps, roomMap) ? plan.maps[roomMap] : [];
-    matchAssetPaths = new Set(plan?.retainAfterLoad?.[roomMap] ?? []);
     const archive = plan?.archives?.[roomMap];
     const usePacks = plan?.packs && typeof DecompressionStream === 'function';
     const bundles = usePacks ? [
@@ -402,7 +465,7 @@
       sidecars,
       download('openwarcraft3.js', '客户端脚本'),
       ...bundles.map(async ([name, files, label]) => {
-        const bytes = await download(name, label);
+        const bytes = await download(name, label, name + '?local=1');
         if (loadFailed) return;
         try {
           for (const [path, data] of wc3RoomAssets.unpack(bytes, files)) warmAssets.set(path, data);
@@ -441,6 +504,7 @@
       let args = [];
       const nickname = (localStorage.getItem('winlife-wc3-nickname') || '玩家').replace(/["\\+;\x00-\x1f]/g,' ').trim().slice(0,24);
       if (nickname) args.push('+set','name',nickname);
+      if (isRoom) args.push('+set', 'cl_report_loading', '1');
       if (query.get('debug') === '1') args.push('+set','cl_ui_hit_debug','1');
       return args;
     })()),

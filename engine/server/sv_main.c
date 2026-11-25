@@ -329,6 +329,37 @@ void SV_SetPaused(bool paused) {
     }
 }
 
+/* Each client sends begin after world and media registration. Keep the
+ * loading screen alive without invoking the game's start scripts or advancing
+ * its clock until every connected participant has sent it. */
+static bool SV_UpdateWaitingForPlayers(void) {
+    if (!sv.waiting_for_players) return false;
+    uint32_t ready = 0, total = 0;
+    char players[MAX_CLIENTS * 8 + 1] = { 0 };
+    size_t used = 0;
+    FOR_LOOP(i, svs.num_clients) {
+        client_t const *cl = &svs.clients[i];
+        if (cl->state != cs_connected) continue;
+        total++;
+        if (cl->match_ready) ready++;
+        unsigned player = MIN(cl->playernum, MAX_CLIENTS - 1);
+        used += (size_t)snprintf(players + used, sizeof(players) - used, " %u %u", player,
+                                cl->match_ready ? 100u : (unsigned)cl->loading_progress);
+    }
+    PATHSTR progress;
+    snprintf(progress, sizeof(progress), "%u %u%s", ready, total, players);
+    if (strcmp(progress, sv.configstrings[CS_MATCH_LOADING]))
+        SV_SetConfigString(CS_MATCH_LOADING, progress, (uint32_t)strlen(progress) + 1);
+    sv.next_frame_msec = svs.realtime;
+    if (!total || ready != total) return true;
+    sv.waiting_for_players = false;
+    FOR_LOOP(i, svs.num_clients) {
+        if (svs.clients[i].state == cs_connected && svs.clients[i].match_ready)
+            SV_ActivateClient(&svs.clients[i]);
+    }
+    return false;
+}
+
 /* Main server tick called from the platform event loop with the elapsed
  * milliseconds since the last call.  Network input remains live while the
  * authoritative simulation is paused. */
@@ -364,6 +395,15 @@ void SV_Frame(uint32_t msec) {
     if (sv_external_quit_pending) {
         sv_external_quit_pending = false;
         Com_Quit();
+        return;
+    }
+
+    if (SV_UpdateWaitingForPlayers()) {
+        sv.pause_msec += msec;
+        if (sv.pause_msec >= FRAMETIME) {
+            sv.pause_msec %= FRAMETIME;
+            SV_SendClientMessages();
+        }
         return;
     }
 

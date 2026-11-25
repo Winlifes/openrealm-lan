@@ -1,0 +1,34 @@
+// Simplified Chinese display overrides. Keys are FNV-1a of the resolved UTF-8 source.
+[Text]
+// map UI
+0ad267c3f06f942c=强盗岭
+// map UI
+128929823747e466=木材
+// map UI
+192e9a9d690969b8=藏宝海湾
+// map UI
+333dc56ddffd8ea0=玩家
+// map UI
+562df9206f1a7a05=双河流域
+// map UI
+5eac56eb4a4c6eb7=扭曲草地
+// map UI
+90d4ea74cee0e57c=|r 击!
+// map UI
+94a4a0b3d784700d=战败
+// map UI
+9b0c180237f7fb88=木材
+// map UI
+aa8aa81ad6f055fd=等级
+// map UI
+b9f1829b3a61e687=职等
+// map UI
+ba1e8892999bb878=电脑
+// map UI
+c0849927e70201e5=英雄
+// map UI
+c416c97e0d3218b3=金币
+// map UI
+c6c6163a3fa8355c=胜利
+// map UI
+d579803b434fe68f=对局结束
