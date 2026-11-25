@@ -1,5 +1,12 @@
 [
   {
+    "release": "r94-game-station-real-38-room-cache",
+    "changes": [
+      "浏览器保存已校验的开局资源。再次进入同一张地图时复用本机缓存，版本更新后也可继续使用内容没变的资源。",
+      "进房页面区分准备资源、读取本机缓存和下载缺少的文件。"
+    ]
+  },
+  {
     "release": "r94-game-station-real-37-movement",
     "changes": [
       "修复单位移动目标丢失后可能导致对局服务端崩溃的问题。",

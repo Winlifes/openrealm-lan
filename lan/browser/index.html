@@ -82,7 +82,7 @@
   <div id="status">
     <section class="loading-frame" aria-labelledby="status-message">
       <span id="status-message" role="status">正在准备客户端…</span>
-      <progress id="room-download-progress" aria-label="进房资源下载进度"></progress>
+      <progress id="room-download-progress" aria-label="进房资源准备进度"></progress>
       <span id="resource-status"></span>
       <div id="room-loading-actions" hidden>
         <button id="room-download-retry" type="button" hidden>重试</button>
@@ -139,11 +139,13 @@
   roomActions.hidden = !isRoom;
   retry.addEventListener('click', () => location.reload());
   let roomMap;
+  let roomArchive;
   let releaseFiles;
   let resourceBundle;
   let assetVersion;
   let loadFailed = false;
   const warmAssets = new Map();
+  const startupCache = wc3RoomAssets.openStartupCache(siteRoot);
   function setStatus(status) {
     if (loadFailed) return;
     window.__status = status;
@@ -154,15 +156,22 @@
     roomProgress.hidden = true;
     resourceStatus.textContent = '';
   }
-  function downloadProgress(sizes) {
+  function startupProgress(sizes) {
     const total = [...sizes.values()].reduce((sum, size) => sum + size, 0);
     const received = new Map();
     let renderPending = false;
+    let downloading = false;
     const megabytes = bytes => (bytes / (1024 * 1024)).toFixed(1);
     roomProgress.max = total;
     roomProgress.value = 0;
-    return (name, bytes) => {
+    return (name, bytes, cached = false) => {
       if (!sizes.has(name) || roomProgress.hidden) return;
+      if (cached) {
+        if (!received.size) setStatus('正在读取本机缓存…');
+      } else if (!downloading) {
+        downloading = true;
+        setStatus('正在下载缺少的开局资源…');
+      }
       received.set(name, bytes);
       if (renderPending) return;
       renderPending = true;
@@ -171,7 +180,7 @@
         if (roomProgress.hidden) return;
         const loaded = [...received.values()].reduce((sum, size) => sum + size, 0);
         roomProgress.value = loaded;
-        resourceStatus.textContent = megabytes(loaded) + ' / ' + megabytes(total) + ' MiB';
+        resourceStatus.textContent = '已准备 ' + megabytes(loaded) + ' / ' + megabytes(total) + ' MiB';
       });
     };
   }
@@ -335,6 +344,18 @@
       progress?.(bytes);
     }), {fallback, onRetry: () => progress?.(0)});
   }
+  async function prepareStartupFile(name, url, label, file, progress = () => {}, fallback) {
+    const cache = await startupCache;
+    const stored = await cache?.read(name, file);
+    if (stored) {
+      progress(name, stored.byteLength, true);
+      return stored;
+    }
+    progress(name, 0);
+    const bytes = await readStartupFile(url, label, file, size => progress(name, size), fallback);
+    await cache?.write(name, file, bytes);
+    return bytes;
+  }
   function showLoadFailure(error) {
     if (loadFailed) return;
     console.error(error);
@@ -388,6 +409,9 @@
   }
   function fetchAssetForEngine(diskPath, filename) {
     const path = filename.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
+    // MEMFS is case-sensitive; the engine may ask for a different spelling
+    // of the map path than the catalog entry mounted during startup.
+    if (path === roomMap && roomArchive) return mountLooseAsset(diskPath, roomArchive);
     if (!Module.WC3_ASSET_INDEX.has(path)) return 0;
     const cached = warmAssets.get(path);
     const mountCached = bytes => {
@@ -437,14 +461,15 @@
       title.textContent = mapName;
       title.hidden = false;
     }
-    setStatus(mapName ? '正在下载「' + mapName + '」的开局资源…' : '正在准备客户端和基础资源…');
+    setStatus(mapName ? '正在准备「' + mapName + '」的开局资源…' : '正在准备客户端和基础资源…');
     const sidecars = fetch(dataUrl('b64.index.txt'), {signal:AbortSignal.timeout(8000)}).then(async response => {
       if (response.status === 404) return '';
       if (!response.ok) throw new Error('HTTP ' + response.status);
       return response.text();
     }).catch(error => { console.warn('资源编码目录不可用，使用原始文件', error); return ''; })
       .then(text => new Set(pathList(text.toLowerCase())));
-    const readText = async (name, label) => new TextDecoder().decode(await readStartupFile(name, label, releaseFiles[name]));
+    const readText = async (name, label) =>
+      new TextDecoder().decode(await prepareStartupFile(name, name, label, releaseFiles[name]));
     const [assets, maps, preloadText, mapIds] = await Promise.all([
       readText('assets.index.txt', '资源目录'),
       readText('playable-maps.index.txt', '可玩地图目录'),
@@ -466,13 +491,13 @@
     const core = ['openwarcraft3.wasm', 'openwarcraft3.data', 'openwarcraft3.js', 'bootstrap.mpq'];
     const sizes = new Map([...core, ...bundles.map(([name]) => name)].map(name => [name, releaseFiles[name]?.bytes]));
     if (archive) sizes.set(roomMap, archive.bytes);
-    const progress = downloadProgress(sizes);
-    const download = (name, label, fallback) => readStartupFile(name, label, releaseFiles[name],
-      bytes => progress(name, bytes), fallback);
+    const progress = startupProgress(sizes);
+    const prepareFile = (name, label, fallback) =>
+      prepareStartupFile(name, name, label, releaseFiles[name], progress, fallback);
     const selectedMap = async () => {
       if (!isRoom) return null;
       const url = dataUrl(roomMap, assetVersion);
-      const bytes = archive ? await readStartupFile(url, '房间地图', archive, size => progress(roomMap, size)) :
+      const bytes = archive ? await prepareStartupFile(roomMap, url, '房间地图', archive, progress) :
         await fetchAsset(url, '房间地图', async response => {
           const data = new Uint8Array(await response.arrayBuffer());
           if (!data.byteLength) throw new Error('Empty map archive');
@@ -482,16 +507,16 @@
       return bytes;
     };
     if (isRoom) mark('wc3-room-preload-start');
-    const [bootstrap, engineModule, engineData, mapBytes, encodings] = await Promise.all([
-      download('bootstrap.mpq', '基础资源包', 'bootstrap.mpq?local=1'),
-      download('openwarcraft3.wasm', '客户端引擎', 'openwarcraft3.wasm?local=1')
+    const [bootstrap, engineModule, engineData, mapBytes, encodings, engineScript] = await Promise.all([
+      prepareFile('bootstrap.mpq', '基础资源包', 'bootstrap.mpq?local=1'),
+      prepareFile('openwarcraft3.wasm', '客户端引擎', 'openwarcraft3.wasm?local=1')
         .then(bytes => WebAssembly.compile(bytes)),
-      download('openwarcraft3.data', '客户端数据包', 'openwarcraft3.data?local=1'),
+      prepareFile('openwarcraft3.data', '客户端数据包', 'openwarcraft3.data?local=1'),
       selectedMap(),
       sidecars,
-      download('openwarcraft3.js', '客户端脚本'),
+      prepareFile('openwarcraft3.js', '客户端脚本'),
       ...bundles.map(async ([name, files, label]) => {
-        const bytes = await download(name, label, name + '?local=1');
+        const bytes = await prepareFile(name, label, name + '?local=1');
         if (loadFailed) return;
         try {
           for (const [path, data] of wc3RoomAssets.unpack(bytes, files)) warmAssets.set(path, data);
@@ -505,7 +530,7 @@
       await preloadLooseAssets([...new Set([...plan.lobby, ...mapFiles])], encodings);
     }
     if (isRoom) mark('wc3-room-preload-ready');
-    return {paths, bootstrap, sidecars:encodings, mapPaths, mapBytes, engineModule, engineData:engineData.buffer};
+    return {paths, bootstrap, sidecars:encodings, mapPaths, mapBytes, engineModule, engineData:engineData.buffer, engineScript};
   }
   window.addEventListener('error', function (e) { window.__errors.push(String(e.message)); });
   var Module = {
@@ -599,6 +624,7 @@
   function mountBrowserResources() {
     const {paths, bootstrap, sidecars, mapPaths, mapBytes} = resourceBundle;
     resourceBundle = null;
+    roomArchive = mapBytes;
     Module.WC3_ASSET_INDEX = paths;
     Module.WC3_B64_SET = sidecars;
     const fs = Module.FS;
@@ -634,7 +660,7 @@
     releaseFiles = files;
     Module.WC3_DATA_V = encodeURIComponent(release.build);
     if (active) roomMap = new URL(active.url, location.origin).searchParams.get('map');
-    let {engineModule, engineData, ...prepared} = await prepareBrowserResources(active?.map || draft?.mapName);
+    let {engineModule, engineData, engineScript, ...prepared} = await prepareBrowserResources(active?.map || draft?.mapName);
     finishDownloadProgress();
     if (isRoom) {
       const ready = checkRoom(createMap ? await createPreparedRoom(draft) : await readRoomForJoin(), release.build);
@@ -661,12 +687,20 @@
     const scriptIntegrity = 'sha256-' + btoa(scriptHash.match(/../g).map(hex => String.fromCharCode(parseInt(hex, 16))).join(''));
     const loadScript = retried => {
       const script = document.createElement('script');
-      script.src = retried ? 'openwarcraft3.js?retry=1' : 'openwarcraft3.js';
-      script.integrity = scriptIntegrity;
+      // Reuse the verified bytes prepared before joining. Browsers that block
+      // blob scripts still have the ordinary integrity-checked URL path.
+      const objectUrl = engineScript && globalThis.crypto?.subtle &&
+        URL.createObjectURL(new Blob([engineScript], {type:'text/javascript'}));
+      engineScript = null;
+      const releaseUrl = () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+      script.src = objectUrl || (retried ? 'openwarcraft3.js?retry=1' : 'openwarcraft3.js');
+      if (!objectUrl) script.integrity = scriptIntegrity;
+      script.onload = releaseUrl;
       script.onerror = () => {
+        releaseUrl();
         script.remove();
         if (retried) showLoadFailure(new Error('客户端脚本加载失败，请重试'));
-        else loadScript(true);
+        else loadScript(!objectUrl);
       };
       document.head.appendChild(script);
     };

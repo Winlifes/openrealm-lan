@@ -32,6 +32,41 @@ const wc3RoomAssets = (() => {
     return bytes;
   }
 
+  async function openStartupCache(root, storage = globalThis.caches) {
+    if (!globalThis.crypto?.subtle) return null;
+    try {
+      const cache = await storage?.open('openrealm-room-assets-v1');
+      if (!cache) return null;
+      const key = name => new URL('play/.room-cache/' + encodeURIComponent(name), root).href;
+      const hashHeader = 'X-OpenRealm-Asset-SHA256';
+      return {
+        async read(name, file) {
+          if (!file?.sha256) return null;
+          try {
+            const response = await cache.match(key(name));
+            if (response?.headers.get(hashHeader) === file.sha256)
+              return await readBinary(response, file);
+          } catch {
+            // Cache access and integrity failures both fall back to the network.
+          }
+          return null;
+        },
+        async write(name, file, bytes) {
+          if (!file?.sha256) return;
+          try {
+            // A new revision overwrites the same logical file, so old versions
+            // do not add up and unchanged files are shared across releases.
+            await cache.put(key(name), new Response(bytes, {headers:{[hashHeader]:file.sha256}}));
+          } catch {
+            // The room still works when the browser has no available storage.
+          }
+        }
+      };
+    } catch {
+      return null;
+    }
+  }
+
   function unpack(bytes, paths) {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const assets = new Map();
@@ -68,5 +103,5 @@ const wc3RoomAssets = (() => {
     }
   }
 
-  return {readBinary, unpack, inflate, retain};
+  return {readBinary, openStartupCache, unpack, inflate, retain};
 })();

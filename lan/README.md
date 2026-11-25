@@ -61,6 +61,8 @@ For room downloads, pass `--preload-index /path/to/preload.index.json` with a JS
 
 The download screen checks the client, shared bundle, selected map archive, and selected map bundle before joining. The browser downloads only the room's selected map and expands individual bundled files as the engine opens them. Creating a room starts the native server after the host's download succeeds. An unpacked release with a preload index downloads the listed files individually before joining. Files needed later in a match still load on demand. The in-game loading bar covers server world initialization, sign-on, and scene registration.
 
+The room client keeps verified startup files in the browser's Cache Storage. A later room on the same site can reuse the selected map and shared files. The release manifest selects the expected SHA-256 for each logical file, so unchanged files survive a release update and changed files replace their earlier copies. Startup falls back to the normal download when browser storage is unavailable or the cached copy fails verification.
+
 Include measured command-card and other interface assets in the selected map bundle. The browser keeps downloaded entries compressed until the engine opens them. Once an entry is mounted, it drops the cached copy. After loading, any unopened entries stay available for the match.
 
 Measure in-match resource requests and frame intervals before extending a map preload. A chain of requests for a new unit's model, portrait, textures and effects can suspend engine frames while the page continues to respond. Add the measured files to the selected map's preload, then repeat the same cold-cache play sequence. Keep unrelated maps out of the bundle.

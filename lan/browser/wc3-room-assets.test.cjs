@@ -5,7 +5,7 @@ const {runInThisContext} = require('node:vm');
 const {gzipSync} = require('node:zlib');
 const test = require('node:test');
 const source = readFileSync(__dirname + '/wc3-room-assets.js', 'utf8');
-const {readBinary, unpack, inflate, retain} = runInThisContext(source + '\nwc3RoomAssets');
+const {readBinary, openStartupCache, unpack, inflate, retain} = runInThisContext(source + '\nwc3RoomAssets');
 
 test('startup downloads report progress and reject incomplete or corrupted files', async () => {
   const manifest = {bytes:4, sha256:createHash('sha256').update('abcd').digest('hex')};
@@ -20,6 +20,47 @@ test('startup downloads report progress and reject incomplete or corrupted files
   await assert.rejects(readBinary(new Response('abc'), manifest), /Incomplete/);
   await assert.rejects(readBinary(new Response('abcde'), manifest), /expected size/);
   await assert.rejects(readBinary(new Response('abce'), manifest), /checksum/);
+});
+
+test('startup assets survive a new room and replace only the changed logical file', async () => {
+  const stored = new Map();
+  const cache = {
+    async match(key) { return stored.get(key)?.clone(); },
+    async put(key, response) { stored.set(key, response); }
+  };
+  const storage = {async open() { return cache; }};
+  const describe = bytes => ({bytes:bytes.length, sha256:createHash('sha256').update(bytes).digest('hex')});
+  const map = Buffer.from('map data');
+  const revised = Buffer.from('new map data');
+  const mapKey = 'maps/frozenthrone/example.w3x';
+  const scope = new URL('https://public.example/wc3/');
+  const first = await openStartupCache(scope, storage);
+  await first.write(mapKey, describe(map), map);
+  const next = await openStartupCache(scope, storage);
+  assert.deepEqual(Buffer.from(await next.read(mapKey, describe(map))), map);
+  assert.equal(await next.read(mapKey, describe(revised)), null);
+  await next.write(mapKey, describe(revised), revised);
+  assert.equal(stored.size, 1);
+  assert.deepEqual(Buffer.from(await first.read(mapKey, describe(revised))), revised);
+  const [key] = stored.keys();
+  stored.set(key, new Response(Buffer.alloc(revised.length), {headers:stored.get(key).headers}));
+  assert.equal(await next.read(mapKey, describe(revised)), null);
+});
+
+test('unavailable storage remains an ordinary cache miss', async () => {
+  assert.equal(await openStartupCache('https://lan.example/', {
+    async open() { throw new Error('Storage blocked'); }
+  }), null);
+  const access = await openStartupCache('https://lan.example/', {async open() {
+    return {
+      async match() { throw new Error('Storage was cleared'); },
+      async put() { throw new Error('Out of quota'); }
+    };
+  }});
+  const bytes = Buffer.from('engine');
+  const file = {bytes:bytes.length, sha256:createHash('sha256').update(bytes).digest('hex')};
+  assert.equal(await access.read('openwarcraft3.wasm', file), null);
+  await access.write('openwarcraft3.wasm', file, bytes);
 });
 
 test('startup bundles expand only the requested asset and detect invalid entries', async () => {
