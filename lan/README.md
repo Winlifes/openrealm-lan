@@ -83,3 +83,7 @@ To use both a LAN origin and a public HTTPS site under `/wc3/`, set `WC3_PUBLIC_
 The public edge can redirect the versioned `bootstrap.mpq`, `openwarcraft3.wasm`, and `openwarcraft3.data` downloads to object storage. Serve the same release files directly from the game origin when `local=1` appears in the query, so the browser can retry a failed or incomplete download. Verify both copies against `release-manifest.json`, allow CORS for the public site, and serve Wasm as `application/wasm`. Keep the launcher and engine script available from the game origin for cross-origin isolation.
 
 The bridge validates that room clients use the server's build name. Its R90 backpressure policy drops UDP datagrams for a congested connection while allowing the engine's own acknowledgements and retransmission to recover. Room transport checking uses `npm --prefix lan/server test`.
+
+Enter opens an in-game chat field in the browser. The page owns input method composition and hands the finished UTF-8 line to the engine's existing chat command on the game loop. A candidate confirmation keeps the field open. Enter sends after composition finishes, and Escape closes the field.
+
+In Zombie Island III New Century 1.0, the map enables its `我要钱` reward at five-minute intervals. An eligible player can claim it once per interval. The scripts for the first two slots add 176 gold even though the notice describes 88 gold and lumber. The same map uses `pointbreak` and `whosyourdaddy` as defeat triggers.

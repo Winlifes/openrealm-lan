@@ -88,7 +88,8 @@ def main():
         "engine": sources("client", "server", "common", "sound",
                           exclude=("stb_vorbis.c", "sv_routing.c")) +
                   [ROOT / wc3 / "common/world_w3.c", ROOT / "port/web/src/web_opfs.c",
-                   ROOT / "port/web/src/web_loading.c", ROOT / "port/web/src/web_gamepad.c"],
+                   ROOT / "port/web/src/web_loading.c", ROOT / "port/web/src/web_gamepad.c",
+                   ROOT / "port/web/src/web_chat.c"],
     }
     # Source collection is deliberately scoped to the known native modules.
     # Never accidentally compile fixture tests or a second platform main().

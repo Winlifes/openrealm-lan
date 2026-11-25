@@ -222,7 +222,7 @@ void SCR_DrawScreenField(uint32_t msec) {
             if (Cvar_Integer("r_hud", 1)) SCR_DrawLayout();
 #ifndef BZ_TESTS
             /* Games without an authored editor layout retain the generic fallback. */
-            if (CL_ChatActive() && !cl.layout[LAYER_CLIENT_MESSAGE]) {
+            if (CL_ChatDrawOnCanvas() && !cl.layout[LAYER_CLIENT_MESSAGE]) {
                 char line[256];
                 size2_t const size = re.GetWindowSize();
                 snprintf(line, sizeof(line), "> %s_", CL_ChatText());
@@ -2444,7 +2444,7 @@ void SCR_DrawLayout(void) {
         if ((layer >= LAYER_GAME_0) != (pass == 0)) continue;
         if (layer == LAYER_LOADING) continue;
         if (layer == LAYER_WORLD_HOVER && CL_EntityOverlayAllHeld()) continue;
-        if (layer == LAYER_CLIENT_MESSAGE && !CL_ChatActive()) continue;
+        if (layer == LAYER_CLIENT_MESSAGE && !CL_ChatDrawOnCanvas()) continue;
         if ((1 << layer) & flags) continue;
         handle_t layout = layout_layers[layer];
         if (layout) {

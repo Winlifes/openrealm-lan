@@ -28,7 +28,8 @@ files = ['index.html', 'wc3-input.js', 'wc3-movies.js', 'bootstrap.mpq', 'bootst
          'playable-maps.index.txt']
 shared = Path(__file__).resolve().parent.parent / 'engine/port/web/site'
 shared_files = ['fullscreen-resize.js', 'early-map-loading.js']
-room_assets_script = Path(__file__).resolve().parent / 'browser/wc3-room-assets.js'
+browser = Path(__file__).resolve().parent / 'browser'
+browser_helpers = ['wc3-room-assets.js', 'wc3-chat-input.js']
 asset_index = args.asset_index or preview / 'assets.index.txt'
 if not asset_index.is_file(): raise FileNotFoundError(asset_index)
 for name in files:
@@ -116,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix=f'.{args.release}-', dir=target.parent) 
     staging = Path(staging_path)
     for name in files: shutil.copy2(preview / name, staging / name)
     for name in shared_files: shutil.copy2(shared / name, staging / name)
-    shutil.copy2(room_assets_script, staging / room_assets_script.name)
+    for name in browser_helpers: shutil.copy2(browser / name, staging / name)
     shutil.copy2(asset_index, staging / 'assets.index.txt')
     map_ids = {hashlib.sha256(name.encode()).hexdigest()[:16]: name for name in sorted(playable_maps)}
     (staging / 'room-maps.index.json').write_text(json.dumps(map_ids, ensure_ascii=False) + '\n', encoding='utf-8')

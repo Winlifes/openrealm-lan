@@ -289,7 +289,7 @@ $(1): $(2) $$(SERVER_HEADERS) $$(EM_APP_SRCS) $$(EM_JS_LIBRARIES) | $$(BIN_DIR) 
 endef
 
 ifeq ($(EMSCRIPTEN),1)
-EM_APP_SRCS := port/web/src/web_gamepad.c port/web/src/web_loading.c
+EM_APP_SRCS := port/web/src/web_gamepad.c port/web/src/web_loading.c port/web/src/web_chat.c
 # Emscripten variants: modules are archived into static .a files (side modules
 # would need runtime dlopen; a single-step static link keeps the wasm build simple).
 define unity_lib_schema

@@ -53,6 +53,7 @@ class BrowserReleaseInputs(unittest.TestCase):
             self.assertEqual(json.loads((release / 'preload.index.json').read_text()), preload_plan)
             self.assertIn('fullscreen-resize.js', manifest)
             self.assertIn('early-map-loading.js', manifest)
+            self.assertIn('wc3-chat-input.js', manifest)
             self.assertIn('wc3-room-assets.js', manifest)
             for name in binaries:
                 body = (compiled / name).read_bytes()

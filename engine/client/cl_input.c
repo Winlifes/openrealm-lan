@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <strings.h>
 #ifdef __EMSCRIPTEN__
+#include "port/web/src/web_chat.h"
 #include "port/web/src/web_gamepad.h"
 #endif
 
@@ -2100,6 +2101,10 @@ static void CL_ChatOpen(void);
 static void CL_ChatClose(bool send);
 static void CL_ChatTextInput(cstring_t text);
 static void CL_ChatKey(SDL_Keycode sym);
+static bool chat_uses_page;
+#ifdef __EMSCRIPTEN__
+static void CL_PollPageChat(void);
+#endif
 
 /* SDL owns the authoritative window/display transition state.  Notify the
  * renderer only on events that can change the OpenGL drawable so it can
@@ -2301,7 +2306,9 @@ static void CL_InputEvents(int (*poll_event)(SDL_Event *)) {
         
         switch(event.type) {
             case SDL_TEXTINPUT:
-                if (cls.key_dest == key_message) CL_ChatTextInput(event.text.text);
+                if (cls.key_dest == key_message) {
+                    if (!chat_uses_page) CL_ChatTextInput(event.text.text);
+                }
                 else if (cls.key_dest == key_console) CON_TextInput(event.text.text);
                 else if (CL_MenuActive() && cls.key_dest == key_menu) menu.TextInput(event.text.text);
                 else if (cls.state == ca_active && cls.key_dest == key_game) CL_WindowTextInput(event.text.text);
@@ -2309,7 +2316,7 @@ static void CL_InputEvents(int (*poll_event)(SDL_Event *)) {
             case SDL_KEYDOWN:
                 if (cls.key_dest == key_message) {
                     if (cls.state != ca_active) CL_ChatClose(false);
-                    else CL_ChatKey(event.key.keysym.sym);
+                    else if (!chat_uses_page) CL_ChatKey(event.key.keysym.sym);
                     break;
                 }
                 if (event.key.keysym.sym == SDLK_BACKQUOTE) {
@@ -2438,11 +2445,15 @@ static void CL_InputEvents(int (*poll_event)(SDL_Event *)) {
 
 void CL_Input(void) {
     CL_InputEvents(SDL_PollEvent);
+#ifdef __EMSCRIPTEN__
+    CL_PollPageChat();
+#endif
 }
 
 static char chat_text[200];
 
 bool CL_ChatActive(void) { return cls.key_dest == key_message; }
+bool CL_ChatDrawOnCanvas(void) { return CL_ChatActive() && !chat_uses_page; }
 cstring_t CL_ChatText(void) { return chat_text; }
 
 static void CL_SetSDLTextInput(bool enabled);
@@ -2450,7 +2461,10 @@ static void CL_SetSDLTextInput(bool enabled);
 static void CL_ChatOpen(void) {
     chat_text[0] = '\0';
     cls.key_dest = key_message;
-    CL_SetSDLTextInput(true);
+#ifdef __EMSCRIPTEN__
+    chat_uses_page = Web_SetChatInput(1) != 0;
+#endif
+    CL_SetSDLTextInput(!chat_uses_page);
 }
 
 /* Games opt into the generic message editor through their own key bindings. */
@@ -2467,18 +2481,44 @@ static void CL_ChatClose(bool send) {
     }
     chat_text[0] = '\0';
     cls.key_dest = key_game;
+#ifdef __EMSCRIPTEN__
+    if (chat_uses_page) {
+        chat_uses_page = false;
+        Web_SetChatInput(0);
+    }
+#endif
     CL_SetSDLTextInput(CL_WindowTextInputActive());
 }
 
 static void CL_ChatTextInput(cstring_t text) {
     size_t used = strlen(chat_text);
-    for (; text && *text && used + 1 < sizeof(chat_text); text++) {
+    while (text && *text) {
+        size_t bytes = 1;
+        while (((unsigned char)text[bytes] & 0xC0) == 0x80) bytes++;
         /* The line travels as one unquoted command string. */
-        if (*text == '"' || *text == '\n' || *text == '\r') continue;
-        chat_text[used++] = *text;
+        if (*text != '"' && *text != '\n' && *text != '\r') {
+            if (bytes >= sizeof(chat_text) - used) break;
+            memcpy(chat_text + used, text, bytes);
+            used += bytes;
+        }
+        text += bytes;
     }
     chat_text[used] = '\0';
 }
+
+#ifdef __EMSCRIPTEN__
+static void CL_PollPageChat(void) {
+    char line[sizeof(chat_text)];
+    /* Consume DOM input inside the game loop. A JS key handler can run while
+     * the Wasm stack is suspended for an asynchronous asset read. */
+    if (!chat_uses_page) return;
+    if (cls.state != ca_active) CL_ChatClose(false);
+    else if (Web_ReadChatInput(line, sizeof(line))) {
+        CL_ChatTextInput(line);
+        CL_ChatClose(true);
+    }
+}
+#endif
 
 static void CL_ChatKey(SDL_Keycode sym) {
     size_t used = strlen(chat_text);
@@ -2486,7 +2526,7 @@ static void CL_ChatKey(SDL_Keycode sym) {
         case SDLK_RETURN: case SDLK_KP_ENTER: CL_ChatClose(true); break;
         case SDLK_ESCAPE: CL_ChatClose(false); break;
         case SDLK_BACKSPACE:
-            /* Step over UTF-8 continuation bytes so Polish letters erase whole. */
+            /* Erase a complete UTF-8 character. */
             while (used && ((unsigned char)chat_text[used - 1] & 0xC0) == 0x80) used--;
             if (used) used--;
             chat_text[used] = '\0';
@@ -2512,11 +2552,13 @@ void CL_SetTransientTextInput(bool enabled) {
 }
 
 void CL_SetMenuBindings(void) {
+    if (CL_ChatActive()) CL_ChatClose(false);
     cls.key_dest = key_menu;
     CL_SetSDLTextInput(true);
 }
 
 void CL_SetGameplayInput(void) {
+    if (CL_ChatActive()) CL_ChatClose(false);
     if (cls.key_dest != key_game) {
         fprintf(stderr, "CL_SetGameplayInput: switching key_dest %d -> key_game\n", cls.key_dest);
     }
@@ -3385,6 +3427,19 @@ TEST(client_input, message_mode_is_opened_by_game_binding) {
     if (add_command) Cmd_RemoveCommand("messagemode");
     cls.state = old_state; cls.key_dest = old_dest; cl.playerstate.client_ui_state = old_ui;
     input.focus = old_focus;
+}
+
+TEST(client_input, chat_limits_input_at_utf8_boundaries) {
+    int const old_dest = cls.key_dest;
+    char fill[sizeof(chat_text) - 1];
+    memset(fill, 'a', sizeof(fill) - 1);
+    fill[sizeof(fill) - 1] = '\0';
+    CL_ChatOpen();
+    CL_ChatTextInput(fill);
+    CL_ChatTextInput("钱");
+    T_STREQ(CL_ChatText(), fill);
+    CL_ChatClose(false);
+    cls.key_dest = old_dest;
 }
 
 TEST(client_input, zoom_reset_returns_to_default_after_zooming_in) {

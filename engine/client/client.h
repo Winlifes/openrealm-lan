@@ -47,6 +47,7 @@ typedef struct {
 } mouseEvent_t;
 
 bool CL_ChatActive(void);
+bool CL_ChatDrawOnCanvas(void);
 cstring_t CL_ChatText(void);
 
 typedef enum {
