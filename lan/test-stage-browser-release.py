@@ -83,7 +83,8 @@ class BrowserReleaseInputs(unittest.TestCase):
                 file.write_bytes(body)
             served_index.write_text('maps/test.w3m\nui/frame.dds\nunits/model.blp\n')
             preload_index.write_text(json.dumps({'lobby':['ui/frame.dds'],
-                'maps':{'maps/test.w3m':['ui/frame.dds', 'units/model.blp']}}))
+                'maps':{'maps/test.w3m':['ui/frame.dds', 'units/model.blp']},
+                'retainAfterLoad':{'maps/test.w3m':['ui/frame.dds']}}))
             command = [sys.executable, str(script), 'with-packs', '--engine-build', str(compiled),
                        '--asset-index', str(served_index), '--preload-index', str(preload_index), '--data-dir', str(data)]
             env = {**os.environ, 'WC3_LAN_ROOT': str(root)}
@@ -97,6 +98,7 @@ class BrowserReleaseInputs(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             plan = json.loads((target / 'preload.index.json').read_text())
             self.assertEqual(plan['maps']['maps/test.w3m'], ['units/model.blp'])
+            self.assertEqual(plan['retainAfterLoad']['maps/test.w3m'], ['ui/frame.dds'])
             self.assertEqual(plan['archives']['maps/test.w3m'],
                              {'bytes':len(archive), 'sha256':hashlib.sha256(archive).hexdigest()})
             self.assertEqual(list(json.loads((target / 'room-maps.index.json').read_text()).values()), ['maps/test.w3m'])

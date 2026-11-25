@@ -48,6 +48,10 @@ if not set(preload['maps']) <= playable_maps:
 for group in [preload['lobby'], *preload['maps'].values()]:
     if not set(group) <= served_paths:
         raise ValueError('Preload index names an asset absent from the served data mirror')
+retained = preload.get('retainAfterLoad', {})
+for name, paths in retained.items():
+    if name not in preload['maps'] or not set(paths) <= set(preload['lobby'] + preload['maps'][name]):
+        raise ValueError('Retained assets must be included in the selected map or lobby preload')
 
 
 def describe(path):
@@ -99,7 +103,10 @@ def pack_startup_assets(directory):
     for name, paths in maps.items():
         key = hashlib.sha256(name.encode()).hexdigest()[:16]
         packs['maps'][name] = write_pack(directory, f'room-map-{key}.bin', paths)
-    return dict(lobby=lobby, maps=maps, packs=packs, archives=archives)
+    plan = dict(lobby=lobby, maps=maps, packs=packs, archives=archives)
+    if retained:
+        plan['retainAfterLoad'] = retained
+    return plan
 
 
 if args.data_dir and set(preload['maps']) != playable_maps:

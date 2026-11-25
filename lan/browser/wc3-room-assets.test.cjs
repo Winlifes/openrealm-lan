@@ -5,7 +5,7 @@ const {runInThisContext} = require('node:vm');
 const {gzipSync} = require('node:zlib');
 const test = require('node:test');
 const source = readFileSync(__dirname + '/wc3-room-assets.js', 'utf8');
-const {readBinary, unpack, inflate} = runInThisContext(source + '\nwc3RoomAssets');
+const {readBinary, unpack, inflate, retain} = runInThisContext(source + '\nwc3RoomAssets');
 
 test('startup downloads report progress and reject incomplete or corrupted files', async () => {
   const manifest = {bytes:4, sha256:createHash('sha256').update('abcd').digest('hex')};
@@ -43,4 +43,8 @@ test('startup bundles expand only the requested asset and detect invalid entries
   assert.throws(() => unpack(bundle.subarray(0, -1), paths), /Invalid bundled asset size/);
   assert.throws(() => unpack(bundle, [paths[0], paths[0]]), /Invalid asset bundle/);
   assert.throws(() => unpack(bundle, paths.slice(0, 1)), /Unexpected data/);
+  retain(assets, new Set([paths[0]]));
+  assert.deepEqual([...assets.keys()], [paths[0]]);
+  assert.notEqual(assets.get(paths[0]).body.buffer, bundle.buffer);
+  assert.deepEqual(Buffer.from(await inflate(assets.get(paths[0]))), terrain);
 });

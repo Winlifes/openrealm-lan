@@ -103,6 +103,7 @@
   let assetVersion;
   let loadFailed = false;
   const warmAssets = new Map();
+  let matchAssetPaths = new Set();
   function setStatus(status) {
     if (loadFailed) return;
     window.__status = status;
@@ -145,7 +146,7 @@
       watchingRoom = false;
       mapPhase.textContent = progress >= 1 ? '正在进入对局…' : '正在载入对局…';
     } else {
-      warmAssets.clear();
+      wc3RoomAssets.retain(warmAssets, matchAssetPaths);
     }
     if (active !== loadingMatch) {
       loadingMatch = active;
@@ -359,6 +360,7 @@
     if (isRoom && !mapPaths.includes(roomMap)) throw new Error('当前版本找不到房间地图，请返回房间列表');
     const plan = isRoom ? JSON.parse(preloadText) : null;
     const mapFiles = plan && Object.hasOwn(plan.maps, roomMap) ? plan.maps[roomMap] : [];
+    matchAssetPaths = new Set(plan?.retainAfterLoad?.[roomMap] ?? []);
     const archive = plan?.archives?.[roomMap];
     const usePacks = plan?.packs && typeof DecompressionStream === 'function';
     const bundles = usePacks ? [

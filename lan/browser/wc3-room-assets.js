@@ -57,5 +57,16 @@ const wc3RoomAssets = (() => {
     return readBinary(new Response(expanded), {bytes:size});
   }
 
-  return {readBinary, unpack, inflate};
+  function retain(assets, paths) {
+    for (const [path, asset] of assets) {
+      if (!paths.has(path)) {
+        assets.delete(path);
+      } else if (!(asset instanceof Uint8Array)) {
+        // Release the original bundle buffer while keeping this compressed entry.
+        assets.set(path, {body:asset.body.slice(), size:asset.size});
+      }
+    }
+  }
+
+  return {readBinary, unpack, inflate, retain};
 })();

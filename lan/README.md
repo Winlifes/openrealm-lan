@@ -55,6 +55,8 @@ For room downloads, pass `--preload-index /path/to/preload.index.json` with a JS
 
 The download screen checks the client, shared bundle, selected map archive, and selected map bundle before joining. The browser downloads only the room's selected map and expands individual bundled files as the engine opens them. Creating a room starts the native server after the host's download succeeds. An unpacked release with a preload index downloads the listed files individually before joining. Files needed later in a match still load on demand. The in-game loading bar covers server world initialization, sign-on, and scene registration.
 
+Add measured command-card and other interface paths to `retainAfterLoad` under the map's archive path in the preload index. Include each retained path in the same map's preload or the shared lobby preload. The browser keeps those entries available after the first game frame and releases the rest of the startup bundles.
+
 Caddy can serve optional `.gz` sidecars for measured preload files. Keep their uncompressed originals in the served mirror.
 
 For a browser-only update that has been tested against the running native version, stage the release with `--server-build CURRENT_NATIVE_BUILD`. The browser then uses that build ID during the WebSocket handshake while the launcher points to the new browser release directory.
