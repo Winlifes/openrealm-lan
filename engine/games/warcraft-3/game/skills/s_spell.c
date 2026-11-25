@@ -440,11 +440,13 @@ bool S_SpellTargetHasToken(cstring_t targets, cstring_t full, cstring_t short_na
 }
 
 static bool spell_allows_relationship(cstring_t mask, edict_t *caster, edict_t *target) {
+    bool const self = S_SpellTargetHasToken(mask, "self", NULL);
     bool const friend = S_SpellTargetHasToken(mask, "friend", NULL);
     bool const own = S_SpellTargetHasToken(mask, "player", NULL);
     bool const ally = S_SpellTargetHasToken(mask, "ally", NULL);
     bool const enemy = S_SpellTargetHasToken(mask, "enemy", NULL);
     bool const neutral = S_SpellTargetHasToken(mask, "neutral", NULL);
+    if (self && caster == target) return true;
     if (friend && S_SpellIsFriend(caster, target)) return true;
     if (own && caster && target->s.player == caster->s.player) return true;
     if (ally && caster && target->s.player != caster->s.player &&
@@ -453,7 +455,7 @@ static bool spell_allows_relationship(cstring_t mask, edict_t *caster, edict_t *
     if (enemy && S_SpellIsEnemy(caster, target)) return true;
     if (neutral && target->s.player < MAX_PLAYERS && level.mapinfo &&
         level.mapinfo->players[target->s.player].playerType == kPlayerTypeNeutral) return true;
-    return !friend && !own && !ally && !enemy && !neutral;
+    return !self && !friend && !own && !ally && !enemy && !neutral;
 }
 
 bool S_UnitInvulnerable(edict_t const *unit) {

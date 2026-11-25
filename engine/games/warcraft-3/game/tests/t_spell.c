@@ -9951,6 +9951,32 @@ TEST(wc3_spell, faerie_fire_roc_fallback_covers_alternate_and_creep) {
     G_SetSLKRows("AbilityData", old); free_slk_rows(rows); G_FowShutdown();
 }
 
+TEST(wc3_spell, allied_and_self_target_mask_keeps_the_caster_eligible) {
+    static char const slk[] =
+        "ID;PWXL;N;EBB;Y2;X4\n"
+        "C;Y1;X1;K\"alias\"\nC;Y1;X2;K\"code\"\nC;Y1;X3;K\"targs\"\nC;Y1;X4;K\"levels\"\n"
+        "C;Y2;X1;K\"Ablo\"\nC;Y2;X2;K\"Ablo\"\nC;Y2;X3;K\"allies,ground,self\"\nC;Y2;X4;K1\nE\n";
+    reset_entities(); setup_test_world();
+    mapInfo_t *map = (mapInfo_t *)level.mapinfo;
+    map->players[0].playerType = map->players[1].playerType = kPlayerTypeHuman;
+    memset(level.alliances, 0, sizeof(level.alliances));
+    slkTestData_t *rows = parse_slk_string(slk);
+    slkTestData_t *old = G_SetSLKRows("AbilityData", rows);
+    uint32_t const code = FS_SLKKey("Ablo");
+    edict_t *caster = alloc_test_unit(MAKEFOURCC('o','s','h','m'), 0, 0);
+    edict_t *other = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 64, 0);
+    caster->s.player = 0; other->s.player = 1;
+    caster->svflags |= SVF_MONSTER; other->svflags |= SVF_MONSTER;
+    caster->targtype = other->targtype = TARG_GROUND;
+    T_ASSERT(S_SpellAllowsTarget(code, caster, caster));
+    T_ASSERT(!S_SpellAllowsTarget(code, caster, other));
+    level.alliances[0][1] |= 1 << ALLIANCE_PASSIVE;
+    T_ASSERT(S_SpellAllowsTarget(code, caster, other));
+    level.alliances[0][1] = 0;
+    G_SetSLKRows("AbilityData", old);
+    free_slk_rows(rows);
+}
+
 TEST(wc3_spell, bloodlust_autocast_waits_for_spell_cooldown) {
 	const char slk[] =
 		"ID;PWXL;N;EBB;Y2;X9\n"
