@@ -1106,7 +1106,7 @@ static void FS_FindCollectLooseDir(fsFind_t *find, cstring_t root, cstring_t rel
 
 static handle_t FS_OpenNestedLooseFile(cstring_t filename);
 
-handle_t FS_OpenFile(cstring_t fileName) {
+static handle_t FS_OpenFileWithOverlay(cstring_t fileName, bool include_overlay) {
     while (filelock) {
         PF_Sleep(10);
     }
@@ -1115,7 +1115,7 @@ handle_t FS_OpenFile(cstring_t fileName) {
         filelock = false;
         return NULL;
     }
-    if (priority_archive) {
+    if (include_overlay && priority_archive) {
         handle_t file;
         if (SFileOpenFileEx(priority_archive, fileName, SFILE_OPEN_FROM_MPQ, &file))
             return file;
@@ -1152,6 +1152,10 @@ handle_t FS_OpenFile(cstring_t fileName) {
     }
     filelock = false;
     return NULL;
+}
+
+handle_t FS_OpenFile(cstring_t fileName) {
+    return FS_OpenFileWithOverlay(fileName, true);
 }
 
 bool FS_ResolveLoosePath(cstring_t fileName, string_t out, uint32_t out_size) {
@@ -1469,23 +1473,18 @@ handle_t FS_ReadPriorityFile(cstring_t filename, uint32_t *size) {
     return buffer;
 }
 
-handle_t FS_ReadFile(cstring_t filename, uint32_t *size) {
+static handle_t FS_ReadFileWithOverlay(cstring_t filename, uint32_t *size, bool include_overlay) {
     if (getenv("FSTRACE")) fprintf(stderr, "FSTRACE %s\n", filename); /* webdata subset tracing */
-    handle_t fp = FS_OpenFile(filename);
+    handle_t fp = FS_OpenFileWithOverlay(filename, include_overlay);
     uint32_t read_size = 0;
     if (!fp) {
         return FS_ReadLooseFile(filename, size, 0);
     }
     *size = SFileGetFileSize(fp, NULL);
-    if (!*size && priority_archive) {
+    if (!*size && include_overlay && priority_archive) {
         /* An empty map placeholder must not hide the stock file underneath it. */
-        handle_t const overlay = priority_archive;
-        handle_t buffer;
         FS_CloseFile(fp);
-        priority_archive = NULL;
-        buffer = FS_ReadFile(filename, size);
-        priority_archive = overlay;
-        return buffer;
+        return FS_ReadFileWithOverlay(filename, size, false);
     }
     string_t buffer = MemAlloc(*size + 1);
     if (!SFileReadFile(fp, buffer, *size, &read_size, NULL) || read_size != *size) {
@@ -1496,6 +1495,14 @@ handle_t FS_ReadFile(cstring_t filename, uint32_t *size) {
     buffer[*size] = '\0';
     FS_CloseFile(fp);
     return buffer;
+}
+
+handle_t FS_ReadFile(cstring_t filename, uint32_t *size) {
+    return FS_ReadFileWithOverlay(filename, size, true);
+}
+
+handle_t FS_ReadBaseFile(cstring_t filename, uint32_t *size) {
+    return FS_ReadFileWithOverlay(filename, size, false);
 }
 
 void FS_FreeFile(void *buf) {

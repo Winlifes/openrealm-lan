@@ -5787,6 +5787,48 @@ TEST(wc3_building, human_construction_start_sets_explicit_state_and_start_life) 
     T_FEQ(building->health.value, 100.0f, 0.001f);
 }
 
+TEST(wc3_building, sparse_unit_balance_columns_supply_construction_health) {
+    static char const balance_slk[] =
+        "ID;PWXL;N;E\nB;X9;Y3;D0\n"
+        "C;X1;Y1;K\"unitBalanceID\"\nC;X2;K\"HP\"\nC;X3;K\"manaN\"\n"
+        "C;X4;K\"def\"\nC;X5;K\"realHP\"\nC;X6;K\"realM\"\nC;X7;K\"realdef\"\n"
+        "C;X8;K\"isbldg\"\nC;X9;K\"bldtm\"\n"
+        "C;X1;Y2;K\"hbar\"\nC;X2;K330\nC;X3;K17\nC;X4;K6\nC;X8;K1\nC;X9;K2\n"
+        "C;X1;Y3;K\"hfoo\"\nC;X2;K92\nC;X3;K19\nC;X4;K5\nC;X5;K121\nC;X6;K0\nC;X7;K0\nE\n";
+    UnitAbilities_t const abilities = { .abilList = "Arep" };
+
+    setup_test_world();
+    edict_t *builder = alloc_test_unit(MAKEFOURCC('h','p','e','a'), 64, 0);
+    builder->data.UnitAbilities = &abilities;
+    builder->svflags |= SVF_MONSTER;
+    builder->stand = unit_stand;
+    slkTestData_t *repair_rows, *old_abilities = building_install_repair_data(&repair_rows);
+    slkTestData_t *rows = parse_slk_string(balance_slk);
+    slkTestData_t *old_balance = G_SetSLKRows("UnitBalance", rows);
+    edict_t *building = SP_SpawnAtLocationNoBirth(MAKEFOURCC('h','b','a','r'), 0, &MAKE(vec2_t, 64, 0));
+    edict_t *footman = SP_SpawnAtLocationNoBirth(MAKEFOURCC('h','f','o','o'), 0, &MAKE(vec2_t, -128, 0));
+
+    T_FEQ(building->health.max_value, 330.0f, 0.001f);
+    T_FEQ(building->mana.max_value, 17.0f, 0.001f);
+    T_FEQ(building->unit_state->armor_value, 6.0f, 0.001f);
+    T_FEQ(footman->health.max_value, 121.0f, 0.001f);
+    T_FEQ(footman->mana.max_value, 0.0f, 0.001f);
+    T_FEQ(footman->unit_state->armor_value, 0.0f, 0.001f);
+    T_ASSERT(G_StartHumanConstruction(builder, building));
+    repair_build_primary(builder, building);
+    FOR_LOOP(i, 30) {
+        if (!builder->build) break;
+        level.time += FRAMETIME;
+        builder->currentmove->think(builder);
+    }
+    T_NULL(G_GetConstruction(building));
+    T_FEQ(building->health.value, 330.0f, 0.001f);
+
+    G_SetSLKRows("UnitBalance", old_balance);
+    free_slk_rows(rows);
+    building_restore_repair_data(old_abilities, repair_rows);
+}
+
 TEST(wc3_building, human_birth_emission_tracks_active_repair_not_assigned_workers) {
     UnitAbilities_t abilities = { .abilList = "Arep" };
     edict_t *worker, *building;

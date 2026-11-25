@@ -899,9 +899,11 @@ BZ_HOST_HIDDEN void UI_FdfFree(handle_t ptr) {
 #endif
 }
 BZ_HOST_HIDDEN int UI_FdfReadFile(cstring_t name, handle_t *out) {
-    if (gi.ReadFile) {
+    if (gi.ReadBaseFile) {
+        /* Native HUD templates belong to the game data. Protected map archives
+         * can contain unrelated payloads under the same template names. */
         uint32_t size = 0;
-        *out = gi.ReadFile(name, &size);
+        *out = gi.ReadBaseFile(name, &size);
         return *out ? (int)size : -1;
     }
 #ifdef __EMSCRIPTEN__

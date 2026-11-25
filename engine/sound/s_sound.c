@@ -919,7 +919,9 @@ void S_PlaySoundByName(cstring_t name) {
     }
 }
 
-/* Preload a server-configstring sound so playback never blocks on archive I/O. */
+/* Keep the sound registered for this map. Browsers load it on first playback
+ * so registering the server's entire sound table cannot block match entry
+ * on a series of requests for sounds the player may never hear. */
 void S_RegisterSound(cstring_t path) {
     if (!s.initialized || !path || !*path) return;
 #ifdef DEBUG_MAP_LOAD
@@ -947,6 +949,7 @@ void S_RegisterSound(cstring_t path) {
     }
 #endif
     sfx->registration_sequence = s.registration_sequence;
+#ifndef __EMSCRIPTEN__
 #ifdef DEBUG_MAP_LOAD
     double const load_start = MAP_LOAD_NOW();
 #endif
@@ -956,6 +959,7 @@ void S_RegisterSound(cstring_t path) {
         s_map_load_sound_stats.load_ms += MAP_LOAD_NOW() - load_start;
         if (!sfx->cache) s_map_load_sound_stats.failed_loads++;
     }
+#endif
 #endif
 }
 

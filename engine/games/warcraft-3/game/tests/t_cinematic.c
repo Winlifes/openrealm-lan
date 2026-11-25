@@ -47,8 +47,8 @@ TEST(wc3_cinematic, sd_hud_excludes_modern_hd_art_and_keeps_authored_geometry) {
 }
 
 TEST(wc3_cinematic, classic_hud_without_hd_nodes_still_loads) {
-    cinematic_read_file = gi.ReadFile;
-    gi.ReadFile = cinematic_classic_read;
+    cinematic_read_file = gi.ReadBaseFile;
+    gi.ReadBaseFile = cinematic_classic_read;
     UI_ResetHud();
     UI_LoadHudCinematic();
     T_NOT_NULL(hud.cinematic.CinematicPanel);
@@ -56,7 +56,7 @@ TEST(wc3_cinematic, classic_hud_without_hd_nodes_still_loads) {
     T_NULL(UI_FindChildFrame(hud.cinematic.CinematicPanel, "HDCinematicPortraitCover"));
     T_ASSERT(!hud.cinematic.CinematicPortrait->hidden);
     T_ASSERT(!hud.cinematic.CinematicBottomBorder->hidden);
-    gi.ReadFile = cinematic_read_file;
+    gi.ReadBaseFile = cinematic_read_file;
     UI_ResetHud();
 }
 #endif

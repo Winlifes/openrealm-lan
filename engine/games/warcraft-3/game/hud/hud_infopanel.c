@@ -107,6 +107,7 @@ void UI_LoadHudInfoPanel(void) {
     InfoPanelBuildingDetail_Load(&hud.building);
     if (!global_strings_loaded || !InfoPanelStringsResolved() || !SimpleInfoPanel_Load(&hud.simple)) {
         fprintf(stderr, "UI_LoadHudInfoPanel: missing UI\\FrameDef\\UI\\SimpleInfoPanel.fdf status templates\n");
+        hud.simple.SimpleInfoPanelUnitDetail = NULL;
     } else {
         /* The retail SimpleInfoPanel FDF owns every icon/label/value offset.
          * The game only supplies the dynamic wrappers that WC3 repositions
@@ -338,6 +339,7 @@ static void WriteLegacyUnitStats(edict_t *ent, UnitWeapons_t const *weapons,
         };
 
         FOR_LOOP(a, 3) {
+            if (!icon_values[a]) continue;
             bool const isprim = prim && !strcmp(prim, attrs[a].code);
             UI_SetText(icon_values[a], "%lu", (unsigned long)attrs[a].val);
             icon_values[a]->Font.Color = isprim ? MAKE(color32_t, 120, 230, 120, 255) : COLOR32_WHITE;
@@ -345,7 +347,7 @@ static void WriteLegacyUnitStats(edict_t *ent, UnitWeapons_t const *weapons,
 
         uint32_t const need = G_HeroXPForLevel(level + 1);
         uint32_t const have = G_HeroXPForLevel(level);
-        if (need > have) {
+        if (hud.unit.IconValue4 && need > have) {
             snprintf(buffer, sizeof(buffer), "XP: %lu / %lu",
                      (unsigned long)(ent->unit_state->hero.xp - (ent->unit_state->hero.xp < have ? ent->unit_state->hero.xp : have)),
                      (unsigned long)(need - have));

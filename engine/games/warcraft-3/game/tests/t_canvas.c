@@ -369,14 +369,14 @@ TEST(wc3_canvas, dynamic_hud_labels_use_the_authored_localized_master_font) {
 #endif
 
 #ifdef BZ_TESTS
-static __typeof__(gi.ReadFile) canvas_compat_read_original;
+static __typeof__(gi.ReadBaseFile) canvas_compat_read_original;
 static handle_t canvas_compat_read(cstring_t path, uint32_t *size) {
     return canvas_compat_read_original(!strcmp(path, "UI\\FrameDef\\UI\\SimpleInfoPanel.fdf")
         ? "TestUI\\Compat\\SimpleInfoPanel.fdf" : path, size);
 }
 TEST(wc3_canvas, info_panel_binding_follows_backdrop_moved_to_sibling_container) {
     canvas_setup();
-    canvas_compat_read_original = gi.ReadFile; gi.ReadFile = canvas_compat_read;
+    canvas_compat_read_original = gi.ReadBaseFile; gi.ReadBaseFile = canvas_compat_read;
     SimpleInfoPanel_t panel;
     T_ASSERT(SimpleInfoPanel_Load(&panel));
     frameDef_t *original = panel.SimpleBuildQueueBackdrop;
@@ -392,7 +392,7 @@ TEST(wc3_canvas, info_panel_binding_follows_backdrop_moved_to_sibling_container)
     T_ASSERT(panel.SimpleBuildQueueBackdrop == original);
     UI_SetParent(original, NULL);
     T_ASSERT(!SimpleInfoPanel_Load(&panel));
-    gi.ReadFile = canvas_compat_read_original;
+    gi.ReadBaseFile = canvas_compat_read_original;
     canvas_teardown();
 }
 
@@ -416,7 +416,7 @@ TEST(wc3_canvas, score_panel_loads_original_classic_and_modern_fdf) {
         Stb_IniCacheFree(&game.config.theme);
         T_ASSERT(Stb_IniCacheLoad(&game.config.theme, "TestUI\\Compat\\War3skins-3.0.txt"));
         canvas_score_modern = variant != 0;
-        canvas_compat_read_original = gi.ReadFile; gi.ReadFile = canvas_score_read;
+        canvas_compat_read_original = gi.ReadBaseFile; gi.ReadBaseFile = canvas_score_read;
         UI_LoadHudScoreScreen();
         T_NOT_NULL(hud.score.ScoreScreenFrame);
         T_NOT_NULL(UI_FindFrame("ScoreScreenTabTextSelectedTemplate"));
@@ -434,7 +434,7 @@ TEST(wc3_canvas, score_panel_loads_original_classic_and_modern_fdf) {
                 T_ASSERT(UI_FindFrame("ScoreScreenTabTextSelected")->Text[0]);
             }
         }
-        gi.ReadFile = canvas_compat_read_original;
+        gi.ReadBaseFile = canvas_compat_read_original;
         canvas_teardown();
     }
 }
@@ -488,13 +488,13 @@ static void canvas_client_score_setup(bool modern, cstring_t script) {
     Stb_IniCacheFree(&game.config.theme);
     T_ASSERT(Stb_IniCacheLoad(&game.config.theme, "TestUI\\Compat\\War3skins-3.0.txt"));
     canvas_score_modern = modern;
-    canvas_compat_read_original = gi.ReadFile; gi.ReadFile = canvas_score_read;
+    canvas_compat_read_original = gi.ReadBaseFile; gi.ReadBaseFile = canvas_score_read;
     UI_LoadHudScoreScreen();
     memset(&score_cap, 0, sizeof(score_cap));
     gi.Write = canvas_score_write; gi.unicast = canvas_score_unicast;
 }
 static void canvas_client_score_teardown(void) {
-    gi.ReadFile = canvas_compat_read_original;
+    gi.ReadBaseFile = canvas_compat_read_original;
     canvas_teardown();
     G_TestResetScoreTransition();
     level.started = level.scriptsStarted = false;

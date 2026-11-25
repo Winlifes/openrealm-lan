@@ -459,6 +459,7 @@ static void *FS_LoadSheetTyped(sheetTable_t const *sheet, slkField_t const *sche
                     continue;
                 }
                 value = FS_FindSheetCell(sheet, row->name, field->column);
+                if (!value && field->fallback_column) value = FS_FindSheetCell(sheet, row->name, field->fallback_column);
                 if (!value) value = field->default_value;
                 if (!value)
                     continue;

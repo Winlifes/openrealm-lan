@@ -157,6 +157,7 @@ void SV_InitGameProgs(void) {
     import.FileExists = FS_FileExists;
     import.ReadFile = FS_ReadFile;
     import.ReadPriorityFile = FS_ReadPriorityFile;
+    import.ReadBaseFile = FS_ReadBaseFile;
     import.ReadFileAll = FS_ReadFileAll;
     import.SetPriorityArchive = FS_SetPriorityArchive;
     import.error = PF_error;

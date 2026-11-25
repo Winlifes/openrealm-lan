@@ -342,6 +342,7 @@ TEST(commands, share_authored_ui_assets_are_readable) {
 TEST(commands, priority_archive_file_exists_tracks_map_mount) {
     static uint8_t const payload[] = { 'M', 'A', 'P' };
     cstring_t const filename = "ReplaceableTextures\\Shadows\\WC3PriorityProbe.blp";
+    cstring_t const stock_template = "UI\\FrameDef\\OpenWarcraft3\\CampaignList.fdf";
     cstring_t const archive_path = Test_TempPath("wc3-priority-exists.mpq");
     handle_t archive = NULL;
     uint32_t size = 0;
@@ -349,11 +350,15 @@ TEST(commands, priority_archive_file_exists_tracks_map_mount) {
     handle_t const previous = FS_GetPriorityArchive();
 
     setup_command_tests();
+    uint32_t stock_size = 0;
+    handle_t stock_data = FS_ReadFile(stock_template, &stock_size);
+    T_NOT_NULL(stock_data);
     T_ASSERT(!FS_FileExists(filename));
     T_ASSERT(SFileCreateArchive(archive_path, 0, 16, &archive));
     T_NOT_NULL(archive);
     if (!archive) return;
     T_ASSERT(SFileAddFileFromBuffer(archive, filename, payload, sizeof(payload)));
+    T_ASSERT(SFileAddFileFromBuffer(archive, stock_template, payload, sizeof(payload)));
     T_ASSERT(SFileCloseArchive(archive));
     archive = NULL;
     T_ASSERT(SFileOpenArchive(archive_path, 0, 0, &archive));
@@ -368,6 +373,17 @@ TEST(commands, priority_archive_file_exists_tracks_map_mount) {
         T_ASSERT(!memcmp(data, payload, sizeof(payload)));
         FS_FreeFile(data);
     }
+    data = FS_ReadBaseFile(stock_template, &size);
+    T_NOT_NULL(data);
+    T_EQ(size, stock_size);
+    if (stock_data && data && size == stock_size) T_EQ(memcmp(data, stock_data, size), 0);
+    FS_FreeFile(data);
+    FS_FreeFile(stock_data);
+    data = FS_ReadFile(stock_template, &size);
+    T_NOT_NULL(data);
+    T_EQ(size, sizeof(payload));
+    if (data && size == sizeof(payload)) T_EQ(memcmp(data, payload, size), 0);
+    FS_FreeFile(data);
     FS_SetPriorityArchive(previous);
     T_ASSERT(!FS_FileExists(filename));
     T_ASSERT(SFileCloseArchive(archive));

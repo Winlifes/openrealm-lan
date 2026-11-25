@@ -19,6 +19,7 @@
 
 #include "test.h"
 #include "../g_local.h"
+#include "../hud/hud_local.h"
 
 typedef struct { cstring_t type, native; bool declare; } saveTestEnumCase_t;
 
@@ -3734,6 +3735,37 @@ TEST(wc3_game, single_info_panel_serializes_tooltip_presenter) {
 
     T_ASSERT(hover_infopanel_layer_seen);
     T_ASSERT(hover_infopanel_tooltip_seen);
+}
+
+TEST(wc3_game, hero_selection_survives_missing_legacy_info_panel_fields) {
+    static UnitBalance_t const balance = { .agility = 19, .primaryAttribute = "AGI" };
+    frameDef_t root = { .Type = FT_SIMPLEFRAME };
+    frameDef_t agility = { .Type = FT_STRING };
+
+    setup_test_world();
+    edict_t *player = &g_edicts[0];
+    edict_t *hero = alloc_test_unit(MAKEFOURCC('H','p','a','l'), 0.0f, 0.0f);
+    hero->data.UnitBalance = &balance;
+    hero->unit_state->hero.level = 1;
+    hero->unit_state->hero.agi = 19;
+    player->client->connected = true;
+
+    InfoPanelUnitDetail_t const old_unit = hud.unit;
+    frameDef_t *old_simple = hud.simple.SimpleInfoPanelUnitDetail;
+    void (*old_write)(pfWriteType_t, void const *) = gi.Write;
+    hud.simple.SimpleInfoPanelUnitDetail = NULL;
+    hud.unit = (InfoPanelUnitDetail_t){ .InfoPanelUnitDetail = &root, .IconValue2 = &agility };
+    gi.Write = infopanel_test_write;
+
+    UI_SendInfoPanel(player, &hero, 1);
+
+    hud.unit = old_unit;
+    hud.simple.SimpleInfoPanelUnitDetail = old_simple;
+    gi.Write = old_write;
+    T_EQ(player->client->infopanel.entity, hero->s.number);
+    T_STREQ(agility.Text, "19");
+    T_EQ(agility.Font.Color.g, 230);
+    UI_SetTextPointer(&agility, NULL);
 }
 
 TEST(wc3_game, hero_xp_bar_serializes_current_level_progress_tooltip) {
