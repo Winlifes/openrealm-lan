@@ -8179,6 +8179,28 @@ TEST(wc3_building, normal_build_click_clears_placement_overlay) {
     T_EQ(worker->orders->build_project, MAKEFOURCC('h','b','a','r'));
 }
 
+TEST(wc3_building, replacing_build_placement_retires_the_previous_site_indicator) {
+    uint32_t const barracks = MAKEFOURCC('h','b','a','r');
+    edict_t *clent;
+    edict_t *worker = building_begin_barracks_placement(&clent);
+    cstring_t first[] = { "point", "64", "64" };
+    cstring_t second[] = { "point", "512", "64" };
+
+    G_ClientCommand(clent, 3, first);
+    edict_t *previous = worker->orders->build_preview;
+    T_NOT_NULL(previous);
+    T_ASSERT(previous->inuse);
+
+    build_menu_selectlocation(clent, barracks);
+    G_ClientCommand(clent, 3, second);
+    edict_t *replacement = worker->orders->build_preview;
+    T_NOT_NULL(replacement);
+    T_ASSERT(replacement != previous);
+    T_ASSERT(!previous->inuse);
+    T_EQ(worker->orders->build_project, barracks);
+    T_FEQ(replacement->s.origin2.x, 512.0f, 0.01f);
+}
+
 TEST(wc3_building, shift_build_click_keeps_overlay_and_queues_followup_site) {
     void (*old_write)(pfWriteType_t, void const *) = gi.Write;
     edict_t *clent;

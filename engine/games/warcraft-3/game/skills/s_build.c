@@ -159,6 +159,7 @@ bool G_ExecuteBuildOrder(edict_t *builder, uint32_t building_id, vec2_t const *l
     gameClient_t *client;
     vec2_t snapped;
     edict_t *waypoint;
+    edict_t *preview;
 
     if (!builder || !location || !S_AncientCanReceiveOrder(builder) ||
         !(client = G_GetPlayerClientByNumber(builder->s.player))) {
@@ -218,16 +219,19 @@ bool G_ExecuteBuildOrder(edict_t *builder, uint32_t building_id, vec2_t const *l
     /* Build orders used to strand selected miners hidden inside the mine, permanently consuming its worker capacity. */
     S_GoldMineReleaseWorker(builder);
     G_InitUnitOrders(builder);
-    builder->orders->build_preview = G_CreateBuildPreview(builder, building_id, &snapped);
-#ifdef WC3_DEBUG_BUILD
-    fprintf(stderr, "WC3_BUILD issue preview worker=%ld id=%.4s preview=%ld\n",
-            (long)(builder - g_edicts), (cstring_t)&building_id,
-            builder->orders->build_preview ? (long)(builder->orders->build_preview - g_edicts) : -1L);
-#endif
-    if (!builder->orders->build_preview) {
+    preview = G_CreateBuildPreview(builder, building_id, &snapped);
+    if (!preview) {
         G_FreeEdict(waypoint);
         return false;
     }
+    /* Replacing a build with another build stays in the same movement state. */
+    G_ClearBuildPreview(builder);
+    builder->orders->build_preview = preview;
+#ifdef WC3_DEBUG_BUILD
+    fprintf(stderr, "WC3_BUILD issue preview worker=%ld id=%.4s preview=%ld\n",
+            (long)(builder - g_edicts), (cstring_t)&building_id,
+            (long)(preview - g_edicts));
+#endif
     builder->goalentity = waypoint;
     builder->orders->build_project = building_id;
     move_reset_progress(builder);
