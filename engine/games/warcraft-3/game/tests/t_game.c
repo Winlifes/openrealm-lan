@@ -7738,9 +7738,14 @@ TEST(wc3_save, restores_triggers_and_events_created_after_main) {
         "  set lateTrig = CreateTrigger()\n"
         "  call TriggerAddAction(lateTrig, function LateAction)\n"
         "  call TriggerRegisterTimerEvent(lateTrig, 0.0, false)\n"
+        "  if TriggerEvaluate(lateTrig) then\n"
+        "    call TriggerExecute(lateTrig)\n"
+        "  endif\n"
         "endfunction\n"
         "function verify takes nothing returns nothing\n"
         "  call BJassAssert(lateTrig != null, \"late trigger handle was lost\")\n"
+        "  call BJassAssert(GetTriggerEvalCount(lateTrig) == 1, \"trigger evaluations were lost\")\n"
+        "  call BJassAssert(GetTriggerExecCount(lateTrig) == 1, \"trigger executions were lost\")\n"
         "endfunction\n"));
     main_triggers = level.num_triggers;
     FOR_EACH_EVENT(event) main_events++;

@@ -480,14 +480,18 @@ uint32_t DestroyForce(jass_t *j) {
     if (whichForce) *whichForce = 0;
     return 0;
 }
-/* Force filters bind each candidate as GetFilterPlayer(); limits count accepted
- * players, matching group enumeration rather than limiting candidates tested. */
+/* Force enumeration visits the playable slot range. Neutral owners remain
+ * available to Player() and ForceAddPlayer() for explicit map use. Filters
+ * bind each candidate as GetFilterPlayer(), and limits count accepted players. */
 uint32_t ForceEnumPlayers(jass_t *j) {
     uint32_t *whichForce = jass_checkhandle(j, 1, "force");
     jassFunc_t const *filter = jass_checkhandle(j, 2, "boolexpr");
     if (!whichForce) return 0;
-    FOR_LOOP(i, game.max_clients)
-        if (jass_evaluateplayerexpr(j, filter, &game.clients[i].ps)) *whichForce |= 1 << game.clients[i].ps.number;
+    FOR_LOOP(i, game.max_clients) {
+        player_t *player = &game.clients[i].ps;
+        if (player->number >= PLAYER_NEUTRAL_AGGRESSIVE) continue;
+        if (jass_evaluateplayerexpr(j, filter, player)) *whichForce |= 1 << player->number;
+    }
     return 0;
 }
 uint32_t ForceEnumPlayersCounted(jass_t *j) {
@@ -497,6 +501,7 @@ uint32_t ForceEnumPlayersCounted(jass_t *j) {
     if (!whichForce || countLimit <= 0) return 0;
     FOR_LOOP(i, game.max_clients) {
         player_t *player = &game.clients[i].ps;
+        if (player->number >= PLAYER_NEUTRAL_AGGRESSIVE) continue;
         if (jass_evaluateplayerexpr(j, filter, player)) *whichForce |= 1 << player->number, countLimit--;
         if (!countLimit) break;
     }
@@ -509,6 +514,7 @@ uint32_t ForceEnumAllies(jass_t *j) {
     if (!whichForce || !whichPlayer) return 0;
     FOR_LOOP(i, game.max_clients) {
         player_t *player = &game.clients[i].ps;
+        if (player->number >= PLAYER_NEUTRAL_AGGRESSIVE) continue;
         if (G_PlayerTreatsPlayerAsAlly(whichPlayer->number, player->number) && jass_evaluateplayerexpr(j, filter, player))
             *whichForce |= 1 << player->number;
     }
@@ -521,6 +527,7 @@ uint32_t ForceEnumEnemies(jass_t *j) {
     if (!whichForce || !whichPlayer) return 0;
     FOR_LOOP(i, game.max_clients) {
         player_t *player = &game.clients[i].ps;
+        if (player->number >= PLAYER_NEUTRAL_AGGRESSIVE) continue;
         if (!G_PlayerTreatsPlayerAsAlly(whichPlayer->number, player->number) && jass_evaluateplayerexpr(j, filter, player))
             *whichForce |= 1 << player->number;
     }

@@ -1194,6 +1194,7 @@ static bool jass_evaluatetriggercontext(jass_t *j, jassTriggerContextParams_t co
     if (!params->trigger || params->trigger->destroyed) {
         return false;
     }
+    if (params->trigger->eval_count < INT32_MAX) params->trigger->eval_count++;
     player_t *player = params->event_player ? params->event_player : jass_eventplayer(params->unit);
     jass_t *tmp_state = jass_alloc(sizeof(*tmp_state));
     if (!tmp_state) return false;
@@ -1378,6 +1379,8 @@ static void jass_executetriggercontext(jass_t *j, jassTriggerContextParams_t con
     if (!params->trigger || params->trigger->destroyed) {
         return;
     }
+    /* An action can use the current execution count as its first-run guard. */
+    if (params->trigger->exec_count < INT32_MAX) params->trigger->exec_count++;
     FOR_EACH_LIST(gTriggerAction_t, action, params->trigger->actions) {
         player_t *player = params->event_player ? params->event_player : jass_eventplayer(params->unit);
         jasscoroutine_t *co = jass_startcoroutine(j, &MAKE(jassContext_t,

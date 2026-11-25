@@ -418,6 +418,73 @@ TEST(wc3_jass_map, orc03_home_counter_actions_complete_before_victory_gate_check
     T_ASSERT(!jass_rterror_pending(level.vm));
 }
 
+TEST(wc3_jass_map, trigger_execution_count_ends_a_respawn_phase) {
+    reset_entities();
+    setup_test_world();
+    T_ASSERT(run_test_jass(
+        "globals\n"
+        "  trigger finalPhase = null\n"
+        "  trigger respawn = null\n"
+        "  boolean ready = false\n"
+        "  integer respawns = 0\n"
+        "  integer phaseCountInAction = 0\n"
+        "endglobals\n"
+        "function phaseReady takes nothing returns boolean\n"
+        "  return ready\n"
+        "endfunction\n"
+        "function startFinalPhase takes nothing returns nothing\n"
+        "  set phaseCountInAction = GetTriggerExecCount(GetTriggeringTrigger())\n"
+        "endfunction\n"
+        "function canRespawn takes nothing returns boolean\n"
+        "  return GetTriggerExecCount(finalPhase) == 0\n"
+        "endfunction\n"
+        "function countRespawn takes nothing returns nothing\n"
+        "  set respawns = respawns + 1\n"
+        "endfunction\n"
+        "function defeatUnit takes nothing returns nothing\n"
+        "  call KillUnit(CreateUnit(Player(0), 'hfoo', 0.0, 0.0, 0.0))\n"
+        "endfunction\n"
+        "function advance takes nothing returns nothing\n"
+        "  call BJassAssert(respawns == 1, \"death before the final phase permits respawn\")\n"
+        "  set ready = true\n"
+        "  if TriggerEvaluate(finalPhase) then\n"
+        "    call TriggerExecute(finalPhase)\n"
+        "  endif\n"
+        "  call defeatUnit()\n"
+        "endfunction\n"
+        "function verifyFinalPhase takes nothing returns nothing\n"
+        "  call BJassAssert(GetTriggerEvalCount(finalPhase) == 2, \"both phase checks counted\")\n"
+        "  call BJassAssert(phaseCountInAction == 1, \"actions see the current execution\")\n"
+        "  call BJassAssert(GetTriggerEvalCount(respawn) == 2, \"both death events evaluated\")\n"
+        "  call BJassAssert(GetTriggerExecCount(respawn) == 1, \"failed condition never executes\")\n"
+        "  call BJassAssert(respawns == 1, \"death during the final phase is permanent\")\n"
+        "  call ResetTrigger(finalPhase)\n"
+        "  call BJassAssert(GetTriggerEvalCount(finalPhase) == 0, \"reset clears evaluations\")\n"
+        "  call BJassAssert(GetTriggerExecCount(finalPhase) == 0, \"reset clears executions\")\n"
+        "  set phaseCountInAction = 0\n"
+        "  call TriggerExecute(finalPhase)\n"
+        "  call BJassAssert(phaseCountInAction == 1, \"reset retains registered actions\")\n"
+        "endfunction\n"
+        "function main takes nothing returns nothing\n"
+        "  set finalPhase = CreateTrigger()\n"
+        "  call TriggerAddCondition(finalPhase, Condition(function phaseReady))\n"
+        "  call TriggerAddAction(finalPhase, function startFinalPhase)\n"
+        "  call BJassAssert(not TriggerEvaluate(finalPhase), \"phase starts closed\")\n"
+        "  set respawn = CreateTrigger()\n"
+        "  call TriggerRegisterPlayerUnitEvent(respawn, Player(0), ConvertPlayerUnitEvent(20), null)\n"
+        "  call TriggerAddCondition(respawn, Condition(function canRespawn))\n"
+        "  call TriggerAddAction(respawn, function countRespawn)\n"
+        "  call defeatUnit()\n"
+        "endfunction\n"));
+    G_RunEvents();
+    jass_runevents(level.vm);
+    jass_callbyname(level.vm, "advance", false);
+    G_RunEvents();
+    jass_runevents(level.vm);
+    jass_callbyname(level.vm, "verifyFinalPhase", false);
+    T_ASSERT(!jass_rterror_pending(level.vm));
+}
+
 /* NightElfX01 removes two seven-unit cinematic groups before enabling rescue regions. */
 TEST(wc3_jass_map, nightelfx01_cleanup_removes_every_tracker) {
     setup_test_world();
@@ -1351,6 +1418,12 @@ TEST(wc3_jass_map, force_filters_counts_callbacks_and_alliances) {
         "  local force picked = CreateForce()\n"
         "  local force allies = CreateForce()\n"
         "  local force enemies = CreateForce()\n"
+        "  local force all = CreateForce()\n"
+        "  local force counted = CreateForce()\n"
+        "  call ForceEnumPlayers(all, null)\n"
+        "  call BJassAssert(not IsPlayerInForce(Player(12), all), \"neutral hostile is not a player slot\")\n"
+        "  call ForceEnumPlayersCounted(counted, null, 16)\n"
+        "  call BJassAssert(not IsPlayerInForce(Player(15), counted), \"counted enumeration excludes neutral slots\")\n"
         "  call ForceEnumPlayersCounted(picked, Condition(function KeepNotOne), 2)\n"
         "  call BJassAssert(IsPlayerInForce(Player(0), picked), \"first accepted player\")\n"
         "  call BJassAssert(not IsPlayerInForce(Player(1), picked), \"filtered player\")\n"
@@ -1368,6 +1441,10 @@ TEST(wc3_jass_map, force_filters_counts_callbacks_and_alliances) {
         "  call BJassAssert(not IsPlayerEnemy(Player(0), Player(0)), \"player is not its own enemy\")\n"
         "  call BJassAssert(not IsPlayerInForce(Player(1), enemies), \"ally excluded from enemies\")\n"
         "  call BJassAssert(IsPlayerInForce(Player(2), enemies), \"enemy included\")\n"
+        "  call BJassAssert(not IsPlayerInForce(Player(12), enemies), \"living neutral units cannot be opponents\")\n"
+        "  call BJassAssert(not IsPlayerInForce(Player(15), allies), \"passive neutral is not a teammate\")\n"
+        "  call ForceAddPlayer(enemies, Player(12))\n"
+        "  call BJassAssert(IsPlayerInForce(Player(12), enemies), \"explicit neutral membership is supported\")\n"
         "  call ForceClear(picked)\n"
         "  call BJassAssert(not IsPlayerInForce(Player(0), picked), \"force clear\")\n"
         "endfunction\n"

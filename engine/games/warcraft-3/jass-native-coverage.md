@@ -166,7 +166,6 @@ Known examples include:
 - Several group enumeration callbacks collect matching edicts but ignore their
   `boolexpr` filter. Counted variants must apply the filter before decrementing
   the accepted-unit limit.
-- `ForceEnumPlayers` and its variants do not yet evaluate filters.
 - `ForcePlayerStartLocation` changes the index but does not reserve it against
   random placement.
 
@@ -423,8 +422,11 @@ Trigger ownership is split deliberately:
 - `TRIGGER` owns enabled/wait-on-sleep state plus condition and action lists.
 - An event registration owns the trigger link, subject, event kind, filter, and
   limit condition. Destroying a trigger must detach or invalidate registrations.
-- Evaluation and execution counts belong to `TRIGGER`; reset clears both counts
-  and transient execution state without deleting registered actions.
+- Each dispatch counts one evaluation before checking conditions. An execution
+  counts once before the actions run, so actions can check whether the trigger
+  is running for the first time. Explicit calls and registered events share
+  the counters. Saved trigger records retain both counters, and `ResetTrigger`
+  clears them while keeping the registrations and actions.
 - `TriggerSleepAction` yields the current JASS coroutine. `TriggerWaitOnSleeps`
   controls whether `TriggerExecuteWait` waits for yielded actions; it is not a
   global scheduler switch.
@@ -438,6 +440,8 @@ Groups contain unit handles; forces contain player handles. Enumeration uses a
 temporary JASS context so `GetFilterUnit` or `GetFilterPlayer` resolves to the
 candidate being tested. `ForGroup`/`ForForce` similarly bind the enum handle for
 the callback and restore the prior context afterward for nested enumeration.
+Player and relationship enumeration cover the playable slot range. Scripts can
+still add neutral owners to a force explicitly with `ForceAddPlayer`.
 
 Every `Group*OrderById` callback must resolve the numeric order through the same
 order table used by the string variant, then call the existing unit order path.

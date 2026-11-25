@@ -1349,6 +1349,8 @@ typedef struct gtriggercondition_s {
 struct gtrigger_s {
     gTriggerAction_t *actions;
     gTriggerCondition_t *conditions;
+    int32_t eval_count;
+    int32_t exec_count;
     bool disabled;
     bool destroyed;
 };

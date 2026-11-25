@@ -77,7 +77,10 @@ uint32_t DestroyTrigger(jass_t *j) {
     return 0;
 }
 uint32_t ResetTrigger(jass_t *j) {
-    //trigger_t *whichTrigger = jass_checkhandle(j, 1, "trigger");
+    trigger_t *whichTrigger = jass_checkhandle(j, 1, "trigger");
+    if (!whichTrigger || whichTrigger->destroyed) return 0;
+    whichTrigger->eval_count = 0;
+    whichTrigger->exec_count = 0;
     return 0;
 }
 uint32_t EnableTrigger(jass_t *j) {
@@ -192,12 +195,12 @@ uint32_t GetTriggerEventId(jass_t *j) {
     return 1;
 }
 uint32_t GetTriggerEvalCount(jass_t *j) {
-    //trigger_t *whichTrigger = jass_checkhandle(j, 1, "trigger");
-    return jass_pushinteger(j, 0);
+    trigger_t *whichTrigger = jass_checkhandle(j, 1, "trigger");
+    return jass_pushinteger(j, whichTrigger && !whichTrigger->destroyed ? whichTrigger->eval_count : 0);
 }
 uint32_t GetTriggerExecCount(jass_t *j) {
-    //trigger_t *whichTrigger = jass_checkhandle(j, 1, "trigger");
-    return jass_pushinteger(j, 0);
+    trigger_t *whichTrigger = jass_checkhandle(j, 1, "trigger");
+    return jass_pushinteger(j, whichTrigger && !whichTrigger->destroyed ? whichTrigger->exec_count : 0);
 }
 /* Registrations own their subject/filter/limit data. Dispatch installs event
  * response context before conditions and actions, then restores it for nested
