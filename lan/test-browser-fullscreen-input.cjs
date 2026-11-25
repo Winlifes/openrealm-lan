@@ -23,10 +23,12 @@ function fixture({touch = false, delayedLock = false, fullscreenFails = false} =
   const canvas = target();
   const container = target();
   const fullscreen = target();
+  const matchFullscreen = { ...target(), hidden: true };
   const lock = target();
   const status = {textContent:''};
   const elements = new Map([
     ['canvas', canvas], ['game-container', container], ['fullscreen-button', fullscreen],
+    ['match-fullscreen-button', matchFullscreen],
     ['pointer-lock-button', lock], ['display-status', status],
   ]);
   document.getElementById = id => elements.get(id);
@@ -49,20 +51,28 @@ function fixture({touch = false, delayedLock = false, fullscreenFails = false} =
     document.dispatchEvent({type:'pointerlockchange'});
   };
   container.requestFullscreen = () => {
+    assert.ok(activated, 'fullscreen requires an active user gesture');
     activated = false;
     calls.push('fullscreen');
     if (fullscreenFails) return Promise.reject(Error('Denied'));
     document.fullscreenElement = container;
     document.dispatchEvent({type:'fullscreenchange'});
   };
+  document.exitFullscreen = () => {
+    calls.push('exit');
+    document.fullscreenElement = null;
+    document.dispatchEvent({type:'fullscreenchange'});
+  };
+  const navigator = {userActivation:{get isActive() { return activated; }}};
   const window = target();
   window.matchMedia = () => ({matches:touch});
   runInNewContext(input, {
-    document, window, location:{search:''}, URLSearchParams,
+    document, window, navigator, location:{search:''}, URLSearchParams,
     performance, requestAnimationFrame() {}, setInterval() {}, setTimeout() {}, clearTimeout() {},
     MouseEvent: class { constructor(type) { this.type = type; } },
   });
-  return {calls, document, canvas, fullscreen, finishLock, status};
+  const activate = value => { activated = value; };
+  return {calls, document, canvas, fullscreen, matchFullscreen, finishLock, status, window, activate};
 }
 
 test('fullscreen also locks the mouse and Escape releases it without relocking', async () => {
@@ -89,4 +99,39 @@ test('touch fullscreen keeps the ordinary pointer behavior', async () => {
   const {calls, fullscreen} = fixture({touch:true});
   await fullscreen.dispatchEvent({type:'click'});
   assert.deepEqual(calls, ['fullscreen']);
+});
+
+test('an activated match start enters fullscreen once and respects a later exit', async () => {
+  const {calls, fullscreen, matchFullscreen, window, activate} = fixture();
+  assert.equal(matchFullscreen.hidden, true);
+  await window.openrealmEnterMatchFullscreen();
+  assert.deepEqual(calls, ['lock', 'fullscreen']);
+  assert.equal(matchFullscreen.hidden, true);
+  await fullscreen.dispatchEvent({type:'click'});
+  activate(true);
+  await window.openrealmEnterMatchFullscreen();
+  assert.deepEqual(calls, ['lock', 'fullscreen', 'exit', 'unlock']);
+  assert.equal(matchFullscreen.hidden, true);
+});
+
+test('a remote match start offers a loading-screen button for the next gesture', async () => {
+  const {calls, matchFullscreen, window, activate} = fixture();
+  activate(false);
+  await window.openrealmEnterMatchFullscreen();
+  assert.deepEqual(calls, []);
+  assert.equal(matchFullscreen.hidden, false);
+  activate(true);
+  await matchFullscreen.dispatchEvent({type:'click'});
+  assert.deepEqual(calls, ['lock', 'fullscreen']);
+  assert.equal(matchFullscreen.hidden, true);
+});
+
+test('leaving fullscreen before a match keeps the windowed mode at loading', async () => {
+  const {calls, fullscreen, matchFullscreen, window, activate} = fixture();
+  await fullscreen.dispatchEvent({type:'click'});
+  await fullscreen.dispatchEvent({type:'click'});
+  activate(true);
+  await window.openrealmEnterMatchFullscreen();
+  assert.deepEqual(calls, ['lock', 'fullscreen', 'exit', 'unlock']);
+  assert.equal(matchFullscreen.hidden, true);
 });

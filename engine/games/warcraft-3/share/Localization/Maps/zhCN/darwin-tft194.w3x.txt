@@ -1,5 +1,13 @@
 // Simplified Chinese display overrides. Keys are FNV-1a of the resolved UTF-8 source.
 [Text]
+// WTS 614
+4b533d786d624624=选择终极形态（1/4）
+// WTS 613
+df3675703485bd43=选择终极形态（2/4）
+// WTS 1186
+9ed9b96936d4ea9e=选择终极形态（3/4）
+// WTS 2235
+7cdd61a22684ae4d=选择终极形态（4/4）
 // WTS 3134
 00866bb8c0fcfa79=解开液体哑巴
 // WTS 813

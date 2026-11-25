@@ -3,6 +3,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Winlife 魔兽争霸 III · 标准对战测试版</title>
 <style>
+  :root { color-scheme: dark; --panel-text: #eee4cd; --panel-gold: #e0bf82;
+          --panel-edge: #765d3b; --panel-highlight: #b59259; }
   html, body { margin: 0; background: #000; overflow: hidden; height: 100%; overscroll-behavior: none; }
   /* The engine adapts to whatever size the canvas is; fill the viewport so
      portrait phones render edge-to-edge (dvh handles mobile URL-bar chrome). */
@@ -18,38 +20,48 @@
                        background: #18150f; border: 1px solid #b89651; border-radius: 3px;
                        font: 16px/1.25 system-ui, sans-serif; }
   #status, #early-map-loading { position: absolute; inset: 0; z-index: 10; display: grid;
-            place-content: center; text-align: center; color: #eee; background: #090b11;
+            place-items: center; padding: 16px; box-sizing: border-box; color: var(--panel-text);
+            background: radial-gradient(ellipse at 50% 30%, #2c2f3d, #11131c 64%, #080910);
             font: 15px/1.5 system-ui, sans-serif; pointer-events: none; }
-  #status { gap: 12px; padding: 20px; }
   #status[hidden], #early-map-loading[hidden] { display: none; }
-  #room-download-progress { justify-self: center; width: min(360px, 74vw); height: 12px; accent-color: #c8a765; }
-  #resource-status { color: #bfc8d4; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .loading-frame { display: grid; gap: 12px; width: min(480px, 100%); box-sizing: border-box;
+                   padding: clamp(15px, 4vw, 27px); border: 2px solid var(--panel-edge);
+                   border-top-color: var(--panel-highlight); border-radius: 4px;
+                   background: linear-gradient(150deg, #282a36, #191b25 70%);
+                   box-shadow: 0 0 0 1px #080910, inset 0 0 0 2px #10121a, 0 16px 32px #0008; }
+  #loading-map-name { margin: 0; color: var(--panel-gold); font: 700 21px/1.35 Georgia, "Songti SC", serif; }
+  #status-message, #early-map-phase { color: var(--panel-gold); font-weight: 650; }
+  .loading-frame progress { appearance: none; -webkit-appearance: none; width: 100%; height: 11px;
+                            border: 0; border-radius: 2px; background: #11131b; accent-color: var(--panel-gold); }
+  .loading-frame progress::-webkit-progress-bar { background: #0d0f17; box-shadow: inset 0 0 0 1px #655333; border-radius: 2px; }
+  .loading-frame progress::-webkit-progress-value { background: linear-gradient(#f2d79b, #a67d41); border-radius: 2px; }
+  .loading-frame progress::-moz-progress-bar { background: linear-gradient(#f2d79b, #a67d41); border-radius: 2px; }
+  #resource-status { color: #bcb4a4; font-size: 12px; font-variant-numeric: tabular-nums; }
   #resource-status:empty { display: none; }
-  #room-loading-actions { display: flex; justify-content: center; align-items: center; gap: 12px; }
+  #room-loading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   #room-loading-actions[hidden] { display: none; }
-  #room-loading-actions a, #room-loading-actions button { pointer-events: auto; padding: 6px 12px;
-            border: 1px solid #6a7484; border-radius: 4px; background: #1c2534;
-            color: #eee; font: inherit; text-decoration: none; cursor: pointer; }
-  #room-loading-actions a:hover, #room-loading-actions button:hover { background: #2b3a50; }
-  #early-map-loading { gap: 14px; }
-  #early-map-progress { width: min(360px, 74vw); height: 12px; accent-color: #c8a765; }
-  #match-players { position: absolute; z-index: 11; bottom: 7%; left: 50%; transform: translateX(-50%);
-                   width: min(430px, 90vw); box-sizing: border-box; padding: 12px 16px;
-                   background: #18150f; color: #f5e6bc; border: 1px solid #b89651; border-radius: 4px;
-                   font: 14px/1.5 system-ui, sans-serif; }
-  #match-players header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-  #match-players a { color: inherit; flex: none; }
-  #match-player-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 35vh; overflow: auto; }
-  #match-player-list li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(50px, 1fr) 4em;
-                          align-items: center; gap: 10px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+  #room-loading-actions a, #room-loading-actions button, #match-fullscreen-button, #game-controls button { pointer-events: auto; padding: 6px 10px;
+            border: 1px solid #8f7248; border-radius: 3px; background: linear-gradient(#393541, #24232c);
+            box-shadow: inset 0 1px #9f886740; color: var(--panel-text); font: inherit; text-decoration: none; cursor: pointer; }
+  #room-loading-actions a:hover, #room-loading-actions button:hover, #match-fullscreen-button:hover,
+  #game-controls button:hover { filter: brightness(1.16); }
+  #match-fullscreen-button { justify-self: start; touch-action: manipulation; }
+  #match-players { border-top: 1px solid var(--panel-edge); padding-top: 12px; font-size: 13px; }
+  #match-players header { display: flex; justify-content: space-between; gap: 8px 12px; align-items: baseline; flex-wrap: wrap; }
+  #match-players a { color: var(--panel-gold); flex: none; pointer-events: auto; text-underline-offset: 3px; }
+  #match-player-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 35vh;
+                       overflow: auto; pointer-events: auto; }
+  #match-player-list li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(45px, 1fr) 3.7em;
+                          align-items: center; gap: 8px; padding: 5px 0; font-variant-numeric: tabular-nums; }
   #match-player-list li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #match-player-list progress { width: 100%; height: 8px; accent-color: #c8a765; }
+  #match-player-list progress { height: 7px; }
   #match-player-list li span:last-child { text-align: right; }
+  #match-player-list .is-ready span:last-child { color: #b8cf95; }
+  #match-player-list .is-ready progress::-webkit-progress-value { background: #879872; }
+  #match-player-list .is-ready progress::-moz-progress-bar { background: #879872; }
   #game-controls { position: absolute; z-index: 40; top: 42px; right: 8px; display: flex; gap: 5px; }
-  #game-controls button { height: 30px; padding: 0 8px; border: 1px solid rgba(220,230,245,.55);
-            border-radius: 4px; background: rgba(0,0,0,.65); color: #fff; font: 12px/1 system-ui, sans-serif;
-            cursor: pointer; touch-action: manipulation; }
-  #game-controls button:hover, #game-controls button:focus-visible { background: rgba(50,75,105,.9); }
+  #game-controls button { height: 30px; padding: 0 8px; font: 12px/1 system-ui, sans-serif; touch-action: manipulation; }
+  #game-container :is(a,button,input,#match-player-list):focus-visible { outline: 2px solid var(--panel-gold); outline-offset: 3px; }
   .is-pointer-locked #game-controls { display: none; }
   #display-status { position: absolute; top: 42px; right: 8px; z-index: 41; margin: 0; pointer-events: none;
             color: #eee; background: rgba(0,0,0,.7); font: 12px/1.5 system-ui, sans-serif; }
@@ -68,25 +80,31 @@
   <input id="game-chat-message" type="text" aria-label="游戏聊天" placeholder="聊天"
          autocomplete="off" spellcheck="false" enterkeyhint="send" maxlength="199" hidden>
   <div id="status">
-    <span id="status-message" role="status">正在准备客户端…</span>
-    <progress id="room-download-progress" aria-label="进房资源下载进度"></progress>
-    <span id="resource-status"></span>
-    <div id="room-loading-actions" hidden>
-      <button id="room-download-retry" type="button" hidden>重试</button>
-      <a id="room-download-back">返回房间列表</a>
-    </div>
+    <section class="loading-frame" aria-labelledby="status-message">
+      <span id="status-message" role="status">正在准备客户端…</span>
+      <progress id="room-download-progress" aria-label="进房资源下载进度"></progress>
+      <span id="resource-status"></span>
+      <div id="room-loading-actions" hidden>
+        <button id="room-download-retry" type="button" hidden>重试</button>
+        <a id="room-download-back">返回房间列表</a>
+      </div>
+    </section>
   </div>
   <div id="early-map-loading" hidden>
-    <span id="early-map-phase" role="status">正在载入对局…</span>
-    <progress id="early-map-progress" max="1" aria-label="对局加载进度"></progress>
+    <section class="loading-frame" aria-labelledby="early-map-phase">
+      <h1 id="loading-map-name" hidden></h1>
+      <span id="early-map-phase" role="status">正在载入对局…</span>
+      <progress id="early-map-progress" max="1" aria-label="本机开局加载进度"></progress>
+      <section id="match-players" aria-labelledby="match-player-count" hidden>
+        <header><strong id="match-player-count" role="status"></strong><a id="match-loading-back">返回大厅</a></header>
+        <ul id="match-player-list" tabindex="0" aria-label="玩家加载进度"></ul>
+      </section>
+      <button id="match-fullscreen-button" type="button" hidden>进入全屏</button>
+    </section>
   </div>
-  <section id="match-players" aria-labelledby="match-player-count" hidden>
-    <header><strong id="match-player-count" role="status"></strong><a id="match-loading-back">返回大厅</a></header>
-    <ul id="match-player-list"></ul>
-  </section>
   <div id="game-controls">
     <button id="pointer-lock-button" type="button" title="按 Esc 释放鼠标" aria-pressed="false" hidden disabled>锁定鼠标</button>
-    <button id="fullscreen-button" type="button" aria-pressed="false">全屏</button>
+    <button id="fullscreen-button" type="button" aria-pressed="false">进入全屏</button>
   </div>
   <p id="display-status" role="status"></p>
   <div id="input-status"></div>
@@ -177,6 +195,7 @@
       const percent = players[i + 1];
       const name = matchPlayerNames.get(player) || `玩家 ${player + 1}`;
       const row = document.createElement('li');
+      row.classList.toggle('is-ready', percent === 100);
       const label = document.createElement('span');
       label.textContent = name;
       label.title = name;
@@ -206,7 +225,8 @@
     if (!active && !loadingMatch) return;
     if (active) {
       watchingRoom = false;
-      mapPhase.textContent = progress >= 1 ? '正在进入对局…' : '正在载入对局…';
+      mapPhase.textContent = progress >= 1 ? '本机加载完成' : '正在载入对局…';
+      if (!loadingMatch) void window.openrealmEnterMatchFullscreen?.();
     } else {
       matchPlayers.hidden = true;
       matchPlayerProgress = null;
@@ -228,6 +248,7 @@
       if (state?.status === 'playing') {
         watchingRoom = false;
         mapPhase.textContent = '服务器正在准备对局…';
+        void window.openrealmEnterMatchFullscreen?.();
         presentMapLoading?.(true, 0, false);
       }
     } catch (_) { /* Retry after transient network failures. */ }
@@ -411,6 +432,11 @@
   }
   async function prepareBrowserResources(mapName) {
     mark('wc3-resources-start');
+    if (mapName) {
+      const title = document.getElementById('loading-map-name');
+      title.textContent = mapName;
+      title.hidden = false;
+    }
     setStatus(mapName ? '正在下载「' + mapName + '」的开局资源…' : '正在准备客户端和基础资源…');
     const sidecars = fetch(dataUrl('b64.index.txt'), {signal:AbortSignal.timeout(8000)}).then(async response => {
       if (response.status === 404) return '';

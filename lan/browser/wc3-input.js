@@ -58,12 +58,18 @@
 
   const container = document.getElementById('game-container');
   const fullscreenButton = document.getElementById('fullscreen-button');
+  const matchFullscreenButton = document.getElementById('match-fullscreen-button');
   const lockButton = document.getElementById('pointer-lock-button');
   const displayStatus = document.getElementById('display-status');
+  const requestFullscreen = container.requestFullscreen || container.webkitRequestFullscreen;
   const canLockPointer = !touchOn && typeof canvas.requestPointerLock === 'function';
   const lockedStatus = 'Esc 释放鼠标';
   let statusTimeout;
   let fullscreenLock = null;
+  let matchStartedLoading = false;
+  let wasFullscreen = false;
+  let leftFullscreen = false;
+  let changingFullscreen = false;
   function showDisplayStatus(message, temporary = false) {
     clearTimeout(statusTimeout);
     displayStatus.textContent = message;
@@ -94,18 +100,25 @@
       reportPointerLockError();
     }
   }
+  function updateMatchFullscreenButton() {
+    matchFullscreenButton.hidden = !matchStartedLoading || !requestFullscreen || isFullscreen() || leftFullscreen;
+  }
   function syncFullscreen() {
     const active = isFullscreen();
+    if (wasFullscreen && !active) leftFullscreen = true;
+    wasFullscreen = active;
     container.classList.toggle('is-fullscreen', active);
-    fullscreenButton.textContent = active ? '退出全屏' : '全屏';
+    fullscreenButton.textContent = active ? '退出全屏' : '进入全屏';
     fullscreenButton.setAttribute('aria-pressed', String(active));
+    updateMatchFullscreenButton();
     if (!active) releaseFullscreenLock();
   }
-  fullscreenButton.addEventListener('click', async () => {
-    const entering = !isFullscreen();
+  async function setFullscreen(entering, reportFailure = true) {
+    if (changingFullscreen || entering === isFullscreen()) return;
+    changingFullscreen = true;
     try {
       const target = entering ? container : document;
-      const toggle = entering ? container.requestFullscreen || container.webkitRequestFullscreen :
+      const toggle = entering ? requestFullscreen :
         document.exitFullscreen || document.webkitExitFullscreen;
       if (!toggle) throw new Error('Fullscreen unavailable');
       if (entering && canLockPointer && !fullscreenLock && !document.pointerLockElement) {
@@ -117,9 +130,23 @@
       canvas.focus();
     } catch (_) {
       if (entering) releaseFullscreenLock();
-      showDisplayStatus('当前浏览器无法切换全屏', true);
+      if (reportFailure) showDisplayStatus('当前浏览器无法切换全屏', true);
+    } finally {
+      changingFullscreen = false;
     }
-  });
+  }
+  fullscreenButton.addEventListener('click', () => setFullscreen(!isFullscreen()));
+  matchFullscreenButton.addEventListener('click', () => setFullscreen(true));
+  window.openrealmEnterMatchFullscreen = function () {
+    if (matchStartedLoading) return;
+    matchStartedLoading = true;
+    updateMatchFullscreenButton();
+    // A remote room start may arrive after browser user activation expires.
+    // Keep the loading-screen button available for a direct gesture.
+    if (!matchFullscreenButton.hidden && navigator.userActivation?.isActive !== false) {
+      return setFullscreen(true, false);
+    }
+  };
   document.addEventListener('fullscreenchange', syncFullscreen);
   document.addEventListener('webkitfullscreenchange', syncFullscreen);
 
