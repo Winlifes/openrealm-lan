@@ -160,7 +160,54 @@ components, not interchangeable native gameplay angles.
 
 ## Entity Interpolation
 
-The client keeps two poses per entity, `prev` and `current`. `V_RenderView` blends between them using a fraction derived from `cl.time` and the server frame interval. When a continuous snapshot is encoded against an older acknowledged frame, the client restores that base to decode the message, then takes the previous render pose from the most recently applied snapshot for models with a matching entity identity.
+The client keeps three poses per entity, `older`, `prev` and `current`, for the last three applied server frames, and
+three camera samples, `viewDef.camerastate[2]`, `[1]` and `[0]`. `cl.poses` records their server times. Each new
+server frame shifts both sets forward once in `CL_ParseFrame`. A paused server's keepalive repeats its frame number: it
+refreshes `current` but adds no sample, so the picture does not settle and then jump when play resumes. An undecodable
+frame adds no sample either.
+
+The world is drawn at the presentation clock's render time (`client/cl_clock.h`), not at "newest snapshot time plus
+time since it arrived". That older rule set `cl.time` to each snapshot's server time on arrival. A late packet froze
+units at their last pose, the next one jumped them forward, and two snapshots read in one browser frame skipped a whole
+tick. A late packet also moved `cl.time` backwards, which `V_AdvanceSceneTime` treated as a new render epoch, so
+particles and global-sequence animation hiccuped as well.
+
+The clock advances with real time and is steered, never snapped, toward the fastest recent delivery. That target is
+real time plus the largest `server time - arrival time` offset over the last 16 applied snapshots.
+
+- `cl.time` follows that line. UI timers, client effects and scene animation see a monotonic server-time estimate.
+- The render time runs `target_delay` behind it. The delay is the widest recent gap between a snapshot becoming due
+  and its arrival (the interval plus its lateness), plus a 16 ms margin for frame quantization. It is capped by the
+  two newest intervals, because only three poses are retained.
+
+Steering changes either clock's speed by at most 10%. The render time never passes the newest snapshot. If it reaches
+the newest snapshot on two consecutive arrivals, the offset window is stale (the server fell behind real time) and is
+dropped. If several snapshots land together after a long wait, the render time continues from the oldest retained pose
+instead of waiting for steering to catch up. A server time earlier than the newest one, or an error over 500 ms, starts
+a new timeline at that snapshot.
+
+`V_SelectPosePair` chooses `older -> prev` or `prev -> current` around the render time and sets `viewDef.lerpfrac`
+from the snapshots' real server-time spacing. A rate-limited link (`sv_rate`) skips server frames and delivers 200 ms
+intervals. The old fixed `FRAMETIME` divisor moved units for half of each interval and froze them for the rest.
+`Matrix4_getCameraMatrix` and `V_AddClientEntity` use the same pair, so a camera locked to a unit does not shake
+against it. An entity whose model changed since `prev` is drawn at `current`, rather than old animation frames on the
+new model.
+
+An entity interpolates when its previous pose belongs to the previously applied frame, however many server frames
+apart. The server omits unchanged entities from a delta, so `CL_ReadPacketEntities` stamps every entity in the
+snapshot with the frame number, not just those it decoded. Previously a unit that idled for one frame, or any unit
+behind a rate-limited link, snapped instead of moving smoothly. When a snapshot is encoded against an older
+acknowledged frame, the client restores that base to decode the message. It then takes `prev` and `older` from the two
+frames applied before, for models with a matching entity identity. With a round trip longer than a tick this is the
+normal path.
+
+The replay tests drive scripted arrival times through `CL_ParseServerMessage`, the clock and `V_AddClientEntity`.
+`client_clock.jittered_snapshots_move_entities_at_a_steady_rate` covers 0-80 ms jitter at 120 Hz with near-bunched
+packets. `client_clock.rate_limited_snapshots_interpolate_across_skipped_frames` covers 200 ms intervals. Both require
+the drawn speed to stay within half a frame of the true speed. `client_clock.steers_without_reversing_and_recovers_from_a_late_timeline`
+covers monotonicity, the newest-snapshot bound and the 300 ms server stall. `client_frames.*` covers idle entities,
+rebuilt delta bases and paused keepalives, and `client_camera.older_pair_blends_the_two_earlier_samples` covers the
+camera pair.
 
 Rebuilding a full snapshot or an older acknowledged delta base can remove an entity that appeared in the previous display frame. If the new packet adds it again, `CL_ReadPacketEntities` decodes against the spawn baseline and starts both render poses at the decoded state. A consecutive frame number does not imply that the restored base contains the entity. `client_frames.recovered_snapshot_does_not_animate_building_from_baseline` exercises both recovery paths.
 

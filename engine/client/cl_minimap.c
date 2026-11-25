@@ -30,7 +30,7 @@ static uint32_t minimap_recent_count, minimap_recent_cursor;
 void CL_PredictCameraPosition(vec2_t pos) {
     bool terrain = re.CameraUsesTerrainHeight();
     float height = terrain ? re.GetHeightAtPoint(pos.x, pos.y) : 0.0f;
-    FOR_LOOP(i, 2) {
+    FOR_LOOP(i, VIEW_CAMERA_SAMPLES) {
         vec3_t *org = &cl.viewDef.camerastate[i].origin;
         /* Changing XY alone paired the previous terrain Z with the new location and caused acknowledgment jumps. */
         if (terrain) org->z += height - re.GetHeightAtPoint(org->x, org->y);

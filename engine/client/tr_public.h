@@ -193,8 +193,12 @@ typedef struct {
     color32_t color;
 } renderSplatRect_t;
 
+/* Server camera samples kept for interpolation: [0] current, [1] previous, [2] the one before it. The client
+ * renders a little behind the newest snapshot, so the pair it blends may be [2]->[1]; the renderer reads [0]. */
+#define VIEW_CAMERA_SAMPLES 3
+
 typedef struct {
-    viewCamera_t camerastate[2];
+    viewCamera_t camerastate[VIEW_CAMERA_SAMPLES];
     vec3_t target; /* Rendered camera focus shared by projection, drag-panning, and shadows. */
     rect_t viewport;
     rect_t scissor;

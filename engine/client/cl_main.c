@@ -64,6 +64,10 @@ static uint32_t cl_timeout_checks;
 static uint32_t cl_connect_started, cl_connect_retry;
 
 uint32_t CL_RealTime(void) { return cl_realtime; }
+#ifdef BZ_TESTS
+/* Replays scripted snapshot arrival times through the production parser and presentation clock. */
+void CL_TestSetRealTime(uint32_t time) { cl_realtime = time; }
+#endif
 
 static void CL_RecordPacketSend(uint32_t sequence, uint32_t now) {
     size_t slot = sequence % (sizeof(cls.net_ping.sent) / sizeof(*cls.net_ping.sent));
@@ -1807,7 +1811,8 @@ static void CL_SendSoundEvents(void) {
 
 void CL_Frame(uint32_t msec) {
     cl_realtime += msec;
-    cl.time += msec;
+    /* Smoothed toward the snapshot arrivals once a server frame seeds it; plain real time before that. */
+    cl.time = CL_ClockAdvance(&cl.clock, cl.time, msec, cl_realtime);
 
 #ifdef __EMSCRIPTEN__
     /* A closed WebSocket is definitive. Waiting for packet silence would

@@ -1298,7 +1298,7 @@ static void CL_SendView(vec3_t angles, float dist) {
     cl.camera_prediction.angles = angles;
     cl.camera_prediction.distance = dist;
     cl.camera_prediction.view_ms = CL_RealTime();
-    FOR_LOOP(i, 2) {
+    FOR_LOOP(i, VIEW_CAMERA_SAMPLES) {
         cl.viewDef.camerastate[i].viewangles = angles;
         cl.viewDef.camerastate[i].distance = dist;
     }

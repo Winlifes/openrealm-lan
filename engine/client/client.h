@@ -6,6 +6,7 @@
 #include "keys.h"
 #include "client/menu.h"
 #include "ui_layout.h"
+#include "cl_clock.h"
 
 #define WINDOW_WIDTH 1024
 #define WINDOW_HEIGHT 768
@@ -17,10 +18,15 @@
 #define MAX_CONFIRMATION_OBJECTS 16
 #define MAX_CONTROL_GROUPS 10 // groups; numbered 0-9; stored in cl.groups
 
+/* Snapshot poses the renderer interpolates: older, prev and current are the last three applied server frames
+ * (cl.poses.time). The world is drawn slightly behind the newest snapshot, so the blend may be older->prev. */
+#define CL_POSE_SAMPLES 3
+
 typedef struct {
     entityState_t baseline;
     entityState_t current;
     entityState_t prev;
+    entityState_t older;
     uint32_t serverframe;
     uint32_t presentation_generation;
     color32_t tint;
@@ -97,6 +103,15 @@ struct client_state {
     lightningEffect_t lightning_effects[MAX_LIGHTNING_EFFECTS];
     uint32_t num_lightning_effects;
     struct frame frame;
+    /* Server time and frame of the retained poses: ents[].older/.prev/.current and viewDef.camerastate[2]/[1]/[0].
+     * Paused keepalives and undecodable frames add no sample. */
+    struct {
+        uint32_t time[CL_POSE_SAMPLES];
+        int frame[CL_POSE_SAMPLES];
+        uint32_t count;   /* applied samples, up to CL_POSE_SAMPLES */
+        bool older_pair;  /* the current render blends older->prev rather than prev->current */
+    } poses;
+    clClock_t clock;      /* smoothed presentation clock; cl.time follows it once a snapshot seeds it */
     vec2_t startingPosition;
     player_t playerstate;
     struct {
@@ -218,6 +233,7 @@ void CL_PredictCameraPosition(vec2_t position);
 static inline float cl_normalize_entity_scale(float scale) { return scale > 0.0f ? scale : 1.0f; }
 
 void V_RenderView(void);
+void V_SelectPosePair(void);
 void V_Shutdown(void);
 void CL_PrepRefresh(void);
 bool CL_ContinueLoading(uint32_t timestamp);
@@ -397,6 +413,7 @@ extern refExport_t re;
 extern menuExport_t menu;
 #ifdef BZ_TESTS
 extern void (*cl_test_lobby_chat)(cstring_t text, bool own);
+void CL_TestSetRealTime(uint32_t time);
 #endif
 extern mouseEvent_t mouse;
 extern bool scr_initialized;
