@@ -1,5 +1,11 @@
 [
   {
+    "release": "r94-game-station-real-43-command-preload",
+    "changes": [
+      "在进房前准备公共指令按钮、单位信息和操作反馈的素材，减少首次选中单位、训练和移动时的临时下载。"
+    ]
+  },
+  {
     "release": "r94-game-station-real-42-room-assets",
     "changes": [
       "新增四人近战地图 Borderlands。",
