@@ -124,6 +124,20 @@ class BrowserReleaseInputs(unittest.TestCase):
                 self.assertEqual(body[8:], resources[group['files'][0]])
                 self.assertEqual(manifest[group['pack']]['sha256'], hashlib.sha256(body).hexdigest())
 
+            source = json.loads(preload_index.read_text())
+            source['extra'] = {'maps': {'maps/test.w3m': ['units/unused/attack.ogg']}}
+            preload_index.write_text(json.dumps(source))
+            command[2] = 'with-supplement'
+            result = subprocess.run(command, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            update = root / 'browser-releases/with-supplement'
+            updated_manifest = json.loads((update / 'release-manifest.json').read_text())
+            for name in [plan['packs']['lobby'], *plan['packs']['maps'].values(), shared['pack'], selected['pack']]:
+                self.assertEqual(updated_manifest[name], manifest[name])
+            supplement = json.loads((update / 'preload.index.json').read_text())['extra']['maps']['maps/test.w3m']
+            self.assertEqual(supplement['files'], source['extra']['maps']['maps/test.w3m'])
+            self.assertEqual((update / supplement['pack']).read_bytes()[8:], resources['units/unused/attack.ogg'])
+
 
 if __name__ == '__main__':
     unittest.main()

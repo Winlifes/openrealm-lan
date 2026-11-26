@@ -77,7 +77,8 @@ const wc3RoomAssets = (() => {
       const size = view.getUint32(offset + 4, true);
       offset += 8;
       if (!stored || stored > size || stored > bytes.byteLength - offset) throw new Error('Invalid bundled asset size');
-      assets.set(path, {body:bytes.subarray(offset, offset + stored), size});
+      // Each unopened entry owns its compressed bytes after the download is released.
+      assets.set(path, {body:bytes.slice(offset, offset + stored), size});
       offset += stored;
     }
     if (offset !== bytes.byteLength) throw new Error('Unexpected data in asset bundle');
@@ -102,16 +103,5 @@ const wc3RoomAssets = (() => {
     }
   }
 
-  function retain(assets, paths) {
-    for (const [path, asset] of assets) {
-      if (paths && !paths.has(path)) {
-        assets.delete(path);
-      } else if (!(asset instanceof Uint8Array)) {
-        // Release the original bundle buffer while keeping this compressed entry.
-        assets.set(path, {body:asset.body.slice(), size:asset.size});
-      }
-    }
-  }
-
-  return {readBinary, openStartupCache, unpack, inflate, isAudio, expandAudio, retain};
+  return {readBinary, openStartupCache, unpack, inflate, expandAudio};
 })();

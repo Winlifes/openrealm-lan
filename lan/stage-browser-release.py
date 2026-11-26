@@ -44,9 +44,14 @@ if hashlib.sha256((preview / 'bootstrap.mpq').read_bytes()).hexdigest() != boots
 preload = json.loads(args.preload_index.read_text()) if args.preload_index else {'lobby': [], 'maps': {}}
 served_paths = set(asset_index.read_text().splitlines())
 playable_maps = set((preview / 'playable-maps.index.txt').read_text().splitlines())
-if not set(preload['maps']) <= playable_maps:
+extra = preload.get('extra', {})
+extra_lobby = extra.get('lobby', [])
+extra_maps = extra.get('maps', {})
+if not set(preload['maps']).union(extra_maps) <= playable_maps:
     raise ValueError('Preload index names an unlisted playable map')
-for group in [preload['lobby'], *preload['maps'].values()]:
+if extra and not args.data_dir:
+    raise ValueError('Supplemental preloads require a data directory')
+for group in [preload['lobby'], *preload['maps'].values(), extra_lobby, *extra_maps.values()]:
     if not set(group) <= served_paths:
         raise ValueError('Preload index names an asset absent from the served data mirror')
 retained = preload.get('retainAfterLoad', {})
@@ -145,6 +150,18 @@ def pack_startup_assets(directory):
     audio = pack_room_audio(directory, lobby, maps)
     if audio['shared'] or audio['maps']:
         plan['audio'] = audio
+    if extra:
+        shared = list(dict.fromkeys(extra_lobby))
+        extra_plans = {}
+        for name, paths in sorted(extra_maps.items()):
+            unique = list(dict.fromkeys(paths))
+            if unique:
+                key = hashlib.sha256(name.encode()).hexdigest()[:16]
+                extra_plans[name] = {'pack': write_pack(directory, f'room-extra-{key}.bin', unique), 'files': unique}
+        plan['extra'] = {
+            'shared': {'pack': write_pack(directory, 'room-extra-shared.bin', shared), 'files': shared} if shared else None,
+            'maps': extra_plans,
+        }
     return plan
 
 

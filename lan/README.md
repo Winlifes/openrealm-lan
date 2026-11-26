@@ -71,6 +71,8 @@ Include measured command-card and other interface assets in the selected map bun
 
 Measure in-match resource requests and frame intervals before extending a map preload. A chain of requests for a new unit's model, portrait, textures and effects can suspend engine frames while the page continues to respond. Add the measured files to the selected map's preload, then repeat the same cold-cache play sequence. Keep unrelated maps out of the bundle.
 
+For an existing deployment, add newly found paths to `extra.lobby` or `extra.maps` in the same preload JSON. The browser downloads the supplemental shared bundle and the selected map's supplement before joining and can reuse its cached base bundles. Keep files already present in the base art and audio bundles out of the supplements.
+
 Caddy can serve optional `.gz` sidecars for measured preload files. Keep their uncompressed originals in the served mirror.
 
 For a browser-only update that has been tested against the running native version, stage the release with `--server-build CURRENT_NATIVE_BUILD`. The browser then uses that build ID during the WebSocket handshake while the launcher points to the new browser release directory.

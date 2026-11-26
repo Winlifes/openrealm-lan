@@ -145,6 +145,8 @@
   let assetVersion;
   let loadFailed = false;
   const warmAssets = new Map();
+  const mountedAssets = new Map();
+  const pendingAssets = new Map();
   const startupCache = wc3RoomAssets.openStartupCache(siteRoot);
   function setStatus(status) {
     if (loadFailed) return;
@@ -239,7 +241,6 @@
     } else {
       matchPlayers.hidden = true;
       matchPlayerProgress = null;
-      wc3RoomAssets.retain(warmAssets);
     }
     if (active !== loadingMatch) {
       loadingMatch = active;
@@ -413,29 +414,40 @@
     // of the map path than the catalog entry mounted during startup.
     if (path === roomMap && roomArchive) return mountLooseAsset(diskPath, roomArchive);
     if (!Module.WC3_ASSET_INDEX.has(path)) return 0;
-    const cached = warmAssets.get(path);
-    const mountCached = bytes => {
+    const mount = bytes => {
+      const previous = mountedAssets.get(path);
+      if (previous) {
+        if (previous.diskPath === diskPath) return previous.size;
+        return mountLooseAsset(diskPath, Module.FS.readFile(previous.diskPath));
+      }
       const size = mountLooseAsset(diskPath, bytes);
-      // Loose audio may be requested with another case spelling by the map, model, or sound catalog.
-      if (size && !wc3RoomAssets.isAudio(path)) warmAssets.delete(path);
+      if (size) {
+        mountedAssets.set(path, {diskPath, size});
+        warmAssets.delete(path);
+      }
       return size;
     };
-    if (cached instanceof Uint8Array) return mountCached(cached);
-    const fetchMissing = () => downloadLooseAsset(path, Module.WC3_B64_SET).then(bytes => {
-      const size = mountLooseAsset(diskPath, bytes);
-      if (size) console.debug('[fetch-on-demand] ' + path + ' (' + size + ' bytes)');
-      return size;
-    }).catch(error => {
-      console.warn('读取对局资源失败', path, error.message);
-      return 0;
-    });
-    if (!cached) return fetchMissing();
-    const expanded = wc3RoomAssets.inflate(cached);
-    if (expanded instanceof Uint8Array) return mountCached(expanded);
-    return expanded.then(mountCached).catch(error => {
-      console.warn('解压开局资源失败', path, error.message);
-      return fetchMissing();
-    });
+    if (mountedAssets.has(path)) return mount();
+    const cached = warmAssets.get(path);
+    if (cached instanceof Uint8Array) return mount(cached);
+    let pending = pendingAssets.get(path);
+    if (!pending) {
+      const fetchMissing = () => downloadLooseAsset(path, Module.WC3_B64_SET).then(bytes => {
+        if (bytes) console.debug('[fetch-on-demand] ' + path + ' (' + bytes.byteLength + ' bytes)');
+        return bytes;
+      });
+      const expanded = cached && wc3RoomAssets.inflate(cached);
+      if (expanded instanceof Uint8Array) return mount(expanded);
+      pending = (expanded ? expanded.catch(error => {
+        console.warn('解压开局资源失败', path, error.message);
+        return fetchMissing();
+      }) : fetchMissing()).catch(error => {
+        console.warn('读取对局资源失败', path, error.message);
+        return null;
+      }).finally(() => pendingAssets.delete(path));
+      pendingAssets.set(path, pending);
+    }
+    return pending.then(mount);
   }
   async function preloadLooseAssets(paths, sidecars) {
     let next = 0, completed = 0, failure;
@@ -485,11 +497,13 @@
     const mapFiles = plan && Object.hasOwn(plan.maps, roomMap) ? plan.maps[roomMap] : [];
     const archive = plan?.archives?.[roomMap];
     const audio = [plan?.audio?.shared, plan?.audio?.maps?.[roomMap]].filter(Boolean);
+    const extra = [plan?.extra?.shared, plan?.extra?.maps?.[roomMap]].filter(Boolean);
     const usePacks = plan?.packs && typeof DecompressionStream === 'function';
     const bundles = usePacks ? [
       [plan.packs.lobby, plan.lobby, '公共开局资源包'],
       [plan.packs.maps[roomMap], mapFiles, '地图开局资源包'],
-      ...audio.map(({pack, files}) => [pack, files, '对局音频包'])
+      ...audio.map(({pack, files}) => [pack, files, '对局音频包']),
+      ...extra.map(({pack, files}) => [pack, files, '补充地图素材包'])
     ].filter(([, files]) => files.length) : [];
     const core = ['openwarcraft3.wasm', 'openwarcraft3.data', 'openwarcraft3.js', 'bootstrap.mpq'];
     const sizes = new Map([...core, ...bundles.map(([name]) => name)].map(name => [name, releaseFiles[name]?.bytes]));
@@ -500,7 +514,7 @@
     const selectedMap = async () => {
       if (!isRoom) return null;
       const url = dataUrl(roomMap, assetVersion);
-      const bytes = archive ? await prepareStartupFile(roomMap, url, '房间地图', archive, progress) :
+      const bytes = archive ? await prepareStartupFile(roomMap, url, '房间地图', archive, progress, url + '&local=1') :
         await fetchAsset(url, '房间地图', async response => {
           const data = new Uint8Array(await response.arrayBuffer());
           if (!data.byteLength) throw new Error('Empty map archive');
@@ -530,7 +544,7 @@
     ]);
     if (plan && !usePacks) {
       finishDownloadProgress();
-      await preloadLooseAssets([...new Set([...plan.lobby, ...mapFiles, ...audio.flatMap(group => group.files)])], encodings);
+      await preloadLooseAssets([...new Set([...plan.lobby, ...mapFiles, ...[...audio, ...extra].flatMap(group => group.files)])], encodings);
     }
     if (isRoom) {
       setStatus('正在准备对局音频…');
