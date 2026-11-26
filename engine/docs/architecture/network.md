@@ -274,9 +274,12 @@ it overflowed). The rest of this section applies to `NA_IP`.
   `server_net.overflowed_frame_is_not_sent_or_used_as_delta_base`). Lossless transports keep no history and never discard.
 - **Rate.** `sv_rate` (registered in `Cvar_Init`; bytes per second, default `0` = unlimited) models a client's link: after
   `SV_SendClientDatagram` sends, the client is busy for `bytes / sv_rate`, counting every packet `Netchan_Transmit` sent
-  (headers and the reliable stream included), and snapshots due in that window are skipped rather than queued. The next one
-  deltas against what the client acknowledged, so a slow client sees a lower update rate, not a growing backlog
-  (`server_net.rate_charges_reliable_bytes`).
+  (headers and the reliable stream included). A snapshot that falls due while more than `SV_RATE_BACKLOG_MSEC` (half a
+  frame) of that remains is skipped rather than queued. The next one deltas against what the client acknowledged, so a
+  slow client sees a lower update rate, not a growing backlog (`server_net.rate_charges_reliable_bytes`). The link used to
+  have to drain completely, so snapshots 8% over one frame's budget went out every other frame and used half the
+  configured rate. The allowance keeps the queue under half a frame and spends the budget
+  (`server_net.rate_spends_the_budget_instead_of_halving_snapshots`).
 
 Tests: `netchan.*` and `server_net.udp_deltas_use_acknowledged_frames_and_configstrings_survive_loss` (lossy link, default run),
 the `client_frames.*` suite, and the `stress_net.*` suite (`make test-stress`):

@@ -253,8 +253,8 @@ void Matrix4_getCameraMatrix(mat4_t *output) {
     mat4_t proj, view, inverse;
     size2_t windowSize = re.GetWindowSize();
     /* The same snapshot pair as the entities, so a camera locked to a unit does not shake against it. */
-    viewCamera_t *a = cl.viewDef.camerastate + (cl.poses.older_pair ? 2 : 1);
-    viewCamera_t *b = cl.viewDef.camerastate + (cl.poses.older_pair ? 1 : 0);
+    viewCamera_t *a = cl.viewDef.camerastate + cl.poses.pair_age + 1;
+    viewCamera_t *b = cl.viewDef.camerastate + cl.poses.pair_age;
     vec3_t origin = Vector3_lerp(&a->origin, &b->origin, cl.viewDef.lerpfrac);
     if (re.CameraUsesTerrainHeight()) {
         float az = a->origin.z - re.GetHeightAtPoint(a->origin.x, a->origin.y);
@@ -322,12 +322,13 @@ static void V_AddClientEntity(centity_t const *ent, bool debug_entities) {
     if (view_state.num_entities >= MAX_CLIENT_ENTITIES) {
         return;
     }
-    if (cl.poses.older_pair) {
-        /* Drawn between the two earlier snapshots. If the entity changed model since, those poses belong to the
-         * old model: show the current state rather than old animation frames on the new model. */
-        bool const same = ent->prev.model == ent->current.model && ent->prev.class_id == ent->current.class_id;
-        from = same ? &ent->older : &ent->current;
-        to = same ? &ent->prev : &ent->current;
+    if (cl.poses.pair_age) {
+        /* Drawn between two earlier snapshots. If the entity changed model since, those poses belong to the old
+         * model: show the current state rather than old animation frames on the new model. */
+        entityState_t const *newer = CL_EntityPose(ent, cl.poses.pair_age);
+        bool const same = newer->model == ent->current.model && newer->class_id == ent->current.class_id;
+        from = same ? CL_EntityPose(ent, cl.poses.pair_age + 1) : &ent->current;
+        to = same ? newer : &ent->current;
     }
     /* model is a uint16_t and MAX_MODELS bounds the configstring lookup. */
     re.origin = Vector3_lerp(&from->origin, &to->origin, cl.viewDef.lerpfrac);
@@ -821,12 +822,16 @@ void CL_PrepRefresh(void) {
  * The blend uses the snapshots' real server-time spacing: a rate-limited link delivers 200 ms intervals and a
  * fixed 100 ms divisor moved units for half of each interval and froze them for the rest. */
 void V_SelectPosePair(void) {
-    uint32_t const *time = cl.poses.time;
+    uint32_t const *time = cl.poses.time; /* oldest first */
+    uint32_t const newest = CL_POSE_SAMPLES - 1;
     double const render = cl.clock.valid ? CL_ClockRenderTime(&cl.clock) : (double)cl.time;
+    uint32_t age = 0;
     double from, to;
-    cl.poses.older_pair = cl.poses.count >= CL_POSE_SAMPLES && render < time[1];
-    from = cl.poses.older_pair ? time[0] : time[1];
-    to = cl.poses.older_pair ? time[1] : time[2];
+    /* The newest pair whose older end the render time has reached; before all of them, the oldest retained pair. */
+    while (age + 2 < cl.poses.count && render < time[newest - age - 1]) age++;
+    cl.poses.pair_age = age;
+    from = time[newest - age - 1];
+    to = time[newest - age];
     if (cl.poses.count < 2 || to <= from) {
         cl.viewDef.lerpfrac = 1.0f;
         return;
@@ -1326,22 +1331,47 @@ static float v_test_rendered_x(void) {
     return x;
 }
 
-/* Count frames whose drawn speed leaves [70%, 130%] of the true 100 units/s while snapshots keep arriving. */
+TEST(client_clock, full_snapshot_keeps_the_displayed_motion_interval) {
+    vTestReplay_t replay;
+    uint32_t realtime = 5000;
+    float before;
+
+    T_ASSERT(v_test_replay_begin(&replay, NA_IP));
+    if (!replay.saved) return;
+    for (int frame = 1; frame <= 5; frame++) {
+        FOR_LOOP(step, FRAMETIME / 10) v_test_replay_advance(&realtime, 10);
+        if (frame < 5) v_test_replay_snapshot(&replay, frame, frame * 10.0f);
+    }
+    before = v_test_rendered_x();
+    T_ASSERT(before > 30.0f && before < 40.0f);
+
+    /* A recovery snapshot has no delta base, but it describes the same moving unit. */
+    replay.last_frame = -1;
+    v_test_replay_snapshot(&replay, 5, 50.0f);
+    T_FEQ(v_test_rendered_x(), before, 0.01f);
+    FOR_LOOP(step, FRAMETIME / 10) v_test_replay_advance(&realtime, 10);
+    v_test_replay_snapshot(&replay, 6, 60.0f);
+    T_ASSERT(v_test_rendered_x() > before && v_test_rendered_x() < 50.0f);
+    v_test_replay_end(&replay);
+}
+
+/* Count frames whose drawn speed leaves [85%, 115%] of the true 100 units/s while snapshots keep arriving.
+ * Steering alone changes it by at most 10%. */
 typedef struct { uint32_t checked, stalls, jumps; float previous; } vTestMotion_t;
 
 static void v_test_motion_sample(vTestMotion_t *motion, float x, uint32_t msec, bool measure) {
     if (measure) {
         float const speed = (x - motion->previous) * 1000.0f / (float)msec;
         motion->checked++;
-        if (speed < 50.0f) motion->stalls++;
-        if (speed > 150.0f) motion->jumps++;
+        if (speed < 85.0f) motion->stalls++;
+        if (speed > 115.0f) motion->jumps++;
     }
     motion->previous = x;
 }
 
-/* A 10 Hz server reaches a 120 Hz browser 0-70 ms late, and every ninth snapshot is held back almost a full tick
- * and delivered together with the next. Snapping the clock to each arrival stalled units on every late packet and
- * jumped them on every early or bunched one. */
+/* A 10 Hz server reaches a 120 Hz browser 0-70 ms late, and every ninth snapshot is held back 150 ms (a TCP
+ * retransmission) and delivered together with the next. Snapping the clock to each arrival stalled units on every
+ * late packet and jumped them on every early or bunched one. */
 TEST(client_clock, jittered_snapshots_move_entities_at_a_steady_rate) {
     enum { FRAMES = 90 };
     vTestReplay_t replay;
@@ -1354,8 +1384,8 @@ TEST(client_clock, jittered_snapshots_move_entities_at_a_steady_rate) {
         uint32_t late;
         seed = seed * 1103515245u + 12345u;
         late = (seed >> 16) % 71;
-        if (frame % 9 == 4) late = 80;
-        if (frame % 9 == 5) late = 0;
+        if (frame % 9 == 4) late = 150;
+        if (frame % 9 == 5) late = 50;
         arrival[frame] = realtime + (uint32_t)frame * FRAMETIME + late;
         if (frame > 1 && arrival[frame] < arrival[frame - 1]) arrival[frame] = arrival[frame - 1]; /* one stream */
     }
@@ -1408,7 +1438,7 @@ TEST(client_clock, rate_limited_snapshots_interpolate_across_skipped_frames) {
 TEST(client_clock, steers_without_reversing_and_recovers_from_a_late_timeline) {
     clClock_t clock = { 0 };
     uint32_t realtime = 1000, time = 0, next = 1, held_steady = 0, held_after = 0;
-    double last_render;
+    double last_render, waited_recovered = -1.0;
     T_EQ(CL_ClockAdvance(&clock, 40, 16, realtime), 56u); /* no snapshot yet: plain real time */
     CL_ClockSnapshot(&clock, 100, realtime, FRAMETIME);
     T_ASSERT(clock.valid);
@@ -1426,11 +1456,15 @@ TEST(client_clock, steers_without_reversing_and_recovers_from_a_late_timeline) {
             CL_ClockSnapshot(&clock, 100 + next * 100, realtime, FRAMETIME);
             if (next >= 5 && next < 20 && was_held) held_steady++;
             if (next >= 30 && was_held) held_after++;
+            if (next == 19) T_FEQ(clock.waited, 0.0, 0.001);
+            if (next == 30) waited_recovered = clock.waited;
             next++;
         }
     }
     T_EQ(held_steady, 0u);
     T_EQ(held_after, 0u);
+    T_ASSERT(waited_recovered > 0.0);                 /* the stall is visible in the overlay's Wait */
+    T_FEQ(clock.waited, waited_recovered, 0.001);     /* and stops once the window is renewed */
     T_FEQ(clock.target_delay, FRAMETIME + CL_CLOCK_DELAY_MARGIN_MSEC, 1.0);
     CL_ClockSnapshot(&clock, 50, realtime, FRAMETIME); /* map restart: an earlier server time */
     T_EQ((uint32_t)clock.time, 50u);
@@ -1438,9 +1472,9 @@ TEST(client_clock, steers_without_reversing_and_recovers_from_a_late_timeline) {
 }
 
 /* A camera locked to a unit must use the same snapshot pair as the unit. */
-TEST(client_camera, older_pair_blends_the_two_earlier_samples) {
+TEST(client_camera, older_pairs_blend_the_matching_earlier_samples) {
     viewDef_t saved = cl.viewDef;
-    bool const saved_pair = cl.poses.older_pair;
+    uint32_t const saved_pair = cl.poses.pair_age;
     refExport_t api = re;
     bool loaded = world_loaded;
     re.GetWindowSize = v_test_window; re.CameraUsesTerrainHeight = v_test_absolute;
@@ -1451,12 +1485,11 @@ TEST(client_camera, older_pair_blends_the_two_earlier_samples) {
                                                     .distance = 1650, .fov = 60, .znear = 1, .zfar = 5000 };
     }
     cl.viewDef.lerpfrac = 0.5f;
-    cl.poses.older_pair = true;
-    Matrix4_getCameraMatrix(&cl.viewDef.viewProjectionMatrix);
-    T_FEQ(cl.viewDef.target.x, 150.0f, 0.001f);
-    cl.poses.older_pair = false;
-    Matrix4_getCameraMatrix(&cl.viewDef.viewProjectionMatrix);
-    T_FEQ(cl.viewDef.target.x, 250.0f, 0.001f);
-    cl.viewDef = saved; cl.poses.older_pair = saved_pair; re = api; world_loaded = loaded;
+    FOR_LOOP(age, VIEW_CAMERA_SAMPLES - 1) { /* samples at x = 300, 200, 100, 0, newest first */
+        cl.poses.pair_age = age;
+        Matrix4_getCameraMatrix(&cl.viewDef.viewProjectionMatrix);
+        T_FEQ(cl.viewDef.target.x, 250.0f - 100.0f * age, 0.001f);
+    }
+    cl.viewDef = saved; cl.poses.pair_age = saved_pair; re = api; world_loaded = loaded;
 }
 #endif

@@ -4,6 +4,8 @@ The native process runs the match. Each browser connects over WebSocket to the r
 
 The room service starts the dedicated engine with `+lobby_start <map>`. The room loads its lobby metadata at that point. The host's Start command loads the world and runs its game scripts. The browser reports `Ping` next to FPS and Drawcalls using recent acknowledgements from the game connection.
 
+With `scr_showfps 1`, the in-game overlay also reports three timing values over the last half second. `Frame max` is the longest frame interval; a large value is an engine hitch, such as an asset download blocking a frame. `Buffer` is how far the world is drawn behind the fastest recent snapshot delivery, which grows with network jitter. `Wait` is how long the world waited for a late snapshot, which indicates network starvation. To record server frame timing, start the room service with `WC3_ENGINE_PROFILE=1`. Each room log then gets one `[COM_FRAME]` line per second, where `server_max_ms` above 100 means a server frame overran its tick.
+
 On desktop browsers with Pointer Lock, entering fullscreen also locks the mouse to the game. Escape releases it. The mouse can be locked again with the input control after release.
 
 The room service uses 8 KiB sign-on datagrams on its loopback UDP hop. Larger batches reduce the number of WebSocket round trips needed to initialize the map.

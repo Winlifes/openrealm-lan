@@ -112,7 +112,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   const gamePortBase = await findGamePorts();
   child = spawn(process.execPath,[fileURLToPath(new URL('./rooms.mjs',import.meta.url))],{
     env:{...process.env,WC3_LAN_ROOT:root,WC3_ENGINE:engine,WC3_API_PORT:String(port),WC3_GAME_PORT_BASE:String(gamePortBase),
-      WC3_ORIGIN:lanOrigin,WC3_PUBLIC_ORIGIN:publicOrigin,WC3_PUBLIC_PREFIX:'/wc3'},
+      WC3_ORIGIN:lanOrigin,WC3_PUBLIC_ORIGIN:publicOrigin,WC3_PUBLIC_PREFIX:'/wc3',WC3_ENGINE_PROFILE:'1'},
     stdio:['ignore','pipe','pipe']});
   let logs=''; child.stdout.on('data',b=>logs+=b); child.stderr.on('data',b=>logs+=b);
   const request = async (path,options={}) => {
@@ -159,6 +159,7 @@ test('rooms require the matching build and stay on their originating site', {tim
   const engineLog=await readFile(join(dev,'room-logs',room.id+'.log'),'utf8');
   assert.ok(engineLog.includes('lobby_config 2 1 "Winlife 测试房间"'),engineLog);
   assert.ok(!engineLog.includes('"sv_rate"'),engineLog);
+  assert.ok(engineLog.includes('"+set","com_profile","1"'),engineLog);
   const missing=await upgrade(port,path);
   await delay(50);
   const stale=await upgrade(port,path+'?build=old-client');

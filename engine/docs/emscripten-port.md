@@ -10,7 +10,7 @@ test binary (149,706 assertions / 2,670 tests) is green under node. See git log 
 | Mode | Flags | Use |
 |---|---|---|
 | `EM_FS=node` (default) | `-sNODERAWFS=1` | headless test binaries under node (real FS) |
-| `EM_FS=browser` | no asyncify, `-sEXIT_RUNTIME=0` | browser app (`openwarcraft3.js`) |
+| `EM_FS=browser` | wasm32, Asyncify, `-sEXIT_RUNTIME=0` | browser app (`openwarcraft3.js`) |
 | `EM_FS=node-async` | asyncify + NODERAWFS | experiments only |
 
 Common flags: `-sMEMORY64=1` (**required** — the save format and pathing assume 8-byte
@@ -98,14 +98,23 @@ reproduces SDK 4.0.23's pointer-type failure. This fixture covers the native/JS
 contract; a browser save, reload and result-to-site flow checks persistence
 and navigation separately. No network or saved-game layout changes.
 
-## Browser main loop (no asyncify)
+## Browser main loop and Asyncify
 
 Browser builds use a requestAnimationFrame-driven loop:
-`emscripten_set_main_loop(BZ_Frame, 0, 1)` under `#ifdef __EMSCRIPTEN__` in
-`common/main.c`. **Do not enable ASYNCIFY for the browser build:** it silently wedges the
-engine's cross-module function-pointer calls (idle suspension mid-init at the second
-`mi.FS_ReadFile` call; a related variant crashes with "null function or function
-signature mismatch"). Node test builds are unaffected either way.
+`emscripten_set_main_loop_arg(OpenRealm_Frame, ...)` under `#ifdef __EMSCRIPTEN__` in `common/main.c`.
+
+The hosted room client (`EM_FS=browser`, `BZ_WEB_ASYNC_ASSETS`) uses Asyncify so that `WC3_FetchRemoteFile` can
+download a missing asset while the engine stack waits, and so that the loading presentation can yield with
+`emscripten_sleep`. Asyncify instruments every function that might reach one of those imports. Engine modules call
+each other through function tables, so the file paths cannot be narrowed with `ASYNCIFY_IGNORE_INDIRECT`.
+
+libc stdio, formatting and `qsort` make indirect calls only into libc streams or the caller's comparator, never to
+engine code, yet they counted as possible suspensions. Every function that logged or sorted was instrumented as a
+result, including the per-geoset draw `MDLX_RenderGeoset`. The Makefile's `EM_ASYNCIFY_REMOVE` list excludes those
+libc internals. With Emscripten 7.0.1 this cut the instrumented functions from 14,759 to 11,399 and the wasm from
+6.21 MB to 5.75 MB. Add a function to the list only when it can never have engine code above it on the stack during a
+fetch or sleep: a missing frame cannot be resumed. To list instrumented functions and the reason for each, link with
+`EM_PRELOAD='--preload-file build/em-web/share@/share -sASYNCIFY_ADVISE=1'` into a separate `BIN_DIR`.
 
 ## Smoke harness
 

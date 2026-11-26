@@ -199,6 +199,9 @@ void SV_BuildClientFrame(client_t *client);
 void SV_SendClientDatagram(client_t *client);
 void SV_QueueFrameForClient(client_t *client);
 uint32_t SV_WriteFrameToClient(client_t *client);
+/* A rate-limited link still sends the next snapshot when no more than this much of earlier data is left to
+ * drain: the queue stays short, and a snapshot slightly over one frame's budget does not halve the update rate. */
+#define SV_RATE_BACKLOG_MSEC (FRAMETIME / 2)
 bool SV_ClientLinkBusy(client_t const *client);
 void SV_AcknowledgeFrames(client_t *client);
 void SV_ResetDeltaBase(client_t *client);

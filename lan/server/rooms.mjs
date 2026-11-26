@@ -20,6 +20,8 @@ export function forwardDatagram(ws, data) {
 
 const transportRevision = 'udp-backpressure-r90';
 const traceTransport = process.env.WC3_TRACE_TRANSPORT === '1';
+/* Per-second server frame timing in each room log ([COM_FRAME] ... server_max_ms=...), for diagnosing stalls. */
+const profileEngine = process.env.WC3_ENGINE_PROFILE === '1';
 const root = process.env.WC3_LAN_ROOT || join(homedir(), '.local/share/wc3-lan');
 const dev = join(root, 'development');
 /* A running dylib must never be overwritten by the next build. The deployment
@@ -100,6 +102,7 @@ async function initializeRoom(room) {
     const rate = room.map.publicSnapshotRateBytesPerSecond;
     if (room.site === publicSite && Number.isInteger(rate) && rate > 0 && rate <= 0x7fffffff)
       args.push('+set','sv_rate',String(rate));
+    if (profileEngine) args.push('+set','com_profile','1');
     args.push('+lobby_start',room.map.path);
     room.child = spawn(engine, args,
       {cwd:join(dev,'src'), stdio:['pipe','pipe','pipe']});

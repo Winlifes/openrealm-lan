@@ -117,8 +117,10 @@ typedef struct {
     player_t playerstate;
 } frameHistory_t;
 static frameHistory_t cl_frame_history[UPDATE_BACKUP];
-static frameHistory_t const *cl_previous_pose_frame; /* last applied frame, when decoding had to start older */
-static frameHistory_t const *cl_older_pose_frame;    /* the applied frame before it */
+/* When decoding had to start from an older acknowledged frame: the frames applied before this one, newest first,
+ * whose poses the client was drawing between. */
+static frameHistory_t const *cl_pose_history[CL_POSE_SAMPLES - 1];
+#define CL_POSE_CHAIN_MARK(age) (UINT32_MAX - (uint32_t)(age)) /* never a real frame number */
 static uint32_t cl_frame_history_next; /* oldest slot, replaced first: frames arrive in increasing order */
 static bool cl_frame_discard;          /* the frame being parsed deltas against a frame not held: read past it */
 static bool cl_frame_repeat;           /* the frame being parsed repeats the last server frame (paused keepalive) */
@@ -140,7 +142,7 @@ void CL_ResetFrameHistory(void) {
         cl_frame_history[i] = (frameHistory_t){ 0 };
     }
     cl_frame_history_next = 0;
-    cl_previous_pose_frame = cl_older_pose_frame = NULL;
+    memset(cl_pose_history, 0, sizeof(cl_pose_history));
     cl_frame_discard = cl_frame_repeat = cl_nodelta_requested = cl_pose_continuity_valid = false;
     cl.frame.valid = false;
     /* A new session or map starts a new server timeline: the next snapshot reseeds the clock and poses. */
@@ -167,6 +169,22 @@ static void CL_SaveFrameHistory(void) {
     slot->valid = true;
 }
 
+/* An entity's retained pose by age, for writing: 1 prev, then older[]. */
+static entityState_t *CL_PoseSlot(centity_t *ent, uint32_t age) {
+    return age == 1 ? &ent->prev : &ent->older[age - 2];
+}
+
+/* Start an entity's retained poses at one state: there is nothing to interpolate from. */
+static void CL_ResetPose(centity_t *ent, entityState_t const *state) {
+    for (uint32_t age = 1; age < CL_POSE_SAMPLES; age++) *CL_PoseSlot(ent, age) = *state;
+}
+
+/* Begin a new interpolation interval: the retained poses move back by one applied snapshot. */
+static void CL_ShiftPose(centity_t *ent) {
+    for (uint32_t age = CL_POSE_SAMPLES - 1; age > 1; age--) *CL_PoseSlot(ent, age) = *CL_PoseSlot(ent, age - 1);
+    ent->prev = ent->current;
+}
+
 /* Put the entity table and player state back to what they were after frame `base`, the frame the next delta is
  * against. base == -1 is a full snapshot: start from nothing. Returns false if that frame is no longer held. */
 static bool CL_RestoreDeltaBase(int base) {
@@ -182,7 +200,8 @@ static bool CL_RestoreDeltaBase(int base) {
         FOR_LOOP(i, slot->count) {
             entityState_t const *state = &slot->entities[i];
             centity_t *ent = &cl.ents[state->number % MAX_CLIENT_ENTITIES];
-            ent->current = ent->prev = ent->older = *state;
+            ent->current = *state;
+            CL_ResetPose(ent, state);
             ent->serverframe = base;
             ent->presentation_generation++;
             if (!ent->presentation_generation) ent->presentation_generation++;
@@ -299,7 +318,7 @@ static void CL_ReadPacketEntities(sizeBuf_t *msg) {
          * frames apart (a rate-limited link skips some). Its spawn baseline is a decoding input, never a pose,
          * and a rebased delta can drop an entity while its frame number still matches. */
         if (!in_delta_base || !cl_pose_continuity_valid || (int)ent->serverframe != cl_pose_continuity_frame) {
-            ent->older = ent->prev = ent->current;
+            CL_ResetPose(ent, &ent->current);
         }
         ent->serverframe = cl.frame.serverframe;
     }
@@ -308,28 +327,23 @@ static void CL_ReadPacketEntities(sizeBuf_t *msg) {
         cl_frame_discard = false;
         return;
     }
-    /* The acknowledged frame is a decoding input. Interpolate from the frames
-     * actually displayed before this one even when decoding needed an older base. */
-    if (cl_previous_pose_frame) {
-        int const marker = cl_previous_pose_frame->serverframe;
-        FOR_LOOP(i, cl_previous_pose_frame->count) {
-            entityState_t const *previous = &cl_previous_pose_frame->entities[i];
-            centity_t *ent = &cl.ents[previous->number];
-            if (previous->model && previous->model == ent->current.model &&
-                previous->class_id == ent->current.class_id) {
-                ent->older = ent->prev = *previous;
-                ent->serverframe = (uint32_t)marker; /* the older pass extends only these; reset below */
-            }
+    /* The acknowledged frame is a decoding input. Interpolate from the frames actually displayed before this one even
+     * when decoding needed an older base. Each older pose extends only an entity whose newer pose was recovered and
+     * whose identity it shares; serverframe carries that chain mark until the stamp below. */
+    FOR_LOOP(age, CL_POSE_SAMPLES - 1) {
+        frameHistory_t const *history = cl_pose_history[age];
+        if (!history) break;
+        FOR_LOOP(i, history->count) {
+            entityState_t const *pose = &history->entities[i];
+            centity_t *ent = &cl.ents[pose->number];
+            entityState_t const *newer = CL_EntityPose(ent, age);
+            if (!pose->model || pose->model != newer->model || pose->class_id != newer->class_id) continue;
+            if (age && ent->serverframe != CL_POSE_CHAIN_MARK(age - 1)) continue;
+            for (uint32_t older = age + 1; older < CL_POSE_SAMPLES; older++) *CL_PoseSlot(ent, older) = *pose;
+            ent->serverframe = CL_POSE_CHAIN_MARK(age);
         }
-        FOR_LOOP(i, cl_older_pose_frame ? cl_older_pose_frame->count : 0) {
-            entityState_t const *older = &cl_older_pose_frame->entities[i];
-            centity_t *ent = &cl.ents[older->number];
-            if ((int)ent->serverframe == marker && older->model && older->model == ent->prev.model &&
-                older->class_id == ent->prev.class_id)
-                ent->older = *older;
-        }
-        cl_previous_pose_frame = cl_older_pose_frame = NULL;
     }
+    memset(cl_pose_history, 0, sizeof(cl_pose_history));
     /* Unchanged entities are omitted from a delta but are still in this frame. Without this, one idle frame
      * made the next movement snap instead of interpolating from the pose the entity held. */
     FOR_LOOP(i, cl.num_active) cl.ents[cl.active_entities[i]].serverframe = (uint32_t)cl.frame.serverframe;
@@ -397,8 +411,7 @@ static void CL_ParseBaseline(sizeBuf_t *msg) {
     cent->baseline.scale = 1.0f;
     MSG_ReadDeltaEntity(msg, &cent->baseline, index, bits);
     memcpy(&cent->current, &cent->baseline, sizeof(entityState_t));
-    memcpy(&cent->prev, &cent->baseline, sizeof(entityState_t));
-    memcpy(&cent->older, &cent->baseline, sizeof(entityState_t));
+    CL_ResetPose(cent, &cent->baseline);
     if (cent->current.model) {
         CL_AddActiveEntity(index);
     }
@@ -474,12 +487,6 @@ static bool CL_ParseTerrainMaskChunk(sizeBuf_t *msg) {
     return true;
 }
 
-/* Begin a new interpolation interval: the retained poses move forward by one applied snapshot. */
-static void CL_ShiftPose(centity_t *ent) {
-    ent->older = ent->prev;
-    ent->prev = ent->current;
-}
-
 /* Handle the svc_frame header and its game-owned datagram, then shift entity
  * states into "prev"/"older" so the renderer can interpolate the current scene. */
 void CL_ParseFrame(sizeBuf_t *msg) {
@@ -490,7 +497,7 @@ void CL_ParseFrame(sizeBuf_t *msg) {
     cl.frame.oldclientframe = MSG_ReadLong(msg);
     cl.frame.valid = true;
     cl_frame_discard = false;
-    cl_previous_pose_frame = cl_older_pose_frame = NULL;
+    memset(cl_pose_history, 0, sizeof(cl_pose_history));
     /* A paused server repeats its frame as a keepalive: refresh the state, but it is no new interpolation sample. */
     cl_frame_repeat = had_frame && cl.frame.serverframe == previous_frame;
     cl_pose_continuity_valid = had_frame;
@@ -515,14 +522,14 @@ void CL_ParseFrame(sizeBuf_t *msg) {
                 cl_nodelta_requested = true;
             }
         }
-    } else if (rebuild && had_frame && cl.frame.oldclientframe >= 0) {
-        /* Restoring the decode base replaced the displayed poses. Recover them from the frames applied before this
-         * one; a repeated frame keeps the interval it already had. */
+    } else if (rebuild && had_frame) {
+        /* A different decode base or a full recovery snapshot replaces the entity table, not the timeline.
+         * Recover displayed poses from the frames applied before this one. */
         uint32_t const back = cl_frame_repeat ? 1 : 0;
-        if (cl.poses.count >= 1 + back)
-            cl_previous_pose_frame = CL_FindFrameHistory(cl.poses.frame[CL_POSE_SAMPLES - 1 - back]);
-        if (cl.poses.count >= 2 + back)
-            cl_older_pose_frame = CL_FindFrameHistory(cl.poses.frame[CL_POSE_SAMPLES - 2 - back]);
+        for (uint32_t age = 0; age < CL_POSE_SAMPLES - 1 && age + 1 + back <= cl.poses.count; age++)
+            cl_pose_history[age] = CL_FindFrameHistory(cl.poses.frame[CL_POSE_SAMPLES - 1 - back - age]);
+        /* Some transports keep no delta history. Without the poses, start a new interpolation interval here. */
+        if (!cl_pose_history[0]) cl.poses.count = cl_frame_repeat ? 1 : 0;
     }
     
     if (cls.state != ca_active && cl.refresh_prepped) {
@@ -634,8 +641,8 @@ void CL_ParsePlayerInfo(sizeBuf_t *msg) {
     }
 
     if (!cl_frame_repeat) {
-        cl.viewDef.camerastate[2] = cl.viewDef.camerastate[1];
-        cl.viewDef.camerastate[1] = cl.viewDef.camerastate[0];
+        for (uint32_t age = VIEW_CAMERA_SAMPLES - 1; age > 0; age--)
+            cl.viewDef.camerastate[age] = cl.viewDef.camerastate[age - 1];
     }
     cl.viewDef.camerastate[0].origin = cl.playerstate.vieworigin;
     cl.viewDef.camerastate[0].viewangles = cl.playerstate.viewangles;
@@ -1866,7 +1873,7 @@ TEST(client_frames, unchanged_entity_interpolates_when_it_starts_moving) {
     test_apply_frame(&msg);
     T_ASSERT(test_entity_is(5, 20));
     T_FEQ(cl.ents[5].prev.origin.x, 10, 0.01f);
-    T_FEQ(cl.ents[5].older.origin.x, 10, 0.01f);
+    T_FEQ(cl.ents[5].older[0].origin.x, 10, 0.01f);
 
     SZ_Init(&msg, data, sizeof(data)); /* frame 5: a rate-limited link skipped frame 4 */
     test_frame_header(&msg, 5, 3);
@@ -1874,9 +1881,11 @@ TEST(client_frames, unchanged_entity_interpolates_when_it_starts_moving) {
     test_apply_frame(&msg);
     T_ASSERT(test_entity_is(5, 40));
     T_FEQ(cl.ents[5].prev.origin.x, 20, 0.01f);
-    T_FEQ(cl.ents[5].older.origin.x, 10, 0.01f);
-    T_EQ(cl.poses.count, (uint32_t)CL_POSE_SAMPLES);
-    T_EQ(cl.poses.time[0], 200u); T_EQ(cl.poses.time[1], 300u); T_EQ(cl.poses.time[2], 500u);
+    T_FEQ(cl.ents[5].older[0].origin.x, 10, 0.01f);
+    T_EQ(cl.poses.count, 4u);
+    T_EQ(cl.poses.time[CL_POSE_SAMPLES - 3], 200u);
+    T_EQ(cl.poses.time[CL_POSE_SAMPLES - 2], 300u);
+    T_EQ(cl.poses.time[CL_POSE_SAMPLES - 1], 500u);
 
     CL_ResetFrameHistory();
     cls = saved_cls;
@@ -1917,7 +1926,7 @@ TEST(client_frames, rebuilt_delta_base_keeps_both_displayed_poses) {
     test_apply_frame(&msg);
     T_ASSERT(test_entity_is(5, 12));
     T_FEQ(cl.ents[5].prev.origin.x, 11, 0.01f);
-    T_FEQ(cl.ents[5].older.origin.x, 10, 0.01f);
+    T_FEQ(cl.ents[5].older[0].origin.x, 10, 0.01f);
 
     SZ_Init(&msg, data, sizeof(data)); /* frame 4 against frame 2, after frame 3 was applied */
     test_frame_header(&msg, 4, 2);
@@ -1925,7 +1934,8 @@ TEST(client_frames, rebuilt_delta_base_keeps_both_displayed_poses) {
     test_apply_frame(&msg);
     T_ASSERT(test_entity_is(5, 13));
     T_FEQ(cl.ents[5].prev.origin.x, 12, 0.01f);
-    T_FEQ(cl.ents[5].older.origin.x, 11, 0.01f);
+    T_FEQ(cl.ents[5].older[0].origin.x, 11, 0.01f);
+    T_FEQ(cl.ents[5].older[1].origin.x, 10, 0.01f);
 
     CL_ResetFrameHistory();
     cls = saved_cls;
@@ -1970,7 +1980,7 @@ TEST(client_frames, paused_keepalive_adds_no_interpolation_sample) {
     T_ASSERT(test_entity_is(5, 20));
     T_FEQ(cl.ents[5].prev.origin.x, 10, 0.01f);
     T_EQ(cl.poses.count, 2u);
-    T_EQ(cl.poses.time[2], 200u);
+    T_EQ(cl.poses.time[CL_POSE_SAMPLES - 1], 200u);
     T_EQ(CL_ClockLatest(&cl.clock), 200u);
     T_FEQ(cl.viewDef.camerastate[0].origin.x, 200, 0.01f);
     T_FEQ(cl.viewDef.camerastate[1].origin.x, 100, 0.01f);
@@ -1987,7 +1997,7 @@ TEST(client_frames, paused_keepalive_adds_no_interpolation_sample) {
     msg.readcount = 0;
     CL_ParseServerMessage(&msg);
     T_FEQ(cl.ents[5].prev.origin.x, 20, 0.01f);
-    T_FEQ(cl.ents[5].older.origin.x, 10, 0.01f);
+    T_FEQ(cl.ents[5].older[0].origin.x, 10, 0.01f);
     T_FEQ(cl.viewDef.camerastate[2].origin.x, 100, 0.01f);
     T_FEQ(cl.viewDef.camerastate[1].origin.x, 200, 0.01f);
     T_FEQ(cl.viewDef.camerastate[0].origin.x, 300, 0.01f);

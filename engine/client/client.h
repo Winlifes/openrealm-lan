@@ -18,15 +18,17 @@
 #define MAX_CONFIRMATION_OBJECTS 16
 #define MAX_CONTROL_GROUPS 10 // groups; numbered 0-9; stored in cl.groups
 
-/* Snapshot poses the renderer interpolates: older, prev and current are the last three applied server frames
- * (cl.poses.time). The world is drawn slightly behind the newest snapshot, so the blend may be older->prev. */
-#define CL_POSE_SAMPLES 3
+/* Snapshot poses the renderer interpolates: current, prev and older[] are the last applied server frames, newest
+ * first (cl.poses.time lists them oldest first). The world is drawn a little behind the newest snapshot, so the pair
+ * it blends may be an older one. Each camera sample matches the pose of the same age. */
+#define CL_POSE_SAMPLES CL_CLOCK_RETAINED
+_Static_assert(CL_POSE_SAMPLES == VIEW_CAMERA_SAMPLES, "every retained entity pose needs its camera sample");
 
 typedef struct {
     entityState_t baseline;
     entityState_t current;
     entityState_t prev;
-    entityState_t older;
+    entityState_t older[CL_POSE_SAMPLES - 2]; /* [0] the frame before prev, then older ones */
     uint32_t serverframe;
     uint32_t presentation_generation;
     color32_t tint;
@@ -103,13 +105,13 @@ struct client_state {
     lightningEffect_t lightning_effects[MAX_LIGHTNING_EFFECTS];
     uint32_t num_lightning_effects;
     struct frame frame;
-    /* Server time and frame of the retained poses: ents[].older/.prev/.current and viewDef.camerastate[2]/[1]/[0].
-     * Paused keepalives and undecodable frames add no sample. */
+    /* Server time and frame of the retained poses, oldest first; the last entry is ents[].current and
+     * viewDef.camerastate[0]. Paused keepalives and undecodable frames add no sample. */
     struct {
         uint32_t time[CL_POSE_SAMPLES];
         int frame[CL_POSE_SAMPLES];
-        uint32_t count;   /* applied samples, up to CL_POSE_SAMPLES */
-        bool older_pair;  /* the current render blends older->prev rather than prev->current */
+        uint32_t count;     /* applied samples, up to CL_POSE_SAMPLES */
+        uint32_t pair_age;  /* the render blends the poses aged pair_age + 1 -> pair_age (0: prev -> current) */
     } poses;
     clClock_t clock;      /* smoothed presentation clock; cl.time follows it once a snapshot seeds it */
     vec2_t startingPosition;
@@ -234,6 +236,10 @@ static inline float cl_normalize_entity_scale(float scale) { return scale > 0.0f
 
 void V_RenderView(void);
 void V_SelectPosePair(void);
+/* An entity's retained pose by age: 0 current, 1 prev, then older[]. */
+static inline entityState_t const *CL_EntityPose(centity_t const *ent, uint32_t age) {
+    return age == 0 ? &ent->current : age == 1 ? &ent->prev : &ent->older[age - 2];
+}
 void V_Shutdown(void);
 void CL_PrepRefresh(void);
 bool CL_ContinueLoading(uint32_t timestamp);

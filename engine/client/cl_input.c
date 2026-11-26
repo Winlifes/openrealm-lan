@@ -2692,12 +2692,13 @@ void IN_SelectUp(void) {
             return;
         }
         if (re.TraceEntity(&cl.viewDef, r.x, r.y, &entnum)) {
+            uint32_t const now = CL_RealTime();
             bool const same_type_enabled = Cvar_Integer("cl_same_type_select", 0) != 0;
             bool const ctrl_same_type = same_type_enabled && !queue &&
                 (mods & (KMOD_LCTRL | KMOD_RCTRL));
             bool const double_click_same_type = same_type_enabled && !queue &&
                 input.last_select_entity == entnum &&
-                (uint32_t)(cl.time - input.last_select_ms) < BZ_SELECT_DOUBLE_CLICK_MS;
+                now - input.last_select_ms < BZ_SELECT_DOUBLE_CLICK_MS;
 
             if (ctrl_same_type || double_click_same_type) {
                 CL_SendSameTypeSelection(entnum);
@@ -2711,7 +2712,7 @@ void IN_SelectUp(void) {
                 CL_ResetSelectClickChain();
             } else {
                 input.last_select_entity = entnum;
-                input.last_select_ms = cl.time;
+                input.last_select_ms = now;
             }
         } else if (re.TraceLocation(&cl.viewDef, r.x, r.y, &point)){
             CL_ResetSelectClickChain();
@@ -3215,6 +3216,7 @@ TEST(client_input, same_type_selection_click_paths_use_visible_matching_candidat
     refExport_t saved = re;
     viewDef_t old_view = cl.viewDef;
     uint32_t old_time = cl.time;
+    uint32_t old_realtime = CL_RealTime();
     uint32_t old_class[3] = { cl.ents[7].current.class_id, cl.ents[8].current.class_id,
                            cl.ents[9].current.class_id };
     int old_state = cls.state, old_dest = cls.key_dest, old_ui = cl.playerstate.client_ui_state;
@@ -3234,7 +3236,7 @@ TEST(client_input, same_type_selection_click_paths_use_visible_matching_candidat
     cl.ents[9].current.class_id = 0x22222222u;
 
     /* First ordinary click establishes the double-click anchor. */
-    SDL_SetModState(KMOD_NONE); cl.time = 1000;
+    SDL_SetModState(KMOD_NONE); cl.time = 1000; CL_TestSetRealTime(1000);
     input.select = true; cl.selection.in_progress = true;
     cl.selection.rect = (rect_t){ .x = 200, .y = 200, .w = 0, .h = 0 };
     SZ_Init(&cls.netchan.message, data, sizeof(data)); IN_SelectUp();
@@ -3242,13 +3244,20 @@ TEST(client_input, same_type_selection_click_paths_use_visible_matching_candidat
     MSG_ReadString(&cls.netchan.message, command); T_STREQ(command, "select 7 click");
 
     /* A second click inside the 500 ms window expands to same-type units. */
-    cl.time = 1200; input.select = true; cl.selection.in_progress = true;
+    cl.time = 1200; CL_TestSetRealTime(1200); input.select = true; cl.selection.in_progress = true;
     cl.selection.rect = (rect_t){ .x = 200, .y = 200, .w = 0, .h = 0 };
     SZ_Init(&cls.netchan.message, data, sizeof(data)); IN_SelectUp();
     T_FEQ(same_type_rect.x, 102.4f, 0.01f); T_FEQ(same_type_rect.y, 153.6f, 0.01f);
     T_FEQ(same_type_rect.w, 512.0f, 0.01f); T_FEQ(same_type_rect.h, 460.8f, 0.01f);
     T_EQ(MSG_ReadByte(&cls.netchan.message), clc_stringcmd);
     MSG_ReadString(&cls.netchan.message, command); T_STREQ(command, "select 7 sametype 8 click");
+
+    /* A stalled presentation clock must not turn a later click into a double-click. */
+    CL_TestSetRealTime(1200 + BZ_SELECT_DOUBLE_CLICK_MS + 1);
+    input.select = true; cl.selection.in_progress = true;
+    SZ_Init(&cls.netchan.message, data, sizeof(data)); IN_SelectUp();
+    T_EQ(MSG_ReadByte(&cls.netchan.message), clc_stringcmd);
+    MSG_ReadString(&cls.netchan.message, command); T_STREQ(command, "select 7 click");
 
     /* Ctrl+click takes the same path without needing a previous click. */
     CL_ResetSelectClickChain(); SDL_SetModState(KMOD_LCTRL); cl.time = 2000;
@@ -3270,6 +3279,7 @@ TEST(client_input, same_type_selection_click_paths_use_visible_matching_candidat
     T_EQ(input.last_select_entity, 0);
 
     input = old_input; cl.selection = old_sel; cl.viewDef = old_view; cl.time = old_time; re = saved;
+    CL_TestSetRealTime(old_realtime);
     cl.ents[7].current.class_id = old_class[0]; cl.ents[8].current.class_id = old_class[1];
     cl.ents[9].current.class_id = old_class[2]; cls.netchan.message = old_msg;
     cls.state = old_state; cls.key_dest = old_dest; cl.playerstate.client_ui_state = old_ui;

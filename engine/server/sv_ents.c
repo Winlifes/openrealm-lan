@@ -412,9 +412,11 @@ uint32_t SV_WriteFrameToClient(client_t *client) {
     return bytes;
 }
 
-/* True while a rate-limited client's link is still draining its previous snapshot (Q2 SV_RateDrop). */
+/* True while a rate-limited client's link holds more than SV_RATE_BACKLOG_MSEC of earlier data (Q2 SV_RateDrop).
+ * Waiting for a fully drained link sent a snapshot slightly over one frame's budget only every other frame. */
 bool SV_ClientLinkBusy(client_t const *client) {
-    return Netchan_IsSequenced(&client->netchan) && Cvar_Integer("sv_rate", 0) > 0 && svs.realtime < client->rate_clear_msec;
+    return Netchan_IsSequenced(&client->netchan) && Cvar_Integer("sv_rate", 0) > 0 &&
+           svs.realtime + SV_RATE_BACKLOG_MSEC < client->rate_clear_msec;
 }
 
 /* Forget which snapshots the client holds: the next one goes in full, and acknowledgements of packets sent so far

@@ -825,9 +825,48 @@ void AddSkin(vec3_t *pos, mat4_t const *mat, vec3_t const *org, float weight) {
     *pos = Vector3_add(pos, &val);
 }
 
+/* Resolve both samples' sequences once; on success the pose is sampled at one interpolated time in that sequence. */
+static bool MDLX_ResolveInterpolatedTime(mdxModel_t const *model, uint32_t frame1, uint32_t frame0, float lerpfrac,
+                                         mdxPoseSequencePair_t *pair, uint32_t *time) {
+    mdxSequence_t const *sequence;
+    uint32_t start, end, advance;
+    /* A model without sequences, or identical samples, needs no search. */
+    if (!model || !model->num_sequences || frame0 == frame1) return false;
+    sequence = pair->sequence[0] = R_FindSequenceAtTime(model, frame0);
+    pair->resolved[0] = true;
+    if (!sequence) return false;
+    pair->sequence[1] = R_FindSequenceAtTime(model, frame1);
+    pair->resolved[1] = true;
+    if (pair->sequence[1] != sequence) return false;
+    start = sequence->interval[0];
+    end = sequence->interval[1];
+    /* A looping sequence can cross its end. Restarting a one-shot action blends to its new starting pose. */
+    if (frame1 < frame0 && (sequence->flags & 1)) return false;
+    advance = frame1 > frame0 ? frame1 - frame0 : (end - frame0) + (frame1 - start);
+    if (advance > MDLX_MAX_INTERPOLATED_ADVANCE_MSEC) return false;
+    *time = frame0 + (uint32_t)lroundf((float)advance * fmaxf(0.0f, fminf(1.0f, lerpfrac)));
+    if (*time >= end) *time = start + (*time - end) % (end - start);
+    pair->sequence[0] = sequence;
+    return true;
+}
+
+/* Server samples arrive once per tick. Within one sequence the rendered pose is the animation at the interpolated
+ * time: blending the two sampled poses flattened authored curves and lost fast keys between them, which made limbs
+ * move in 10 Hz linear segments on a 120 Hz display. Different sequences, or a jump too large to be playback, keep
+ * the pose blend. */
+bool MDLX_InterpolatedAnimationTime(mdxModel_t const *model, uint32_t frame1, uint32_t frame0, float lerpfrac,
+                                    uint32_t *time) {
+    mdxPoseSequencePair_t pair = { 0 };
+    return MDLX_ResolveInterpolatedTime(model, frame1, frame0, lerpfrac, &pair, time);
+}
+
 void MDLX_BindBoneMatrices(mdxModel_t const *model, mat4_t const *model_matrix, uint32_t frame1, uint32_t frame0) {
     if (!model) return; /* failed model loads produce an empty handle */
     mdxPoseSequencePair_t sequences = { 0 };
+    uint32_t const sampled1 = frame1, sampled0 = frame0;
+    uint32_t time;
+    if (MDLX_ResolveInterpolatedTime(model, frame1, frame0, tr.viewDef.lerpfrac, &sequences, &time))
+        frame1 = frame0 = time;
     /* Only the nodes this model actually has need their global matrices
      * recomputed.  The old path memset the full 64KB node_matrices array and
      * scanned all MDX_MAX_NODES slots twice; models have tens of nodes, so the
@@ -844,8 +883,8 @@ void MDLX_BindBoneMatrices(mdxModel_t const *model, mat4_t const *model_matrix, 
     if (!bound_bone_pose.generation) bound_bone_pose.generation++;
     bound_bone_pose.model = model;
     bound_bone_pose.transform = *model_matrix;
-    bound_bone_pose.frame = frame1;
-    bound_bone_pose.oldframe = frame0;
+    bound_bone_pose.frame = sampled1;
+    bound_bone_pose.oldframe = sampled0;
 }
 
 /* Resolve authored attachment pivots from the same interpolated node pose used

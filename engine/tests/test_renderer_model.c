@@ -632,9 +632,10 @@ static rImageCacheEntry_t *test_texture_entry(cstring_t name) {
     return NULL;
 }
 
-/* A bone pose samples several tracks at the same two animation times.
+/* A bone pose samples several tracks at the same animation times.
  * Compare the actual bound matrices while asserting that each time resolves
- * its authored sequence only once, regardless of the number of tracks/nodes. */
+ * its authored sequence only once, regardless of the number of tracks/nodes.
+ * Two samples of one sequence resolve both, then sample one interpolated time. */
 TEST(renderer_model, mdx_bone_pose_resolves_each_sequence_once_per_bind) {
     uint8_t translation_storage[sizeof(mdxKeyTrack_t) + 2 * (sizeof(int) + sizeof(vec3_t))] = { 0 };
     uint8_t scale_storage[sizeof(mdxKeyTrack_t) + sizeof(int) + sizeof(vec3_t)] = { 0 };
@@ -689,6 +690,64 @@ TEST(renderer_model, mdx_bone_pose_resolves_each_sequence_once_per_bind) {
     tr.viewDef.lerpfrac = saved_lerp;
 }
 
+/* Sample the authored keys between server updates. Looping sequences wrap at the end, while a restarted one-shot
+ * action blends across the two poses. */
+TEST(renderer_model, mdx_bone_pose_samples_the_interpolated_time_within_a_sequence) {
+    uint8_t storage[sizeof(mdxKeyTrack_t) + 3 * (sizeof(int) + sizeof(vec3_t))] = { 0 };
+    mdxKeyTrack_t *translation = (mdxKeyTrack_t *)storage;
+    mdxNode_t node = { .node_id = 0, .parent_id = UINT32_MAX, .translation = translation };
+    mdxSequence_t sequences[2] = { { .interval = { 100, 200 } }, { .interval = { 200, 300 } } };
+    mdxModel_t model = { .sequences = sequences, .num_sequences = 2, .num_nodes = 1 };
+    int const times[3] = { 100, 150, 199 };
+    vec3_t const values[3] = { { 0, 0, 0 }, { 100, 0, 0 }, { 0, 0, 0 } };
+    float const saved_lerp = tr.viewDef.lerpfrac;
+    vec3_t at_110 = { 0 }, at_135 = { 0 }, at_120 = { 0 }, at_180 = { 0 }, at_195 = { 0 };
+    mat4_t transform;
+    uint32_t time;
+
+    translation->keyframeCount = 3; translation->datatype = TDATA_FLOAT3;
+    translation->linetype = TRACK_LINEAR; translation->globalSeqId = UINT32_MAX;
+    FOR_LOOP(i, 3) {
+        mdxKeyFrame_t *key = (mdxKeyFrame_t *)((uint8_t *)translation->values + i * (sizeof(int) + sizeof(vec3_t)));
+        key->time = times[i];
+        memcpy(key->data, &values[i], sizeof(values[i]));
+    }
+    model.nodes[0] = model.node_list[0] = &node;
+    Matrix4_identity(&transform);
+
+    T_ASSERT(MDLX_InterpolatedAnimationTime(&model, 180, 120, 0.25f, &time)); T_EQ(time, 135u);
+    T_ASSERT(MDLX_InterpolatedAnimationTime(&model, 110, 180, 0.5f, &time));  T_EQ(time, 195u); /* 30 ms with wrap */
+    T_ASSERT(MDLX_InterpolatedAnimationTime(&model, 110, 180, 0.9f, &time));  T_EQ(time, 107u);
+    T_ASSERT(!MDLX_InterpolatedAnimationTime(&model, 250, 150, 0.5f, &time)); /* another sequence: blend */
+    T_ASSERT(!MDLX_InterpolatedAnimationTime(&model, 140, 140, 0.5f, &time)); /* nothing to interpolate */
+    sequences[0].interval[1] = 1000;
+    T_ASSERT(!MDLX_InterpolatedAnimationTime(&model, 900, 110, 0.5f, &time)); /* a jump, not playback */
+    sequences[0].interval[1] = 200;
+
+    MDLX_GetModelKeytrackValue(&model, translation, 135, &at_135);
+    MDLX_GetModelKeytrackValue(&model, translation, 120, &at_120);
+    MDLX_GetModelKeytrackValue(&model, translation, 180, &at_180);
+    T_FEQ(at_135.x, 70.0f, 0.001f);
+    T_ASSERT(fabsf(at_135.x - (at_120.x + (at_180.x - at_120.x) * 0.25f)) > 10.0f); /* the old blend: 40 */
+    tr.viewDef.lerpfrac = 0.25f;
+    MDLX_TestResetSequenceSearches();
+    MDLX_BindBoneMatrices(&model, &transform, 180, 120);
+    T_EQ(MDLX_TestSequenceSearches(), 2u);
+    T_FEQ(node_matrices[0].v[12], at_135.x, 0.001f);
+
+    MDLX_GetModelKeytrackValue(&model, translation, 195, &at_195);
+    tr.viewDef.lerpfrac = 0.5f;
+    MDLX_BindBoneMatrices(&model, &transform, 110, 180);
+    T_FEQ(node_matrices[0].v[12], at_195.x, 0.001f);
+
+    /* Reissuing a non-looping action restarts the sequence at its first pose. */
+    sequences[0].flags = 1;
+    MDLX_GetModelKeytrackValue(&model, translation, 110, &at_110);
+    MDLX_BindBoneMatrices(&model, &transform, 110, 180);
+    T_FEQ(node_matrices[0].v[12], (at_180.x + at_110.x) * 0.5f, 0.001f);
+    tr.viewDef.lerpfrac = saved_lerp;
+}
+
 /* Global-sequence-only nodes do not need a regular model-sequence search. */
 TEST(renderer_model, mdx_bone_pose_global_tracks_skip_sequence_searches) {
     uint8_t storage[sizeof(mdxKeyTrack_t) + sizeof(int) + sizeof(vec3_t)] = { 0 };
@@ -728,14 +787,15 @@ TEST(renderer_model, mdx_blended_global_tracks_sample_once_and_preserve_hierarch
     mdxKeyTrack_t *rot = (mdxKeyTrack_t *)rotations;
     mdxKeyTrack_t *scl = (mdxKeyTrack_t *)scales;
     mdxKeyTrack_t *child_pos = (mdxKeyTrack_t *)children;
-    mdxSequence_t seq = {.interval = {100, 400}};
+    /* 150 and 250 lie in different sequences, so the two sampled poses are blended. */
+    mdxSequence_t seq[2] = {{.interval = {100, 200}}, {.interval = {200, 400}}};
     mdxGlobalSequence_t global = {.value = 500};
     mdxNode_t parent = {.node_id = 0, .parent_id = UINT32_MAX,
                         .translation = pos, .rotation = rot, .scale = scl};
     mdxNode_t child = {.node_id = 1, .parent_id = 0, .translation = child_pos};
     mdxNode_t helper = {.node_id = 2, .parent_id = 1};
     vec3_t pivots[3] = {{0}, {0}, {15, -5, 3}};
-    mdxModel_t model = {.num_nodes = 3, .sequences = &seq, .num_sequences = 1,
+    mdxModel_t model = {.num_nodes = 3, .sequences = seq, .num_sequences = 2,
                         .globalSequences = &global, .num_globalSequences = 1,
                         .pivots = pivots, .num_pivots = 3};
     mat4_t identity, expected_parent, child_matrix, expected_child;
@@ -6313,8 +6373,10 @@ TEST(renderer_perf, synthetic_mdx_pose_capture_profiles) {
         MDLX_TestResetKeyframeSearchStats();
         MDLX_TestResetPoseTrackSamples();
         T_BENCH(profiles[profile_index].name, 3, mdx_captured_pose_benchmark_run(&bench));
+        /* The capture blended two poses per bind. Both frames here lie in one sequence, so each track is now
+         * sampled once, at the interpolated animation time. */
         T_EQ(MDLX_TestPoseTrackSamples(), 3u * mdx_capture_bench_views *
-             mdx_capture_bench_binds_per_view * profiles[profile_index].track_samples);
+             mdx_capture_bench_binds_per_view * (profiles[profile_index].track_samples / 2));
         fprintf(stdout, "[BENCH DETAIL] MDX mode=captured-profile profile=%s binds=%u nodes=%u expected_track_samples_per_bind=%u expected_sampled_keys_per_bind=%u measured_track_samples=%u keyframe_bound_searches=%u forward_advances=%u span_hits=%u bracket_hits=%u hierarchy=%s\n",
                 profiles[profile_index].name,
                 3u * mdx_capture_bench_views * mdx_capture_bench_binds_per_view,

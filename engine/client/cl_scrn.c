@@ -39,30 +39,57 @@ static void SCR_DrawString(int x, int y, cstring_t string) {
     if (string) re.DrawString(x, y, string);
 }
 
+/* Frame-rate overlay statistics over 500 ms windows. Beside FPS it reports what a player sees as stutter: the
+ * longest frame interval (an engine or asset-load hitch) and how much of the window the world waited for a late
+ * snapshot (network starvation), with the jitter buffer the presentation clock currently keeps. */
+#define SCR_FPS_WINDOW_MSEC 500
+typedef struct {
+    uint32_t elapsed, frames, fps;
+    uint32_t longest, shown_longest; /* longest frame interval in the open and the last complete window */
+    double wait_start;               /* clClock_t.waited when the open window began */
+    uint32_t shown_wait;
+    bool window_done;
+} scrFrameStats_t;
+
+static void SCR_FormatFrameStats(scrFrameStats_t *stats, uint32_t msec, uint32_t drawcalls, clClock_t const *clock,
+                                 char *text, size_t size) {
+    size_t length;
+    stats->elapsed += msec;
+    stats->frames++;
+    stats->longest = MAX(stats->longest, msec);
+    if (stats->elapsed >= SCR_FPS_WINDOW_MSEC) {
+        double const waited = clock && clock->valid ? clock->waited : 0.0;
+        stats->fps = stats->frames * 1000 / stats->elapsed;
+        stats->shown_longest = stats->longest;
+        /* A new timeline restarts the cumulative count. */
+        stats->shown_wait = waited > stats->wait_start ? (uint32_t)(waited - stats->wait_start + 0.5) : 0;
+        stats->wait_start = waited;
+        stats->elapsed = stats->frames = stats->longest = 0;
+        stats->window_done = true;
+    } else if (!stats->fps && msec > 0) {
+        stats->fps = 1000 / msec;
+    }
+    if (stats->fps) snprintf(text, size, "FPS %u  Drawcalls %u", (unsigned)stats->fps, (unsigned)drawcalls);
+    else snprintf(text, size, "FPS --  Drawcalls %u", (unsigned)drawcalls);
+    length = strlen(text);
+    snprintf(text + length, size - length, "  Frame max %u ms",
+             (unsigned)(stats->window_done ? stats->shown_longest : stats->longest));
+    if (clock && clock->valid) {
+        length = strlen(text);
+        snprintf(text + length, size - length, "  Buffer %u ms  Wait %u ms",
+                 (unsigned)(clock->target_delay + 0.5), (unsigned)stats->shown_wait);
+    }
+}
+
 static void SCR_DrawFPS(uint32_t msec) {
-    static uint32_t elapsed = 0;
-    static uint32_t frames_drawn = 0;
-    static uint32_t fps = 0;
-    char text[64];
+    static scrFrameStats_t stats;
+    char text[160];
     size2_t window = re.GetWindowSize();
     uint32_t inset = SCR_FPS_HEIGHT + SCR_FPS_BOTTOM_MARGIN;
     uint32_t y = window.height > inset ? window.height - inset : 0;
 
-    elapsed += msec;
-    frames_drawn++;
-    if (elapsed >= 500) {
-        fps = frames_drawn * 1000 / elapsed;
-        elapsed = 0;
-        frames_drawn = 0;
-    } else if (!fps && msec > 0) {
-        fps = 1000 / msec;
-    }
-
-    if (fps) {
-        snprintf(text, sizeof(text), "FPS %u  Drawcalls %u", (unsigned)fps, (unsigned)re.GetDrawCalls());
-    } else {
-        snprintf(text, sizeof(text), "FPS --  Drawcalls %u", (unsigned)re.GetDrawCalls());
-    }
+    SCR_FormatFrameStats(&stats, msec, re.GetDrawCalls(), cls.state == ca_active ? &cl.clock : NULL,
+                         text, sizeof(text));
     if (Netchan_IsSequenced(&cls.netchan) && cls.state != ca_disconnected) {
         int ping = CL_NetworkPing();
         size_t length = strlen(text);
@@ -2898,6 +2925,30 @@ void CL_ParseUnitUI(sizeBuf_t *msg) {
 
 #ifdef BZ_TESTS
 #include "shared/test.h"
+
+/* The overlay separates an engine hitch (one long frame) from network starvation (the world waiting for a late
+ * snapshot), so a stutter report can say which one happened. */
+TEST(client_screen, frame_stats_report_longest_frame_and_snapshot_waits) {
+    scrFrameStats_t stats = { 0 };
+    clClock_t clock = { .valid = true, .target_delay = 126.0 };
+    char text[160];
+    FOR_LOOP(i, 61) {
+        uint32_t const msec = i == 20 ? 45 : 8;
+        if (i == 30) clock.waited += 12.0;
+        SCR_FormatFrameStats(&stats, msec, 300, &clock, text, sizeof(text));
+    }
+    T_ASSERT(strstr(text, "FPS ") != NULL);
+    T_ASSERT(strstr(text, "Frame max 45 ms") != NULL);
+    T_ASSERT(strstr(text, "Buffer 126 ms  Wait 12 ms") != NULL);
+    FOR_LOOP(i, 63) SCR_FormatFrameStats(&stats, 8, 300, &clock, text, sizeof(text));
+    T_ASSERT(strstr(text, "Frame max 8 ms") != NULL);
+    T_ASSERT(strstr(text, "Wait 0 ms") != NULL);
+    clock.waited = 0.0; /* a new timeline */
+    FOR_LOOP(i, 63) SCR_FormatFrameStats(&stats, 8, 300, &clock, text, sizeof(text));
+    T_ASSERT(strstr(text, "Wait 0 ms") != NULL);
+    SCR_FormatFrameStats(&stats, 8, 300, NULL, text, sizeof(text)); /* not in a match */
+    T_NULL(strstr(text, "Buffer"));
+}
 
 TEST(client_layout, health_fraction_gradient_follows_portrait_colour) {
     color32_t color;

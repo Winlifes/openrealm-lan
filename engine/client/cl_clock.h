@@ -30,7 +30,7 @@
 #define CL_CLOCK_DELAY_MARGIN_MSEC 16.0  /* render delay beyond the measured need: one 60 Hz frame of quantization */
 #define CL_CLOCK_MAX_DELAY_MSEC 500.0    /* never buffer more than this, however bad the link */
 #define CL_CLOCK_STARVED_SNAPSHOTS 2     /* consecutive starved arrivals mean the offset window is stale */
-#define CL_CLOCK_RETAINED 3              /* snapshot poses the client keeps (older, prev, current) */
+#define CL_CLOCK_RETAINED 4              /* snapshot poses the client keeps: about 200 ms of jitter at 10 Hz */
 
 typedef struct {
     bool valid;            /* seeded by a snapshot; until then time simply follows real time */
@@ -38,6 +38,7 @@ typedef struct {
     double time;           /* client view of the server clock; cl.time is its floor, ms */
     double render;         /* server time the world is drawn at, ms */
     double target_delay;   /* how far render aims to run behind the fastest-delivery line, ms */
+    double waited;         /* render time lost waiting at the newest snapshot since the timeline began, ms */
     uint32_t retained[CL_CLOCK_RETAINED]; /* server times of the retained snapshots, newest last */
     uint32_t retained_count;
     uint32_t count, next;  /* filled window entries and the slot the next arrival replaces */
@@ -69,15 +70,17 @@ static inline double CL_ClockNeededDelay(clClock_t const *clock, uint32_t defaul
     return worst;
 }
 
-/* With three poses retained, render must stay within the two newest intervals or it falls behind the oldest pose.
- * Use the shortest such span in the window; jitter beyond it waits at the newest snapshot. */
+/* Render must stay within the intervals between the retained poses or it falls behind the oldest one. Use the
+ * shortest run of that many consecutive intervals in the window; jitter beyond it waits at the newest snapshot. */
 static inline double CL_ClockBufferedSpan(clClock_t const *clock, uint32_t default_interval) {
-    double span = 2.0 * default_interval;
-    for (uint32_t i = 1; i < clock->count; i++) {
-        uint32_t const newer = (clock->next + CL_CLOCK_WINDOW - i) % CL_CLOCK_WINDOW;
-        uint32_t const older = (newer + CL_CLOCK_WINDOW - 1) % CL_CLOCK_WINDOW;
-        double const pair = (double)clock->interval[newer] + clock->interval[older];
-        if (i == 1 || pair < span) span = pair;
+    uint32_t const run = CL_CLOCK_RETAINED - 1;
+    double span = (double)run * default_interval;
+    bool found = false;
+    for (uint32_t end = 1; end + run <= clock->count + 1; end++) {
+        double sum = 0.0;
+        for (uint32_t k = 0; k < run; k++)
+            sum += clock->interval[(clock->next + CL_CLOCK_WINDOW - end - k) % CL_CLOCK_WINDOW];
+        if (!found || sum < span) span = sum, found = true;
     }
     return span;
 }
@@ -155,7 +158,9 @@ static inline uint32_t CL_ClockAdvance(clClock_t *clock, uint32_t time, uint32_t
     clock->time = fmax(clock->time, next);
     next = CL_ClockSteer(clock->render, line - clock->target_delay, msec);
     if (next >= latest) {
-        next = fmax(clock->render, (double)latest);
+        double const held = fmax(clock->render, (double)latest);
+        clock->waited += next - held;
+        next = held;
         clock->held = true;
     }
     clock->render = next;

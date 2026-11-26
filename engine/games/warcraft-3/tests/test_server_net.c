@@ -2992,6 +2992,50 @@ TEST(server_net, rate_charges_reliable_bytes) {
     sim_end();
 }
 
+/* A link that never acknowledges: every snapshot goes in full, so each one has the same size. */
+static uint32_t rate_test_packets, rate_test_bytes;
+static void rate_test_hook(NETSOURCE netsrc, int length, void const *data, netadr_t to) {
+    (void)netsrc; (void)data; (void)to;
+    rate_test_packets++;
+    rate_test_bytes += (uint32_t)length;
+}
+
+/* A snapshot slightly larger than one frame's byte budget used to make the link "busy" when the next frame was due,
+ * so it went out every other frame: half the update rate for an 8% overshoot. The link may now hold up to half a
+ * frame of backlog when a snapshot is due, which spends the configured rate instead of half of it. */
+TEST(server_net, rate_spends_the_budget_instead_of_halving_snapshots) {
+    client_t *client = &svs.clients[0];
+    char rate[32];
+    uint32_t snapshot, frames;
+    sim_begin(64, 0, "0");
+    sim_spawn_units(64);
+    NET_SetPacketHook(rate_test_hook);
+    rate_test_packets = rate_test_bytes = 0;
+    sim.now_ms = 1000;
+    sim_server_tick();
+    T_EQ(rate_test_packets, 1u);
+    snapshot = rate_test_bytes;
+    T_ASSERT(snapshot > 1000);
+    /* The budget drains one snapshot in 108 ms. */
+    snprintf(rate, sizeof(rate), "%u", snapshot * 1000u / 108u);
+    test_client_stubs_set_cvar("sv_rate", rate);
+    client->rate_clear_msec = 0;
+    rate_test_packets = rate_test_bytes = 0;
+    frames = client->built_frames;
+    for (uint32_t tick = 1; tick <= 100; tick++) {
+        sim.now_ms = 1000 + tick * SIM_FRAME_MS;
+        sim_server_tick();
+    }
+    frames = client->built_frames - frames;
+    T_ASSERT(frames >= 88);                /* 100 frames of 100 ms carry 92.6 snapshots of 108 ms */
+    T_EQ(rate_test_packets, frames);
+    /* Never more than the budget over the run, plus the backlog allowance and the snapshot in flight. */
+    T_ASSERT((uint64_t)rate_test_bytes * 1000u <=
+             (uint64_t)strtoul(rate, NULL, 10) * (100u * SIM_FRAME_MS + SV_RATE_BACKLOG_MSEC) + (uint64_t)snapshot * 1000u);
+    test_client_stubs_set_cvar("sv_rate", "0");
+    sim_end();
+}
+
 TEST(stress_net, every_unit_name_survives_map_start_over_lossy_modem) {
     enum { SLOTS = CS_MAX_NAMES / ENT_NAMES_PER_CS };
     char expected[CS_MAX_NAMES][64], pool[MAX_PATHLEN];

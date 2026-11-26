@@ -82,6 +82,10 @@ USE_CASC ?= 0
 ifeq ($(USE_CASC),1)
 	CFLAGS += -DHAVE_CASC
 endif
+comma := ,
+empty :=
+space := $(empty) $(empty)
+
 # ---------------------------------------------------------------------------
 # Platform detection
 # ---------------------------------------------------------------------------
@@ -101,8 +105,14 @@ ifeq ($(EMSCRIPTEN),1)
 ifeq ($(EM_FS),browser)
     # The hosted game must load on WebKit releases that lack Memory64.
     CFLAGS    += -m32 -DBZ_WEB_ASYNC_ASSETS
+    # Asyncify instruments every function that might reach an async import. libc stdio, formatting and qsort make
+    # indirect calls only into libc streams or a caller's comparator, never to WC3_FetchRemoteFile or
+    # emscripten_sleep, but counted as possible suspensions: every function that logs or sorts was instrumented.
+    EM_ASYNCIFY_REMOVE := __fwritex __overflow __toread __uflow __fseeko_unlocked __ftello_unlocked \
+                          __vfprintf_internal printf_core fread fflush wrapper_cmp __qsort_r sift trinkle
     EM_FS_FLAGS := -sEXIT_RUNTIME=0 -lwebsocket.js -lidbfs.js \
                    -sASYNCIFY=1 -sASYNCIFY_IMPORTS=WC3_FetchRemoteFile -sASYNCIFY_STACK_SIZE=1048576 \
+                   "-sASYNCIFY_REMOVE=[$(subst $(space),$(comma),$(foreach f,$(EM_ASYNCIFY_REMOVE),'$(f)'))]" \
                    "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','FS','ENV','addRunDependency','removeRunDependency']"
 else ifeq ($(EM_FS),node-async)
     EM_FS_FLAGS := -sASYNCIFY=1 -sASYNCIFY_IGNORE_INDIRECT=1 -sASYNCIFY_STACK_SIZE=4194304 -sNODERAWFS=1
