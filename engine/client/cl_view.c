@@ -316,22 +316,75 @@ float LerpRotation(float a, float b, float t) {
     }
 }
 
+/* Faster than this between two snapshots is a teleport or a respawn, not motion to continue. */
+#define V_EXTRAPOLATE_MAX_SPEED 2.5f /* units per ms */
+#define CL_CORRECTION_MSEC 150u
+
+/* The entity's poses aged age + 1 -> age, or its current state alone when it changed model since: those poses
+ * belong to the old model, and old animation frames must not play on the new one. */
+static bool V_PosePair(centity_t const *ent, uint32_t age, entityState_t const **from, entityState_t const **to) {
+    entityState_t const *newer = CL_EntityPose(ent, age);
+    bool const same = !age || (newer->model == ent->current.model && newer->class_id == ent->current.class_id);
+    *from = same ? CL_EntityPose(ent, age + 1) : &ent->current;
+    *to = same ? newer : &ent->current;
+    return same;
+}
+
+/* Origin drawn for `ent` at server time `render` from the pose pair whose newer end is `age` snapshots old. Past
+ * that pose it continues along the pair's motion for at most CL_CLOCK_EXTRAPOLATE_MSEC. */
+vec3_t V_PoseOrigin(centity_t const *ent, uint32_t age, double render) {
+    uint32_t const newest = CL_POSE_SAMPLES - 1;
+    entityState_t const *from, *to;
+    double t0, t1, frac;
+    if (!V_PosePair(ent, age, &from, &to) || cl.poses.count < age + 2) return to->origin;
+    t0 = cl.poses.time[newest - age - 1];
+    t1 = cl.poses.time[newest - age];
+    if (t1 <= t0) return to->origin;
+    frac = MAX(0.0, (render - t0) / (t1 - t0));
+    if (frac > 1.0) {
+        float const span = (float)(t1 - t0);
+        if (Vector3_distance(&from->origin, &to->origin) > V_EXTRAPOLATE_MAX_SPEED * span) frac = 1.0;
+        frac = MIN(frac, 1.0 + CL_CLOCK_EXTRAPOLATE_MSEC / span);
+    }
+    return Vector3_lerp(&from->origin, &to->origin, (float)frac);
+}
+
+/* A snapshot arrived while the render ran past the one before it: the extrapolated positions turned into
+ * interpolated ones. Keep the difference as a fading offset so a unit that stopped or turned slides back. */
+void V_CorrectExtrapolatedPoses(double render) {
+    uint32_t const newest = CL_POSE_SAMPLES - 1, now = CL_RealTime();
+    if (cl.poses.count < 3 || render <= cl.poses.time[newest - 1]) return;
+    FOR_LOOP(i, cl.num_active) {
+        centity_t *ent = &cl.ents[cl.active_entities[i]];
+        vec3_t before, after, delta;
+        float fade;
+        if (ent->serverframe != (uint32_t)cl.frame.serverframe) continue;
+        before = V_PoseOrigin(ent, 1, render);
+        after = V_PoseOrigin(ent, 0, render);
+        delta = Vector3_sub(&before, &after);
+        fade = now - ent->correction_time < CL_CORRECTION_MSEC
+            ? 1.0f - (float)(now - ent->correction_time) / CL_CORRECTION_MSEC : 0.0f;
+        ent->correction = Vector3_scale(&ent->correction, fade);
+        ent->correction = Vector3_add(&ent->correction, &delta);
+        ent->correction_time = now;
+    }
+}
+
 static void V_AddClientEntity(centity_t const *ent, bool debug_entities) {
     renderEntity_t re = { 0 };
     entityState_t const *from = &ent->prev, *to = &ent->current;
+    uint32_t const since_correction = CL_RealTime() - ent->correction_time;
     if (view_state.num_entities >= MAX_CLIENT_ENTITIES) {
         return;
     }
-    if (cl.poses.pair_age) {
-        /* Drawn between two earlier snapshots. If the entity changed model since, those poses belong to the old
-         * model: show the current state rather than old animation frames on the new model. */
-        entityState_t const *newer = CL_EntityPose(ent, cl.poses.pair_age);
-        bool const same = newer->model == ent->current.model && newer->class_id == ent->current.class_id;
-        from = same ? CL_EntityPose(ent, cl.poses.pair_age + 1) : &ent->current;
-        to = same ? newer : &ent->current;
-    }
+    if (cl.poses.pair_age) V_PosePair(ent, cl.poses.pair_age, &from, &to);
     /* model is a uint16_t and MAX_MODELS bounds the configstring lookup. */
-    re.origin = Vector3_lerp(&from->origin, &to->origin, cl.viewDef.lerpfrac);
+    re.origin = cl.clock.valid ? V_PoseOrigin(ent, cl.poses.pair_age, CL_ClockRenderTime(&cl.clock))
+                               : Vector3_lerp(&from->origin, &to->origin, cl.viewDef.lerpfrac);
+    if (since_correction < CL_CORRECTION_MSEC) {
+        vec3_t const offset = Vector3_scale(&ent->correction, 1.0f - (float)since_correction / CL_CORRECTION_MSEC);
+        re.origin = Vector3_add(&re.origin, &offset);
+    }
     re.angle = LerpRotation(from->angle, to->angle, cl.viewDef.lerpfrac);
 #ifdef WOW
     re.rotation = Vector3_lerp(&from->rotation, &to->rotation, cl.viewDef.lerpfrac);
@@ -1432,9 +1485,9 @@ TEST(client_clock, rate_limited_snapshots_interpolate_across_skipped_frames) {
     v_test_replay_end(&replay);
 }
 
-/* The presentation clock is monotonic while steering, never draws past the newest snapshot, restarts on a new
- * timeline, and drops an offset window that no longer describes the link: after the server fell 300 ms behind
- * its earlier pace (one long simulation frame), waiting at the newest snapshot stops within a second. */
+/* The presentation clock is monotonic while steering, never draws further past the newest snapshot than it may
+ * extrapolate, restarts on a new timeline, and drops an offset window that no longer describes the link: after the
+ * server fell 300 ms behind its earlier pace (one long simulation frame), waiting stops within a second. */
 TEST(client_clock, steers_without_reversing_and_recovers_from_a_late_timeline) {
     clClock_t clock = { 0 };
     uint32_t realtime = 1000, time = 0, next = 1, held_steady = 0, held_after = 0;
@@ -1448,7 +1501,7 @@ TEST(client_clock, steers_without_reversing_and_recovers_from_a_late_timeline) {
         realtime += 10;
         time = CL_ClockAdvance(&clock, time, 10, realtime);
         T_ASSERT(CL_ClockRenderTime(&clock) >= last_render);
-        T_ASSERT(CL_ClockRenderTime(&clock) <= CL_ClockLatest(&clock) + 0.001);
+        T_ASSERT(CL_ClockRenderTime(&clock) <= CL_ClockLatest(&clock) + CL_CLOCK_EXTRAPOLATE_MSEC + 0.001);
         last_render = CL_ClockRenderTime(&clock);
         /* Snapshot n is sent every 100 ms; from n = 20 every one arrives 300 ms later than before. */
         while (next <= 60 && realtime >= 1000 + next * 100 + (next >= 20 ? 300 : 0)) {
@@ -1469,6 +1522,88 @@ TEST(client_clock, steers_without_reversing_and_recovers_from_a_late_timeline) {
     CL_ClockSnapshot(&clock, 50, realtime, FRAMETIME); /* map restart: an earlier server time */
     T_EQ((uint32_t)clock.time, 50u);
     T_EQ(clock.count, 1u);
+}
+
+/* Measured on a hosted Wi-Fi LAN: one snapshot in every five or six arrives 50-170 ms late. Covering each of those
+ * with buffer put the world a quarter of a second behind the player; holding at the newest snapshot instead froze
+ * units at every spike. The delay now covers the usual arrivals and units keep moving through the late ones. */
+TEST(client_clock, periodic_late_snapshots_neither_freeze_units_nor_set_the_delay) {
+    enum { FRAMES = 200 };
+    vTestReplay_t replay;
+    vTestMotion_t motion = { 0 };
+    uint32_t arrival[FRAMES + 1], realtime = 5000, seed = 7;
+    double delay = 0.0;
+    uint32_t delay_samples = 0;
+    int next = 1;
+    T_ASSERT(v_test_replay_begin(&replay, NA_IP));
+    if (!replay.saved) return;
+    for (int frame = 1; frame <= FRAMES; frame++) {
+        seed = seed * 1103515245u + 12345u;
+        arrival[frame] = realtime + (uint32_t)frame * FRAMETIME + (seed >> 16) % 21 + (frame % 6 == 3 ? 140 : 0);
+        if (frame > 1 && arrival[frame] < arrival[frame - 1]) arrival[frame] = arrival[frame - 1];
+    }
+    for (uint32_t step = 0; next <= FRAMES; step++) {
+        uint32_t const msec = step % 3 == 2 ? 9 : 8;
+        v_test_replay_advance(&realtime, msec);
+        while (next <= FRAMES && arrival[next] <= realtime) {
+            v_test_replay_snapshot(&replay, next, next * 10.0f);
+            next++;
+        }
+        if (!cl.clock.valid) continue;
+        if (next > 60) delay += cl.clock.target_delay, delay_samples++;
+        {
+            float const x = v_test_rendered_x();
+            float const speed = (x - motion.previous) * 1000.0f / (float)msec;
+            if (next > 60) {
+                motion.checked++;
+                if (speed < 50.0f) motion.stalls++;
+                if (speed > 150.0f) motion.jumps++;
+            }
+            motion.previous = x;
+        }
+    }
+    T_ASSERT(motion.checked > 1000);
+    T_EQ(motion.stalls, 0u);
+    T_EQ(motion.jumps, 0u);
+    T_ASSERT(delay_samples && delay / delay_samples < FRAMETIME + 100.0); /* not interval + the 140 ms spike */
+    T_ASSERT(cl.clock.extrapolated > 0.0);
+    v_test_replay_end(&replay);
+}
+
+/* A unit stops while its next snapshot is late: the render continued it past the stop point. When the snapshot
+ * arrives the unit slides back over CL_CORRECTION_MSEC instead of jumping, and ends exactly where it stopped. */
+TEST(client_clock, a_unit_that_stopped_during_extrapolation_slides_back) {
+    vTestReplay_t replay;
+    uint32_t realtime = 5000;
+    float x, previous, furthest = 0.0f, largest_step_back = 0.0f;
+    T_ASSERT(v_test_replay_begin(&replay, NA_IP));
+    if (!replay.saved) return;
+    for (int frame = 1; frame <= 30; frame++) {
+        FOR_LOOP(step, FRAMETIME / 10) v_test_replay_advance(&realtime, 10);
+        v_test_replay_snapshot(&replay, frame, frame * 10.0f); /* 100 units/s, on time */
+    }
+    previous = v_test_rendered_x();
+    {
+        /* From frame 31 the unit holds at 300. Frame 31 arrives 150 ms late, together with frame 32. */
+        uint32_t const sent = realtime;
+        int next = 31;
+        for (uint32_t elapsed = 10; elapsed <= 800; elapsed += 10) {
+            v_test_replay_advance(&realtime, 10);
+            while (next <= 38 && realtime >= sent + (next <= 32 ? 250u : (uint32_t)(next - 30) * FRAMETIME)) {
+                v_test_replay_snapshot(&replay, next, 300.0f);
+                next++;
+            }
+            x = v_test_rendered_x();
+            furthest = MAX(furthest, x);
+            largest_step_back = MAX(largest_step_back, previous - x);
+            previous = x;
+        }
+    }
+    T_ASSERT(furthest > 300.5f);                                 /* it kept moving while the snapshot was late */
+    T_ASSERT(furthest <= 300.0f + CL_CLOCK_EXTRAPOLATE_MSEC * 0.1f + 0.5f);
+    T_ASSERT(largest_step_back < 2.0f);                          /* no visible pop backwards */
+    T_FEQ(x, 300.0f, 0.01f);
+    v_test_replay_end(&replay);
 }
 
 /* A camera locked to a unit must use the same snapshot pair as the unit. */

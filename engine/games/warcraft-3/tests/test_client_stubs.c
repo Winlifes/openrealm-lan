@@ -98,6 +98,7 @@ static bool mock_DrawCursor(drawCursor_t const *cursor) {
 }
 
 void V_RenderView(void) {}
+void V_CorrectExtrapolatedPoses(double render) { (void)render; }
 void CON_DrawConsole(void) {}
 void CON_printf(cstring_t fmt, ...) {
     va_list args;

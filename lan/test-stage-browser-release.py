@@ -80,13 +80,16 @@ class BrowserReleaseInputs(unittest.TestCase):
             data = root / 'data-current'
             archive = b'map archive'
             model = b'compressed model ' * 64
-            for path, body in {'maps/test.w3m': archive, 'ui/frame.dds': b'shared', 'units/model.dds': model}.items():
+            resources = {'maps/test.w3m': archive, 'ui/frame.dds': b'shared', 'units/model.dds': model,
+                         'units/test/unit.mdx': b'unit model', 'units/test/attack.ogg': b'attack clip',
+                         'units/unused/attack.ogg': b'unrelated clip', 'sound/interface/click.wav': b'UI clip'}
+            for path, body in resources.items():
                 file = data / path
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_bytes(body)
-            served_index.write_text('maps/test.w3m\nui/frame.dds\nunits/model.blp\n')
+            served_index.write_text('\n'.join([*resources, 'units/model.blp']) + '\n')
             preload_index.write_text(json.dumps({'lobby':['ui/frame.dds'],
-                'maps':{'maps/test.w3m':['ui/frame.dds', 'units/model.blp']},
+                'maps':{'maps/test.w3m':['ui/frame.dds', 'units/model.blp', 'units/test/unit.mdx']},
                 'retainAfterLoad':{'maps/test.w3m':['ui/frame.dds']}}))
             command = [sys.executable, str(script), 'with-packs', '--engine-build', str(compiled),
                        '--asset-index', str(served_index), '--preload-index', str(preload_index), '--data-dir', str(data)]
@@ -100,16 +103,26 @@ class BrowserReleaseInputs(unittest.TestCase):
             result = subprocess.run(command, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             plan = json.loads((target / 'preload.index.json').read_text())
-            self.assertEqual(plan['maps']['maps/test.w3m'], ['units/model.blp'])
+            self.assertEqual(plan['maps']['maps/test.w3m'], ['units/model.blp', 'units/test/unit.mdx'])
             self.assertEqual(plan['retainAfterLoad']['maps/test.w3m'], ['ui/frame.dds'])
             self.assertEqual(plan['archives']['maps/test.w3m'],
                              {'bytes':len(archive), 'sha256':hashlib.sha256(archive).hexdigest()})
             self.assertEqual(list(json.loads((target / 'room-maps.index.json').read_text()).values()), ['maps/test.w3m'])
             packed = (target / plan['packs']['maps']['maps/test.w3m']).read_bytes()
             size, decoded_size = struct.unpack('<II', packed[:8])
-            self.assertEqual(size, len(packed) - 8)
+            self.assertEqual(len(packed) - 8 - size, 8 + len(resources['units/test/unit.mdx']))
             self.assertEqual(decoded_size, len(model))
-            self.assertEqual(gzip.decompress(packed[8:]), model)
+            self.assertEqual(gzip.decompress(packed[8:8 + size]), model)
+
+            shared = plan['audio']['shared']
+            selected = plan['audio']['maps']['maps/test.w3m']
+            self.assertEqual(shared['files'], ['sound/interface/click.wav'])
+            self.assertEqual(selected['files'], ['units/test/attack.ogg'])
+            manifest = json.loads((target / 'release-manifest.json').read_text())
+            for group in (shared, selected):
+                body = (target / group['pack']).read_bytes()
+                self.assertEqual(body[8:], resources[group['files'][0]])
+                self.assertEqual(manifest[group['pack']]['sha256'], hashlib.sha256(body).hexdigest())
 
 
 if __name__ == '__main__':

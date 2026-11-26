@@ -92,6 +92,16 @@ const wc3RoomAssets = (() => {
     return readBinary(new Response(expanded), {bytes:size});
   }
 
+  function isAudio(path) {
+    return /\.(wav|ogg|mp3|flac)$/i.test(path);
+  }
+
+  async function expandAudio(assets) {
+    for (const [path, asset] of assets) {
+      if (isAudio(path) && !(asset instanceof Uint8Array)) assets.set(path, await inflate(asset));
+    }
+  }
+
   function retain(assets, paths) {
     for (const [path, asset] of assets) {
       if (paths && !paths.has(path)) {
@@ -103,5 +113,5 @@ const wc3RoomAssets = (() => {
     }
   }
 
-  return {readBinary, openStartupCache, unpack, inflate, retain};
+  return {readBinary, openStartupCache, unpack, inflate, isAudio, expandAudio, retain};
 })();

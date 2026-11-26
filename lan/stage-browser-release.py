@@ -89,6 +89,41 @@ def write_pack(directory, name, paths):
     return name
 
 
+def pack_room_audio(directory, lobby, maps):
+    formats = {'.wav', '.ogg', '.mp3', '.flac'}
+    common_roots = ('sound/interface/', 'sound/time/', 'sound/buildings/', 'sound/units/', 'abilities/weapons/')
+    audio_by_directory = {}
+    common = set()
+    for name in served_paths:
+        path = PurePosixPath(name)
+        if path.suffix not in formats:
+            continue
+        audio_by_directory.setdefault(path.parent, set()).add(name)
+        if name.startswith(common_roots):
+            common.add(name)
+
+    def model_audio(paths):
+        sounds = set()
+        for name in paths:
+            path = PurePosixPath(name)
+            if path.suffix in {'.mdx', '.mdl'}:
+                sounds.update(audio_by_directory.get(path.parent, ()))
+        return sounds
+
+    common.update(model_audio(lobby))
+    packed_assets = set(lobby).union(*maps.values())
+    shared = sorted(common - packed_assets)
+    shared_pack = write_pack(directory, 'room-audio-shared.bin', shared)
+    map_packs = {}
+    for name, paths in maps.items():
+        files = sorted((common | model_audio(paths)).difference(shared, lobby, paths))
+        if files:
+            key = hashlib.sha256(name.encode()).hexdigest()[:16]
+            pack = write_pack(directory, f'room-audio-{key}.bin', files)
+            map_packs[name] = {'pack': pack, 'files': files}
+    return {'shared': {'pack': shared_pack, 'files': shared} if shared else None, 'maps': map_packs}
+
+
 def pack_startup_assets(directory):
     lobby = list(dict.fromkeys(preload['lobby']))
     shared_paths = set(lobby)
@@ -107,6 +142,9 @@ def pack_startup_assets(directory):
     plan = dict(lobby=lobby, maps=maps, packs=packs, archives=archives)
     if retained:
         plan['retainAfterLoad'] = retained
+    audio = pack_room_audio(directory, lobby, maps)
+    if audio['shared'] or audio['maps']:
+        plan['audio'] = audio
     return plan
 
 

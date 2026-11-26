@@ -90,7 +90,7 @@ static void CL_ListModelless(uint32_t index) {
     if (member) cl.modelless_entities[cl.num_modelless++] = index;
 }
 
-/* Forget one entity entirely, exactly as a U_REMOVE does. */
+/* Clear decoded state. Rebasing may need to retain a still-visible unit's position correction. */
 static void CL_ClearEntity(uint32_t nument) {
     centity_t *ent = &cl.ents[nument];
     /* Clear membership unconditionally: the current model may already be
@@ -125,6 +125,7 @@ static uint32_t cl_frame_history_next; /* oldest slot, replaced first: frames ar
 static bool cl_frame_discard;          /* the frame being parsed deltas against a frame not held: read past it */
 static bool cl_frame_repeat;           /* the frame being parsed repeats the last server frame (paused keepalive) */
 static bool cl_nodelta_requested;      /* "nodelta" sent; cleared once a full frame arrives */
+static bool cl_pose_added;             /* the frame being parsed added a pose sample; its entities follow */
 /* An entity whose serverframe equals this held the pose now in prev, so it may interpolate into the new frame. */
 static int cl_pose_continuity_frame;
 static bool cl_pose_continuity_valid;
@@ -143,7 +144,7 @@ void CL_ResetFrameHistory(void) {
     }
     cl_frame_history_next = 0;
     memset(cl_pose_history, 0, sizeof(cl_pose_history));
-    cl_frame_discard = cl_frame_repeat = cl_nodelta_requested = cl_pose_continuity_valid = false;
+    cl_frame_discard = cl_frame_repeat = cl_nodelta_requested = cl_pose_continuity_valid = cl_pose_added = false;
     cl.frame.valid = false;
     /* A new session or map starts a new server timeline: the next snapshot reseeds the clock and poses. */
     memset(&cl.poses, 0, sizeof(cl.poses));
@@ -262,6 +263,7 @@ static void CL_ReadPacketEntities(sizeBuf_t *msg) {
                         old.origin.y,
                         old.origin.z);
             }
+            ent->correction = (vec3_t){ 0 };
             CL_ClearEntity(nument);
             removed++;
             continue;
@@ -282,6 +284,7 @@ static void CL_ReadPacketEntities(sizeBuf_t *msg) {
             if (!ent->presentation_generation) ent->presentation_generation++;
             CL_AddActiveEntity(nument);
         } else if (old.model && !ent->current.model) {
+            ent->correction = (vec3_t){ 0 };
             CL_RemoveActiveEntity(nument);
         }
         CL_ListModelless(nument);
@@ -348,6 +351,8 @@ static void CL_ReadPacketEntities(sizeBuf_t *msg) {
      * made the next movement snap instead of interpolating from the pose the entity held. */
     FOR_LOOP(i, cl.num_active) cl.ents[cl.active_entities[i]].serverframe = (uint32_t)cl.frame.serverframe;
     FOR_LOOP(i, cl.num_modelless) cl.ents[cl.modelless_entities[i]].serverframe = (uint32_t)cl.frame.serverframe;
+    if (cl_pose_added && cl.clock.valid) V_CorrectExtrapolatedPoses(CL_ClockRenderTime(&cl.clock));
+    cl_pose_added = false;
     if (cl.frame.oldclientframe == -1) cl_nodelta_requested = false;
     if (cls.netchan.remote_address.type == NA_IP) CL_SaveFrameHistory();
     if (debug_entities > 1 && (added || removed || changed)) {
@@ -554,6 +559,7 @@ void CL_ParseFrame(sizeBuf_t *msg) {
             cl.poses.time[CL_POSE_SAMPLES - 1] = (uint32_t)cl.frame.servertime;
             cl.poses.frame[CL_POSE_SAMPLES - 1] = cl.frame.serverframe;
             if (cl.poses.count < CL_POSE_SAMPLES) cl.poses.count++;
+            cl_pose_added = true;
         }
         /* The presentation clock is steered by arrivals, never set to them; see cl_clock.h. */
         CL_ClockSnapshot(&cl.clock, (uint32_t)cl.frame.servertime, CL_RealTime(), FRAMETIME);
@@ -1769,6 +1775,53 @@ TEST(client_frames, recovered_snapshot_does_not_animate_building_from_baseline) 
         T_EQ(cl.ents[5].prev.origin.z, building.origin.z);
         T_EQ(cl.ents[5].prev.model, building.model);
     }
+
+    CL_ResetFrameHistory();
+    cls = saved_cls;
+    memcpy(&cl, saved, sizeof(cl));
+    free(saved);
+}
+
+TEST(client_frames, reused_entity_slot_does_not_inherit_motion_correction) {
+    struct client_state *saved = malloc(sizeof(cl));
+    struct client_static saved_cls = cls;
+    uint8_t data[512];
+    sizeBuf_t msg;
+    entityState_t const none = { 0 }, first = { .number = 5, .model = 1, .origin = { 10, 0, 0 } };
+
+    T_NOT_NULL(saved);
+    if (!saved) return;
+    memcpy(saved, &cl, sizeof(cl));
+    memset(&cl, 0, sizeof(cl));
+    cls.netchan.remote_address.type = NA_IP;
+    CL_ResetFrameHistory();
+
+    SZ_Init(&msg, data, sizeof(data));
+    test_frame_header(&msg, 1, -1);
+    test_frame_entity(&msg, &none, 5, 10);
+    test_apply_frame(&msg);
+    SZ_Init(&msg, data, sizeof(data));
+    test_frame_header(&msg, 2, 1);
+    test_frame_entity(&msg, &first, 5, 20);
+    test_apply_frame(&msg);
+    cl.ents[5].correction.x = 15;
+
+    SZ_Init(&msg, data, sizeof(data)); /* an older delta base alone does not remove the unit */
+    test_frame_header(&msg, 3, 1);
+    test_frame_entity(&msg, &first, 5, 30);
+    test_apply_frame(&msg);
+    T_FEQ(cl.ents[5].correction.x, 15, 0.01f);
+
+    SZ_Init(&msg, data, sizeof(data));
+    test_frame_header(&msg, 4, 3);
+    MSG_WriteEntityBits(&msg, 1u << U_REMOVE, 5);
+    test_apply_frame(&msg);
+    SZ_Init(&msg, data, sizeof(data));
+    test_frame_header(&msg, 5, 4);
+    test_frame_entity(&msg, &none, 5, 400);
+    test_apply_frame(&msg);
+    T_ASSERT(test_entity_is(5, 400));
+    T_FEQ(cl.ents[5].correction.x, 0, 0.01f);
 
     CL_ResetFrameHistory();
     cls = saved_cls;

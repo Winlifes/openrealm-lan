@@ -11399,6 +11399,32 @@ TEST(wc3_api, dota_hero_attr_ability_level_and_order) {
         "endfunction\n"));
 }
 
+/* A hosted 3C match crashed in SetHeroStr: the map script raised the strength of a unit that has no balance row.
+ * The attribute and experience setters only change heroes. */
+TEST(wc3_api, hero_attribute_setters_ignore_units_without_hero_data) {
+    edict_t *unit = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 64, 64);
+    unit->s.player = 0;
+    unit->svflags |= SVF_MONSTER;
+    unit->data.UnitBalance = NULL;
+    unit->unit_state = NULL;
+
+    T_ASSERT(run_test_jass(
+        "function main takes nothing returns nothing\n"
+        "  local group units = CreateGroup()\n"
+        "  local unit u\n"
+        "  call GroupEnumUnitsOfPlayer(units, Player(0), null)\n"
+        "  set u = FirstOfGroup(units)\n"
+        "  call DestroyGroup(units)\n"
+        "  call BJassAssert(u != null, \"unit without balance data\")\n"
+        "  call SetHeroStr(u, 30, true)\n"
+        "  call SetHeroAgi(u, 30, true)\n"
+        "  call SetHeroInt(u, 30, true)\n"
+        "  call SetHeroXP(u, 500, false)\n"
+        "  call AddHeroXP(u, 500, false)\n"
+        "  call BJassAssert(GetHeroXP(u) == 0, \"no hero experience\")\n"
+        "endfunction\n"));
+}
+
 TEST(wc3_api, unit_type_melee_and_ranged_follow_enabled_weapons) {
     UnitWeapons_t one = { .attacksEnabled = 1 };
     UnitWeapons_t two = { .attacksEnabled = 3 };

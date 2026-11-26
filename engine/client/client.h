@@ -29,6 +29,10 @@ typedef struct {
     entityState_t current;
     entityState_t prev;
     entityState_t older[CL_POSE_SAMPLES - 2]; /* [0] the frame before prev, then older ones */
+    /* Drawn-origin offset left when a late snapshot replaced an extrapolated position; it fades out over
+     * CL_CORRECTION_MSEC of real time from correction_time instead of popping the entity back. */
+    vec3_t correction;
+    uint32_t correction_time;
     uint32_t serverframe;
     uint32_t presentation_generation;
     color32_t tint;
@@ -236,6 +240,8 @@ static inline float cl_normalize_entity_scale(float scale) { return scale > 0.0f
 
 void V_RenderView(void);
 void V_SelectPosePair(void);
+vec3_t V_PoseOrigin(centity_t const *ent, uint32_t age, double render);
+void V_CorrectExtrapolatedPoses(double render);
 /* An entity's retained pose by age: 0 current, 1 prev, then older[]. */
 static inline entityState_t const *CL_EntityPose(centity_t const *ent, uint32_t age) {
     return age == 0 ? &ent->current : age == 1 ? &ent->prev : &ent->older[age - 2];

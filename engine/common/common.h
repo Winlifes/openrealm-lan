@@ -238,6 +238,16 @@ handle_t FS_GetPriorityArchive(void);
 handle_t FS_OpenFile(cstring_t fileName);
 void FS_CloseFile(handle_t file);
 handle_t FS_ReadLooseFile(cstring_t filename, uint32_t *size, uint32_t extraBytes);
+/* Browser builds download missing game data on demand and suspend the engine until it arrives. Between these
+ * calls a caller that can do without the file this frame starts the download in the background instead;
+ * FS_EndRemoteBackground reports whether a read in between is still downloading. Other builds read locally. */
+#if defined(__EMSCRIPTEN__) && defined(BZ_WEB_ASYNC_ASSETS)
+void FS_BeginRemoteBackground(void);
+bool FS_EndRemoteBackground(void);
+#else
+static inline void FS_BeginRemoteBackground(void) {}
+static inline bool FS_EndRemoteBackground(void) { return false; }
+#endif
 bool FS_ExtractFile(cstring_t toExtract, cstring_t extracted);
 bool FS_FileExists(cstring_t fileName);
 bool FS_ResolveLoosePath(cstring_t fileName, string_t out, uint32_t out_size);

@@ -5,11 +5,13 @@
  * time since it arrived" made every late packet a stall and every early or bunched one a forward jump.
  *
  * Both clocks here advance with real time and are steered, never snapped, toward the fastest recent delivery: real
- * time plus the largest (server time - arrival time) offset in a short window of applied snapshots.
+ * time plus the largest (server time - arrival time) offset in a window of applied snapshots.
  *  - time is the client's view of the server clock (cl.time): UI timers, effects and scene animation.
- *  - render is the server time the world is drawn at. It runs `target_delay` behind that line, where the delay
- *    covers the widest recent gap between a snapshot becoming due and its arrival, so a late or bunched snapshot
- *    lands inside the buffered interval instead of moving the picture.
+ *  - render is the server time the world is drawn at. It runs `target_delay` behind that line. The delay covers
+ *    the usual gap between a snapshot becoming due and its arrival, so ordinary jitter lands inside the buffered
+ *    interval. A snapshot later than that lets render run up to CL_CLOCK_EXTRAPOLATE_MSEC past the newest one,
+ *    where entities continue along their last motion, rather than freezing the picture. Covering every late
+ *    packet instead made Wi-Fi play lag a quarter of a second behind the player's commands.
  * Steering changes speed by at most 10%, and neither clock runs backwards except when a new timeline starts (first
  * snapshot, map change, an error too large to steer out).
  *
@@ -23,7 +25,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define CL_CLOCK_WINDOW 16               /* recent applied snapshots that estimate offset and delay */
+#define CL_CLOCK_WINDOW 32               /* recent applied snapshots that estimate offset and delay: ~3 s at 10 Hz */
 #define CL_CLOCK_RESET_MSEC 500.0        /* a larger error starts a new timeline instead of steering */
 #define CL_CLOCK_SLEW_MSEC 1000.0        /* an error is steered out over roughly this much real time */
 #define CL_CLOCK_MAX_SLEW 0.1            /* steering runs a clock at 90..110% of real time */
@@ -31,14 +33,17 @@
 #define CL_CLOCK_MAX_DELAY_MSEC 500.0    /* never buffer more than this, however bad the link */
 #define CL_CLOCK_STARVED_SNAPSHOTS 2     /* consecutive starved arrivals mean the offset window is stale */
 #define CL_CLOCK_RETAINED 4              /* snapshot poses the client keeps: about 200 ms of jitter at 10 Hz */
+#define CL_CLOCK_EXTRAPOLATE_MSEC 150.0  /* render may run this far past the newest snapshot before it waits */
+#define CL_CLOCK_COVERED_SNAPSHOTS 8     /* the latest-arriving quarter of the window may need extrapolation */
 
 typedef struct {
     bool valid;            /* seeded by a snapshot; until then time simply follows real time */
-    bool held;             /* render reached the newest snapshot since the last arrival */
+    bool held;             /* render reached the extrapolation limit since the last arrival */
     double time;           /* client view of the server clock; cl.time is its floor, ms */
     double render;         /* server time the world is drawn at, ms */
     double target_delay;   /* how far render aims to run behind the fastest-delivery line, ms */
     double waited;         /* render time lost waiting at the newest snapshot since the timeline began, ms */
+    double extrapolated;   /* render time drawn past the newest snapshot since the timeline began, ms */
     uint32_t retained[CL_CLOCK_RETAINED]; /* server times of the retained snapshots, newest last */
     uint32_t retained_count;
     uint32_t count, next;  /* filled window entries and the slot the next arrival replaces */
@@ -58,16 +63,22 @@ static inline int64_t CL_ClockMaxOffset(clClock_t const *clock) {
 }
 
 /* Each snapshot was due when the fastest-delivery line reached the previous snapshot's time and arrived
- * `interval + lateness` after that; the render delay must cover the worst such need in the window. A lone hiccup
- * raises the delay until it ages out, costing a few percent of playback speed rather than a stall at every
- * periodic spike. */
+ * `interval + lateness` after that. The render delay covers all but the CL_CLOCK_COVERED_SNAPSHOTS largest such
+ * needs in the window, and the largest one less what extrapolation may cover, so a late snapshot never freezes
+ * the picture and periodic Wi-Fi spikes do not set the delay for everyone. */
 static inline double CL_ClockNeededDelay(clClock_t const *clock, uint32_t default_interval) {
     int64_t const best = CL_ClockMaxOffset(clock);
-    double worst = 0.0;
+    double need[CL_CLOCK_WINDOW];
+    uint32_t skip;
     if (!clock->count) return default_interval;
-    for (uint32_t i = 0; i < clock->count; i++)
-        worst = fmax(worst, (double)clock->interval[i] + (double)(best - clock->offset[i]));
-    return worst;
+    for (uint32_t i = 0; i < clock->count; i++) {
+        double const value = (double)clock->interval[i] + (double)(best - clock->offset[i]);
+        uint32_t k = i;
+        for (; k > 0 && need[k - 1] < value; k--) need[k] = need[k - 1]; /* largest first */
+        need[k] = value;
+    }
+    skip = clock->count * CL_CLOCK_COVERED_SNAPSHOTS / CL_CLOCK_WINDOW;
+    return fmax(need[skip], need[0] - CL_CLOCK_EXTRAPOLATE_MSEC);
 }
 
 /* Render must stay within the intervals between the retained poses or it falls behind the oldest one. Use the
@@ -157,17 +168,19 @@ static inline uint32_t CL_ClockAdvance(clClock_t *clock, uint32_t time, uint32_t
     next = fmin(CL_ClockSteer(clock->time, line, msec), (double)latest + clock->target_delay);
     clock->time = fmax(clock->time, next);
     next = CL_ClockSteer(clock->render, line - clock->target_delay, msec);
-    if (next >= latest) {
-        double const held = fmax(clock->render, (double)latest);
+    if (next >= latest + CL_CLOCK_EXTRAPOLATE_MSEC) {
+        double const held = fmax(clock->render, (double)latest + CL_CLOCK_EXTRAPOLATE_MSEC);
         clock->waited += next - held;
         next = held;
         clock->held = true;
     }
+    if (next > latest) clock->extrapolated += next - fmax(clock->render, (double)latest);
     clock->render = next;
     return (uint32_t)clock->time;
 }
 
-/* Server time the world is drawn at: interpolate the retained snapshots around this. */
+/* Server time the world is drawn at: interpolate the retained snapshots around this. It may lie up to
+ * CL_CLOCK_EXTRAPOLATE_MSEC past the newest snapshot. */
 static inline double CL_ClockRenderTime(clClock_t const *clock) {
     return clock->render;
 }

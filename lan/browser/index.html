@@ -416,7 +416,8 @@
     const cached = warmAssets.get(path);
     const mountCached = bytes => {
       const size = mountLooseAsset(diskPath, bytes);
-      if (size) warmAssets.delete(path);
+      // Loose audio may be requested with another case spelling by the map, model, or sound catalog.
+      if (size && !wc3RoomAssets.isAudio(path)) warmAssets.delete(path);
       return size;
     };
     if (cached instanceof Uint8Array) return mountCached(cached);
@@ -483,10 +484,12 @@
     const plan = isRoom ? JSON.parse(preloadText) : null;
     const mapFiles = plan && Object.hasOwn(plan.maps, roomMap) ? plan.maps[roomMap] : [];
     const archive = plan?.archives?.[roomMap];
+    const audio = [plan?.audio?.shared, plan?.audio?.maps?.[roomMap]].filter(Boolean);
     const usePacks = plan?.packs && typeof DecompressionStream === 'function';
     const bundles = usePacks ? [
       [plan.packs.lobby, plan.lobby, '公共开局资源包'],
-      [plan.packs.maps[roomMap], mapFiles, '地图开局资源包']
+      [plan.packs.maps[roomMap], mapFiles, '地图开局资源包'],
+      ...audio.map(({pack, files}) => [pack, files, '对局音频包'])
     ].filter(([, files]) => files.length) : [];
     const core = ['openwarcraft3.wasm', 'openwarcraft3.data', 'openwarcraft3.js', 'bootstrap.mpq'];
     const sizes = new Map([...core, ...bundles.map(([name]) => name)].map(name => [name, releaseFiles[name]?.bytes]));
@@ -527,9 +530,13 @@
     ]);
     if (plan && !usePacks) {
       finishDownloadProgress();
-      await preloadLooseAssets([...new Set([...plan.lobby, ...mapFiles])], encodings);
+      await preloadLooseAssets([...new Set([...plan.lobby, ...mapFiles, ...audio.flatMap(group => group.files)])], encodings);
     }
-    if (isRoom) mark('wc3-room-preload-ready');
+    if (isRoom) {
+      setStatus('正在准备对局音频…');
+      await wc3RoomAssets.expandAudio(warmAssets);
+      mark('wc3-room-preload-ready');
+    }
     return {paths, bootstrap, sidecars:encodings, mapPaths, mapBytes, engineModule, engineData:engineData.buffer, engineScript};
   }
   window.addEventListener('error', function (e) { window.__errors.push(String(e.message)); });

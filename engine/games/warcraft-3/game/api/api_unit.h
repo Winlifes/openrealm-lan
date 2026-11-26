@@ -441,21 +441,21 @@ uint32_t SetHeroStr(jass_t *j) {
     edict_t *whichHero = jass_checkhandle(j, 1, "unit");
     int32_t newStr = jass_checkinteger(j, 2);
 //    bool permanent = jass_checkboolean(j, 3);
-    if (whichHero) { G_InitUnitState(whichHero); whichHero->unit_state->hero.str = (uint32_t)MAX(0, newStr); G_RecomputeHeroStats(whichHero); }
+    if (G_UnitIsHero(whichHero)) { G_InitUnitState(whichHero); whichHero->unit_state->hero.str = (uint32_t)MAX(0, newStr); G_RecomputeHeroStats(whichHero); }
     return 0;
 }
 uint32_t SetHeroAgi(jass_t *j) {
     edict_t *whichHero = jass_checkhandle(j, 1, "unit");
     int32_t newAgi = jass_checkinteger(j, 2);
 //    bool permanent = jass_checkboolean(j, 3);
-    if (whichHero) { G_InitUnitState(whichHero); whichHero->unit_state->hero.agi = (uint32_t)MAX(0, newAgi); G_RecomputeHeroStats(whichHero); }
+    if (G_UnitIsHero(whichHero)) { G_InitUnitState(whichHero); whichHero->unit_state->hero.agi = (uint32_t)MAX(0, newAgi); G_RecomputeHeroStats(whichHero); }
     return 0;
 }
 uint32_t SetHeroInt(jass_t *j) {
     edict_t *whichHero = jass_checkhandle(j, 1, "unit");
     int32_t newInt = jass_checkinteger(j, 2);
 //    bool permanent = jass_checkboolean(j, 3);
-    if (whichHero) { G_InitUnitState(whichHero); whichHero->unit_state->hero.intel = (uint32_t)MAX(0, newInt); G_RecomputeHeroStats(whichHero); }
+    if (G_UnitIsHero(whichHero)) { G_InitUnitState(whichHero); whichHero->unit_state->hero.intel = (uint32_t)MAX(0, newInt); G_RecomputeHeroStats(whichHero); }
     return 0;
 }
 uint32_t GetHeroXP(jass_t *j) {
@@ -466,7 +466,7 @@ uint32_t SetHeroXP(jass_t *j) {
     edict_t *whichHero = jass_checkhandle(j, 1, "unit");
     int32_t newXpVal = jass_checkinteger(j, 2);
 //    bool showEyeCandy = jass_checkboolean(j, 3);
-    if (whichHero && !whichHero->unit_state->hero.suspend_xp) {
+    if (G_UnitIsHero(whichHero) && whichHero->unit_state && !whichHero->unit_state->hero.suspend_xp) {
         G_HeroSetXP(whichHero, (uint32_t)MAX(0, newXpVal));
     }
     return 0;
@@ -487,7 +487,7 @@ uint32_t AddHeroXP(jass_t *j) {
     edict_t *whichHero = jass_checkhandle(j, 1, "unit");
     int32_t xpToAdd = jass_checkinteger(j, 2);
 //    bool showEyeCandy = jass_checkboolean(j, 3);
-    if (whichHero && !whichHero->unit_state->hero.suspend_xp && xpToAdd > 0) {
+    if (G_UnitIsHero(whichHero) && whichHero->unit_state && !whichHero->unit_state->hero.suspend_xp && xpToAdd > 0) {
         uint32_t add = (uint32_t)xpToAdd;
         uint32_t cur = whichHero->unit_state->hero.xp;
         /* Cap at INT32_MAX so GetHeroXP (signed return) never reads negative. */

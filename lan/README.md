@@ -65,7 +65,9 @@ The download screen checks the client, shared bundle, selected map archive, and 
 
 The room client keeps verified startup files in the browser's Cache Storage. A later room on the same site can reuse the selected map and shared files. The release manifest selects the expected SHA-256 for each logical file, so unchanged files survive a release update and changed files replace their earlier copies. Startup falls back to the normal download when browser storage is unavailable or the cached copy fails verification.
 
-Include measured command-card and other interface assets in the selected map bundle. The browser keeps downloaded entries compressed until the engine opens them. Once an entry is mounted, it drops the cached copy. After loading, any unopened entries stay available for the match.
+Packed releases give shared effects and the selected map's model-associated audio their own bundles. Sound files already listed in the map or lobby preload stay in those bundles. Record any additional loose soundtrack or scripted effects in the same preload index. The browser expands the selected audio files before joining, stores the encoded audio for case-insensitive reads during play, and decodes PCM on first use. Imported audio in the map archive arrives with the archive. An unlisted loose sound uses a background fetch on first use.
+
+Include measured command-card and other interface assets in the selected map bundle. The browser keeps model, texture, and other non-audio entries compressed until the engine opens them. Once an entry is mounted, it drops the temporary copy. Unopened entries stay available for the match.
 
 Measure in-match resource requests and frame intervals before extending a map preload. A chain of requests for a new unit's model, portrait, textures and effects can suspend engine frames while the page continues to respond. Add the measured files to the selected map's preload, then repeat the same cold-cache play sequence. Keep unrelated maps out of the bundle.
 

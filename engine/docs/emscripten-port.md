@@ -108,6 +108,13 @@ download a missing asset while the engine stack waits, and so that the loading p
 `emscripten_sleep`. Asyncify instruments every function that might reach one of those imports. Engine modules call
 each other through function tables, so the file paths cannot be narrowed with `ASYNCIFY_IGNORE_INDIRECT`.
 
+An in-match audio fetch used to suspend the whole engine frame. Packed rooms prepare their shared and map audio
+before joining, so `S_ResampleLoad` can decode the staged bytes on first use. If a loose sound is missing,
+`FS_BeginRemoteBackground` and `FS_EndRemoteBackground` let it download without suspending the frame. The current
+play is skipped while the bytes arrive. `WC3_FetchRemoteFile` shares in-flight reads through
+`Module.WC3_PendingAssets` and records failed background requests for the session. A blocking read of the same file
+joins the pending request. Models and textures fetched during play still suspend the frame.
+
 libc stdio, formatting and `qsort` make indirect calls only into libc streams or the caller's comparator, never to
 engine code, yet they counted as possible suspensions. Every function that logged or sorted was instrumented as a
 result, including the per-geoset draw `MDLX_RenderGeoset`. The Makefile's `EM_ASYNCIFY_REMOVE` list excludes those

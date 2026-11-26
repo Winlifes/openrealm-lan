@@ -173,19 +173,29 @@ tick. A late packet also moved `cl.time` backwards, which `V_AdvanceSceneTime` t
 particles and global-sequence animation hiccuped as well.
 
 The clock advances with real time and is steered, never snapped, toward the fastest recent delivery. That target is
-real time plus the largest `server time - arrival time` offset over the last 16 applied snapshots.
+real time plus the largest `server time - arrival time` offset over the last 32 applied snapshots (about three seconds).
 
 - `cl.time` follows that line. UI timers, client effects and scene animation see a monotonic server-time estimate.
-- The render time runs `target_delay` behind it. The delay is the widest recent gap between a snapshot becoming due
-  and its arrival (the interval plus its lateness), plus a 16 ms margin for frame quantization. It is capped by the
-  three newest intervals, because only four poses are retained: about 200 ms of jitter at the 10 Hz tick, enough for
-  a TCP retransmission.
+- The render time runs `target_delay` behind it. For each snapshot in the window, the need is the gap between it
+  becoming due and its arrival (the interval plus its lateness). The delay covers all but the latest-arriving quarter
+  of those needs, and at least the largest need less the extrapolation limit, plus a 16 ms margin for frame
+  quantization. It is capped by the three newest intervals, because only four poses are retained.
 
-Steering changes the render speed by at most 10%. The render time never passes the newest snapshot; time spent waiting
-there accumulates in `clClock_t.waited`. If the render time reaches the newest snapshot on two consecutive arrivals, the
-offset window is stale (the server fell behind real time) and is dropped. If several snapshots land together after a
-long wait, the render time continues from the oldest retained pose instead of waiting for steering to catch up. A
-server time earlier than the newest one, or an error over 500 ms, starts a new timeline at that snapshot.
+The delay used to cover the largest need in the window. On a hosted Wi-Fi LAN, one snapshot in five or six arrives
+50-170 ms late, so the world was drawn about 220 ms behind the newest snapshot and still waited at the worst spikes.
+Players read that as command lag. Replaying a measured 97-second LAN trace through the client, the current rule draws
+about 160 ms behind, waits 91 ms in total instead of 873 ms, and extrapolates for 9% of the time.
+
+Steering changes the render speed by at most 10%. The render time may run up to `CL_CLOCK_EXTRAPOLATE_MSEC` (150 ms)
+past the newest snapshot. There, `V_PoseOrigin` continues each entity along its last pair's motion, unless that motion
+is faster than a teleport threshold. Rotation, scale, animation and the camera stay at the newest pose. When the next
+snapshot arrives, `V_CorrectExtrapolatedPoses` stores the difference between the extrapolated and the newly
+interpolated position in `centity_t.correction`. That offset fades out over 150 ms, so a unit that stopped or turned
+slides back instead of popping. Time drawn past the newest snapshot accumulates in `clClock_t.extrapolated`, and time
+spent waiting at the limit accumulates in `clClock_t.waited`. If the render time reaches the limit on two consecutive
+arrivals, the offset window is stale (the server fell behind real time) and is dropped. If several snapshots land
+together after a long wait, the render time continues from the oldest retained pose instead of waiting for steering to
+catch up. A server time earlier than the newest one, or an error over 500 ms, starts a new timeline at that snapshot.
 
 `V_SelectPosePair` chooses the newest retained pair whose older end the render time has reached, stores its age in
 `cl.poses.pair_age`, and sets `viewDef.lerpfrac` from the snapshots' real server-time spacing. A rate-limited link

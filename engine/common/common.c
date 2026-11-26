@@ -1223,13 +1223,43 @@ bool FS_FileExists(cstring_t fileName) {
 }
 
 #ifdef __EMSCRIPTEN__
+static bool fs_remote_background, fs_remote_pending;
+
 #ifdef BZ_WEB_ASYNC_ASSETS
+void FS_BeginRemoteBackground(void) {
+    fs_remote_background = true;
+    fs_remote_pending = false;
+}
+
+bool FS_EndRemoteBackground(void) {
+    bool const pending = fs_remote_pending;
+    fs_remote_background = false;
+    fs_remote_pending = false;
+    return pending;
+}
+
 /* The LAN launcher supplies loose bytes. Cache hits and absent paths return
- * immediately. Only outstanding downloads suspend the engine stack. */
-EM_JS(int, WC3_FetchRemoteFile, (const char *diskPathC, const char *relNameC), {
+ * immediately. Only outstanding downloads suspend the engine stack, unless
+ * the caller asked for a background download: then this returns -1 at once
+ * and the file is in the FS for a later read. A blocking read of a file that
+ * is already downloading waits for that download. */
+EM_JS(int, WC3_FetchRemoteFile, (const char *diskPathC, const char *relNameC, int background), {
     if (!Module.WC3_FetchAsset) return 0;
+    var diskPath = UTF8ToString(Number(diskPathC));
+    var pending = Module.WC3_PendingAssets || (Module.WC3_PendingAssets = new Map());
+    if (background) {
+        if (pending.has(diskPath)) return pending.get(diskPath) ? -1 : 0;
+        var started = Module.WC3_FetchAsset(diskPath, UTF8ToString(Number(relNameC)));
+        if (typeof started === 'number') return started;
+        pending.set(diskPath, started);
+        started.then(function(size) {
+            if (size > 0) pending.delete(diskPath);
+            else pending.set(diskPath, null);
+        }, function() { pending.set(diskPath, null); });
+        return -1;
+    }
     return Asyncify.handleSleep(function(wakeUp) {
-        var result = Module.WC3_FetchAsset(UTF8ToString(Number(diskPathC)), UTF8ToString(Number(relNameC)));
+        var result = pending.get(diskPath) || Module.WC3_FetchAsset(diskPath, UTF8ToString(Number(relNameC)));
         if (typeof result === 'number') wakeUp(result);
         else result.then(wakeUp, function() { wakeUp(0); });
     });
@@ -1240,7 +1270,7 @@ EM_JS(int, WC3_FetchRemoteFile, (const char *diskPathC, const char *relNameC), {
  * grows with custom-map packs).  When a map path is missing locally, pull it
  * through a synchronous XHR and write it into the emscripten FS so the normal
  * loose read finds it.  Non-map paths are ignored. */
-EM_JS(int, WC3_FetchRemoteFile, (const char *diskPathC, const char *relNameC), {
+EM_JS(int, WC3_FetchRemoteFile, (const char *diskPathC, const char *relNameC, int background), {
     var diskPath = UTF8ToString(Number(diskPathC));
     var rel = UTF8ToString(Number(relNameC)).split(String.fromCharCode(92)).join('/').replace(/^[/]+/, String()).toLowerCase();
     if (!rel) return 0;
@@ -1352,12 +1382,12 @@ void FS_EnsureRemoteMapFile(cstring_t filename) {
             return; /* real content already present */
         }
         fclose(probe);
-        WC3_FetchRemoteFile(diskPath, filename);
+        if (WC3_FetchRemoteFile(diskPath, filename, fs_remote_background) < 0) fs_remote_pending = true;
         return;
     }
     if (gameDirs[0][0]) {
         FS_MakeDiskPath(gameDirs[0], filename, diskPath, sizeof(diskPath));
-        WC3_FetchRemoteFile(diskPath, filename);
+        if (WC3_FetchRemoteFile(diskPath, filename, fs_remote_background) < 0) fs_remote_pending = true;
     }
 }
 #endif

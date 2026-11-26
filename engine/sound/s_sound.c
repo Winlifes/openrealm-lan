@@ -213,21 +213,23 @@ static bool s_is_flac_path(cstring_t path) {
     return extension && !strcasecmp(extension, ".flac");
 }
 
-static sfxcache_t *S_ResampleLoad(char const *path) {
+static sfxcache_t *S_ResampleLoad(char const *path, bool *pending) {
     uint32_t file_size = 0;
 #ifdef DEBUG_MAP_LOAD
     double phase_start = MAP_LOAD_NOW();
 #endif
+    FS_BeginRemoteBackground();
     uint8_t *file_data = Audio_ReadFile(path, &file_size, FS_ReadFile, FS_FreeFile);
+    *pending = FS_EndRemoteBackground();
 #ifdef DEBUG_MAP_LOAD
     if (s_map_load_sound_stats.active) {
         s_map_load_sound_stats.file_read_ms += MAP_LOAD_NOW() - phase_start;
         if (file_data) s_map_load_sound_stats.bytes_read += file_size;
-        else s_map_load_sound_stats.failed_reads++;
+        else if (!*pending) s_map_load_sound_stats.failed_reads++;
     }
 #endif
     if (!file_data || !file_size) {
-        fprintf(stderr, "[sound] %s: failed to read audio file\n", path);
+        if (!*pending) fprintf(stderr, "[sound] %s: failed to read audio file\n", path);
         FS_FreeFile(file_data);
         return NULL;
     }
@@ -339,12 +341,15 @@ static void S_InsertHash(uint32_t kit_id, cstring_t name) {
 
 /* Load (or return cached) PCM for a path-keyed sfx handle. */
 static sfxcache_t *S_LoadSfx(sfx_t *sfx) {
+    bool pending;
     if (!sfx || !sfx->path[0]) return NULL;
     if (sfx->cache) return sfx->cache;
     if (sfx->load_attempted && sfx->load_attempt_sequence == s.registration_sequence) return NULL;
     sfx->load_attempted = true;
     sfx->load_attempt_sequence = s.registration_sequence;
-    sfx->cache = S_ResampleLoad(sfx->path);
+    /* A sound is not worth a frozen frame: a browser downloading it skips this play and plays it next time. */
+    sfx->cache = S_ResampleLoad(sfx->path, &pending);
+    if (pending && !sfx->cache) sfx->load_attempted = false;
     return sfx->cache;
 }
 
