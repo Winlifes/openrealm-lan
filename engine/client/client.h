@@ -120,13 +120,14 @@ struct client_state {
     clClock_t clock;      /* smoothed presentation clock; cl.time follows it once a snapshot seeds it */
     vec2_t startingPosition;
     player_t playerstate;
+    box2_t camera_bounds;
     struct {
         bool active;
         vec2_t origin;
         bool view;
         vec3_t angles;
         float distance;
-        uint32_t focus_ms, view_ms;
+        uint32_t focus_ms, focus_packet, view_ms;
     } camera_prediction;
     struct {
         uint32_t width;

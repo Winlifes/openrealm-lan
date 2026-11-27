@@ -672,6 +672,7 @@ static void apply_dynamic_obstacles(edict_t const *ignore, uint8_t mover_flags) 
          * cancellation or ordinary death. */
         if (!(ent->svflags & SVF_MONSTER) || (ent->svflags & SVF_DEADMONSTER))
             continue;
+        if (ent->pathtex && (ent->s.flags & EF_BUILDING)) continue;
         point2_t p = LocationToPathMap(&ent->s.origin2);
         uint32_t radius = collision_radius_cells(ent->collision);
         uint8_t const blocked_flags = entity_dynamic_pathing_flags(ent, mover_flags);
@@ -717,6 +718,31 @@ float CM_PathCellWorldSize(void) {
     return pathmap_cell_world_size();
 }
 
+/* A sub-cell mover fits at the centre of a single tile. Larger movers need
+ * the existing neighbouring-cell clearance used by their shared routes. */
+static int route_radius_cells(float radius) {
+    float const limit = (float)MAX(pathmap.width, pathmap.height);
+    if (!isfinite(radius)) return (int)limit;
+    float const cells = MAX(0.f, radius) / pathmap_cell_world_size();
+    return cells < 0.5f ? 0 : (int)MIN(limit, ceilf(cells));
+}
+
+static box2_t pathing_box(vec2_t const *point, float radius) {
+    vec2_t const low = CM_GetNormalizedMapPosition(point->x - radius, point->y - radius);
+    vec2_t const high = CM_GetNormalizedMapPosition(point->x + radius, point->y + radius);
+    return (box2_t){ { low.x * pathmap.width, low.y * pathmap.height },
+                     { high.x * pathmap.width, high.y * pathmap.height } };
+}
+
+static bool pathing_box_cells(box2_t const *box, bool footprint, point2_t *first, point2_t *last) {
+    if (!(box->min.x >= 0.f && box->max.x >= box->min.x && box->max.x < (float)pathmap.width &&
+          box->min.y >= 0.f && box->max.y >= box->min.y && box->max.y < (float)pathmap.height)) return false;
+    first->x = footprint ? (int)ceilf(box->min.x) - 1 : (int)box->min.x;
+    first->y = footprint ? (int)ceilf(box->min.y) - 1 : (int)box->min.y;
+    *last = (point2_t){ (int)box->max.x, (int)box->max.y };
+    return first->x >= 0 && first->y >= 0;
+}
+
 static bool is_pathable_node_for_radius_cells_flags(int x, int y, int radius_cells, uint8_t blocked_flags) {
     if (!is_valid_point(x, y) || path_cell_blocks(path_node(x, y), blocked_flags)) {
         return false;
@@ -738,7 +764,7 @@ static bool closest_pathable_node_flags(vec2_t const *location, float radius, ui
     int tx = (int)floorf(fx);
     int ty = (int)floorf(fy);
     int max_radius = (int)MAX(pathmap.width, pathmap.height);
-    int radius_cells = (int)ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
+    int radius_cells = route_radius_cells(radius);
     float best_dist = FLT_MAX;
     point2_t best = { 0, 0 };
     bool found = false;
@@ -781,9 +807,7 @@ static bool closest_pathable_node_flags(vec2_t const *location, float radius, ui
 }
 
 bool CM_ClosestPathablePointForRadiusFlags(vec2_t const *location, float radius, uint8_t blocked_flags, vec2_t *out) {
-    point2_t point;
-    vec2_t n;
-    int tx, ty, radius_cells;
+    point2_t point, first, last;
 
     if (!location || !out) {
         return false;
@@ -795,15 +819,24 @@ bool CM_ClosestPathablePointForRadiusFlags(vec2_t const *location, float radius,
 
     reset_pathmap_data();
     apply_dynamic_obstacles(NULL, blocked_flags);
-    n = CM_GetNormalizedMapPosition(location->x, location->y);
-    tx = (int)floorf(n.x * pathmap.width);
-    ty = (int)floorf(n.y * pathmap.height);
-    radius_cells = (int)ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
     /* A legal click is already the most accurate destination; the old code snapped every
      * valid point to its cell center, changing straight orders into diagonal movement. */
-    if (is_pathable_node_for_radius_cells_flags(tx, ty, radius_cells, blocked_flags)) {
-        *out = *location;
-        return true;
+    int const grid_radius = route_radius_cells(radius);
+    float const subcell = grid_radius ? 0.f : MAX(0.f, radius);
+    box2_t const footprint = pathing_box(location, subcell);
+    if (pathing_box_cells(&footprint, subcell > 0.f, &first, &last)) {
+        bool clear = true;
+        if (grid_radius) {
+            clear = is_pathable_node_for_radius_cells_flags(first.x, first.y, grid_radius, blocked_flags);
+        } else {
+            for (int y = first.y; y <= last.y && clear; y++)
+                for (int x = first.x; x <= last.x; x++)
+                    if (path_cell_blocks(path_node(x, y), blocked_flags)) { clear = false; break; }
+        }
+        if (clear) {
+            *out = *location;
+            return true;
+        }
     }
     if (!closest_pathable_node_flags(location, radius, blocked_flags, &point)) {
         return false;
@@ -838,21 +871,14 @@ static bool is_pathable_node_original_flags(int x, int y, uint8_t blocked_flags)
     return is_valid_point(x, y) && !is_obstacle_original_flags(x, y, blocked_flags);
 }
 
-static bool is_pathable_node_original_for_radius_cells_flags(int x, int y, int radius_cells, uint8_t blocked_flags) {
+/* All callers supply a valid, inclusive cell rectangle. */
+static bool original_cells_clear(int x0, int y0, int x1, int y1, uint8_t blocked_flags) {
     uint32_t stride, blocked;
     uint32_t const *prefix;
     uint8_t const flags = normalize_blocked_flags(blocked_flags);
 
     PERF_INC(pathability_checks);
 
-    if (!is_valid_point(x, y) || radius_cells < 0 || radius_cells > x || radius_cells > y ||
-        (uint32_t)radius_cells >= pathmap.width - x || (uint32_t)radius_cells >= pathmap.height - y)
-        return false;
-
-    int const x0 = x - radius_cells;
-    int const y0 = y - radius_cells;
-    int const x1 = x + radius_cells;
-    int const y1 = y + radius_cells;
     prefix = flags == CM_PATHING_UNWALKABLE ? pathmap.obstacle_prefix
            : flags == CM_PATHING_UNFLYABLE ? pathmap.nofly_prefix
            : flags == CM_PATHING_UNSWIMMABLE ? pathmap.nowater_prefix
@@ -877,6 +903,13 @@ static bool is_pathable_node_original_for_radius_cells_flags(int x, int y, int r
     return blocked == 0;
 }
 
+static bool is_pathable_node_original_for_radius_cells_flags(int x, int y, int radius_cells, uint8_t blocked_flags) {
+    if (!is_valid_point(x, y) || radius_cells > x || radius_cells > y ||
+        (uint32_t)radius_cells >= pathmap.width - x || (uint32_t)radius_cells >= pathmap.height - y)
+        return false;
+    return original_cells_clear(x - radius_cells, y - radius_cells, x + radius_cells, y + radius_cells, blocked_flags);
+}
+
 static bool is_pathable_node_original_for_radius_cells(int x, int y, int radius_cells) {
     return is_pathable_node_original_for_radius_cells_flags(x, y, radius_cells, CM_PATHING_UNWALKABLE);
 }
@@ -888,7 +921,7 @@ static bool closest_pathable_node_original_flags(vec2_t const *location, float r
     int tx = (int)floorf(fx);
     int ty = (int)floorf(fy);
     int max_radius = (int)MAX(pathmap.width, pathmap.height);
-    int radius_cells = (int)ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
+    int radius_cells = route_radius_cells(radius);
     float best_dist = FLT_MAX;
     point2_t best = { 0, 0 };
     bool found = false;
@@ -931,16 +964,13 @@ bool CM_PointIsPathableForRadiusFlags(vec2_t const *location, float radius, uint
     if (!location || !pathmap.original || !pathmap.width || !pathmap.height) {
         return true;
     }
-    vec2_t n = CM_GetNormalizedMapPosition(location->x, location->y);
-    float const cells = ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
-    /* Scripts can supply coordinates outside the integer cell range. Validate
-     * before converting; a saturated cell plus the footprint used to wrap. */
-    if (!(n.x >= 0.f && n.x < 1.f && n.y >= 0.f && n.y < 1.f) ||
-        !(cells >= 0.f && cells < (float)MIN(pathmap.width, pathmap.height)))
-        return false;
-    int tx = (int)floorf(n.x * pathmap.width);
-    int ty = (int)floorf(n.y * pathmap.height);
-    return is_pathable_node_original_for_radius_cells_flags(tx, ty, (int)cells, blocked_flags);
+    point2_t first, last;
+    int const grid_radius = route_radius_cells(radius);
+    float const subcell = grid_radius ? 0.f : MAX(0.f, radius);
+    box2_t const footprint = pathing_box(location, subcell);
+    if (!pathing_box_cells(&footprint, subcell > 0.f, &first, &last)) return false;
+    return grid_radius ? is_pathable_node_original_for_radius_cells_flags(first.x, first.y, grid_radius, blocked_flags)
+                       : original_cells_clear(first.x, first.y, last.x, last.y, blocked_flags);
 }
 
 bool CM_PointIsPathableForRadius(vec2_t const *location, float radius) {
@@ -1000,23 +1030,15 @@ bool CM_TerrainPointIsSwimmable(vec2_t const *location) {
     return cell ? !cell->nowater : false;
 }
 
-bool CM_LineIsPathableForRadiusFlags(vec2_t const *a, vec2_t const *b, float radius, uint8_t blocked_flags) {
-    if (!a || !b)
-        return false;
-    if (pathmap.width == 0 || pathmap.height == 0)
-        return true;
-    int radius_cells = (int)ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
-    vec2_t na = CM_GetNormalizedMapPosition(a->x, a->y);
-    vec2_t nb = CM_GetNormalizedMapPosition(b->x, b->y);
-    int ax = (int)(na.x * pathmap.width),  ay = (int)(na.y * pathmap.height);
-    int bx = (int)(nb.x * pathmap.width),  by = (int)(nb.y * pathmap.height);
+static bool line_cells_clear(point2_t a, point2_t b, int radius, uint8_t blocked_flags) {
+    int ax = a.x, ay = a.y, bx = b.x, by = b.y;
     int dx = abs(bx - ax), dy = abs(by - ay);
     int sx = ax < bx ? 1 : -1, sy = ay < by ? 1 : -1;
     int err = dx - dy;
     int x = ax, y = ay;
     int guard = dx + dy + 2;
     while (guard-- > 0) {
-        if (!is_pathable_node_original_for_radius_cells_flags(x, y, radius_cells, blocked_flags))
+        if (!is_pathable_node_original_for_radius_cells_flags(x, y, radius, blocked_flags))
             return false;
         if (x == bx && y == by) {
             return true;
@@ -1028,11 +1050,45 @@ bool CM_LineIsPathableForRadiusFlags(vec2_t const *a, vec2_t const *b, float rad
          * cardinal neighbours so the direct shortcut cannot bypass the
          * flow-field rule and steer through touching obstacle corners. */
         if (step_x && step_y &&
-            !(is_pathable_node_original_for_radius_cells_flags(x + sx, y, radius_cells, blocked_flags) &&
-              is_pathable_node_original_for_radius_cells_flags(x, y + sy, radius_cells, blocked_flags)))
+            !(is_pathable_node_original_for_radius_cells_flags(x + sx, y, radius, blocked_flags) &&
+              is_pathable_node_original_for_radius_cells_flags(x, y + sy, radius, blocked_flags)))
             return false;
         if (step_x) { err -= dy; x += sx; }
         if (step_y) { err += dx; y += sy; }
+    }
+    return true;
+}
+
+bool CM_LineIsPathableForRadiusFlags(vec2_t const *a, vec2_t const *b, float radius, uint8_t blocked_flags) {
+    if (!a || !b) return false;
+    if (!pathmap.width || !pathmap.height) return true;
+    int const grid_radius = route_radius_cells(radius);
+    float const subcell = grid_radius ? 0.f : MAX(0.f, radius);
+    box2_t const start = pathing_box(a, subcell), end = pathing_box(b, subcell);
+    point2_t first, last;
+    if (subcell == 0.f) {
+        point2_t unused;
+        return pathing_box_cells(&start, false, &first, &unused) &&
+            pathing_box_cells(&end, false, &last, &unused) && line_cells_clear(first, last, grid_radius, blocked_flags);
+    }
+    box2_t const sweep = {
+        { MIN(start.min.x, end.min.x), MIN(start.min.y, end.min.y) },
+        { MAX(start.max.x, end.max.x), MAX(start.max.y, end.max.y) }
+    };
+    if (!pathing_box_cells(&sweep, true, &first, &last)) return false;
+    if (original_cells_clear(first.x, first.y, last.x, last.y, blocked_flags)) return true;
+    float const dx = end.min.x - start.min.x, dy = end.min.y - start.min.y;
+    if (dx == 0.f || dy == 0.f) return false;
+
+    /* For a diagonal, check just the columns touched while its footprint
+     * spans this row. The full bounding rectangle can include distant walls. */
+    for (int y = first.y; y <= last.y; y++) {
+        float const lower = (y - start.max.y) / dy, upper = (y + 1 - start.min.y) / dy;
+        float const enter = MAX(0.f, MIN(lower, upper)), leave = MIN(1.f, MAX(lower, upper));
+        float const x0 = start.min.x + MIN(dx * enter, dx * leave);
+        float const x1 = start.max.x + MAX(dx * enter, dx * leave);
+        if (!original_cells_clear(MAX(first.x, (int)ceilf(x0) - 1), y,
+                                  MIN(last.x, (int)x1), y, blocked_flags)) return false;
     }
     return true;
 }
@@ -1098,7 +1154,7 @@ bool CM_FindPathWaypoint(pathAccelParams_t const *params, vec2_t *out) {
     if (!params || !params->from || !params->target || !out || !pathmap.pathnodes || !pathmap.pathheap || !cells)
         return false;
     blocked_flags = normalize_blocked_flags(params->blocked_flags);
-    radius_cells = (int)ceilf(MAX(0.f, params->radius) / pathmap_cell_world_size());
+    radius_cells = route_radius_cells(params->radius);
     if (!closest_pathable_node_original_flags(params->from, params->radius, blocked_flags, &start) ||
         !closest_pathable_node_original_flags(params->target, params->radius, blocked_flags, &target) ||
         abs(start.x - target.x) > PATH_ACCEL_MAX_DISTANCE || abs(start.y - target.y) > PATH_ACCEL_MAX_DISTANCE)
@@ -1174,7 +1230,7 @@ static float path_query_distance(vec2_t const *from, vec2_t const *target, float
         return Vector2_distance(from, target);
 
     blocked_flags = normalize_blocked_flags(blocked_flags);
-    radius_cells = (int)ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
+    radius_cells = route_radius_cells(radius);
     na = CM_GetNormalizedMapPosition(from->x, from->y);
     nb = CM_GetNormalizedMapPosition(target->x, target->y);
     sx = (int)floorf(na.x *pathmap.width);
@@ -1286,7 +1342,7 @@ bool CM_FindDirectApproachPointForRadius(vec2_t const *from, vec2_t const *targe
     tx = (int)floorf(n.x * pathmap.width);
     ty = (int)floorf(n.y * pathmap.height);
     search_cells = (int)ceilf(range / cell_size) + 1;
-    radius_cells = (int)ceilf(MAX(0.f, radius) / cell_size);
+    radius_cells = route_radius_cells(radius);
 
     /* A behavior needs an interaction point, not the blocked target centre.
      * Search only cells inside the small interaction disc and choose the
@@ -1394,7 +1450,7 @@ static bool find_approach_point_to_footprint_for_radius(
     cell_y = MAX(1.0f, cell_y);
     cell_size = MIN(cell_x, cell_y);
     center = LocationToPathMap(&target->s.origin2);
-    radius_cells = (int)ceilf(MAX(0.0f, radius) / cell_size);
+    radius_cells = route_radius_cells(radius);
     padding_cells = (int)ceilf(MAX(0.0f, range) / cell_size) + radius_cells + 1;
     min_x = MAX(0, center.x - (int)pt->width / 2 - padding_cells);
     max_x = MIN((int)pathmap.width - 1,
@@ -1657,7 +1713,7 @@ static bool resolve_heatmap_request(edict_t *goalentity, float radius, uint8_t b
         !pathmap.original || !pathmap.heatmap || !map_cells)
         return false;
 
-    *radius_cells = (int)ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
+    *radius_cells = route_radius_cells(radius);
     *target = LocationToPathMap(&goalentity->s.origin2);
     if (!is_pathable_node_original_for_radius_cells_flags(target->x, target->y, *radius_cells, blocked_flags)) {
         if (!closest_pathable_node_original_flags(&goalentity->s.origin2, radius, blocked_flags, target))
@@ -1681,7 +1737,7 @@ bool CM_ClosestReachablePointForRadiusFlags(vec2_t const *from, vec2_t const *ta
     if (!from || !target || !out || !pathmap.original || !pathmap.heatmap)
         return false;
     PERF_INC(closest_reachable_calls);
-    radius_cells = (int)ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
+    radius_cells = route_radius_cells(radius);
     blocked_flags = normalize_blocked_flags(blocked_flags);
     if (!closest_pathable_node_original_flags(from, radius, blocked_flags, &start))
         return false;
@@ -1697,7 +1753,7 @@ bool CM_ClosestReachablePointForRadiusFlags(vec2_t const *from, vec2_t const *ta
     target_y = (int)floorf(ty);
     if (is_valid_point(target_x, target_y) &&
         pathmap.heatmap[target_x + target_y * pathmap.width].price != INT_MAX &&
-        is_pathable_node_original_for_radius_cells_flags(target_x, target_y, radius_cells, blocked_flags)) {
+        CM_PointIsPathableForRadiusFlags(target, radius, blocked_flags)) {
         *out = *target;
         return true;
     }

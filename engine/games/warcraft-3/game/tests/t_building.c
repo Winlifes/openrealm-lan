@@ -4748,6 +4748,8 @@ TEST(wc3_building, custom_construction_buttons_use_map_positions_without_overlap
     int (*old_image_index)(cstring_t) = gi.ImageIndex;
     edict_t *clent = &g_edicts[0];
     edict_t *worker;
+    cstring_t hotkey_command;
+    bool queueable;
 
     setup_test_world();
     G_SetMapUnitOverrides(&mapinfo);
@@ -4762,6 +4764,7 @@ TEST(wc3_building, custom_construction_buttons_use_map_positions_without_overlap
     gi.Write = building_capture_build_menu;
     gi.ImageIndex = building_test_image_index;
     G_ClientCommand(clent, 2, (cstring_t[]){"button", STR_CmdBuild});
+    hotkey_command = UI_CommandHotkey(clent->client, 'R', &queueable);
     gi.Write = old_write;
     gi.ImageIndex = old_image_index;
     G_SetMapUnitOverrides(NULL);
@@ -4777,6 +4780,7 @@ TEST(wc3_building, custom_construction_buttons_use_map_positions_without_overlap
         T_EQ(build_menu_frames[i].y, (int16_t)(-(0.4660f + (float)slots[i][1] * 0.0440f) * UI_FRAMEPOINT_SCALE));
     }
     T_EQ(build_menu_frames[1].hotkey, 'R');
+    T_STREQ(hotkey_command, "button hkee");
 }
 
 TEST(wc3_building, disabled_command_button_is_inert_and_available_button_is_clickable) {
@@ -4799,7 +4803,7 @@ TEST(wc3_building, disabled_command_button_is_inert_and_available_button_is_clic
     UI_WriteCommandButtonFrame(&button);
     T_ASSERT(building_command_frame_seen);
     T_EQ(building_command_frame.flags.type, FT_COMMANDBUTTON);
-    T_EQ(building_command_frame.hotkey, 0);
+    T_EQ(building_command_frame.hotkey, 'B');
     T_NULL(building_command_frame.onclick);
     T_EQ(building_command_frame.color.r, 255);
     T_EQ(building_command_frame.color.g, 255);

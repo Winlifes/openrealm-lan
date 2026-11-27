@@ -79,6 +79,60 @@ static void reset_collision_world(void) {
     setup_test_world();
 }
 
+TEST(wc3_collision, authored_building_footprint_leaves_its_clear_corner_open) {
+    enum { CELLS = 64, SIDE = 8 };
+    uint8_t terrain[CELLS * CELLS] = {0};
+    vec2_t const clear = {-32.0f, 80.0f}, blocked = {80.0f, 80.0f};
+    reset_collision_world();
+    CM_SetupTestPathmap(CELLS, CELLS, terrain);
+    CM_SetupTestWorldBounds(&MAKE(box2_t, .min = {-1024,-1024}, .max = {1024,1024}));
+    edict_t *building = make_collision_unit(0.0f, 0.0f, 128.0f);
+    building->s.flags |= EF_BUILDING;
+    building->svflags |= SVF_MONSTER;
+    building->movetype = MOVETYPE_NONE;
+    pathTex_t *footprint = gi.MemAlloc(sizeof(*footprint) + SIDE * SIDE * sizeof(footprint->map[0]));
+    memset(footprint, 0, sizeof(*footprint) + SIDE * SIDE * sizeof(footprint->map[0]));
+    footprint->width = footprint->height = SIDE;
+    FOR_LOOP(i, SIDE) footprint->map[i + i * SIDE].b = 255;
+    building->pathtex = footprint;
+    CM_BakeStaticObstacles();
+
+    edict_t *mover = make_collision_unit(-200.0f, 80.0f, 16.0f);
+    T_ASSERT(CM_LineIsWalkableForRadius(&mover->s.origin2, &clear, mover->collision));
+    T_ASSERT(M_MoveIsValid(mover, &clear));
+    T_ASSERT(!M_MoveIsValid(mover, &blocked));
+
+    /* A structure without an authored footprint keeps its collision-radius fallback. */
+    building->pathtex = NULL;
+    CM_BakeStaticObstacles();
+    T_ASSERT(!M_MoveIsValid(mover, &clear));
+    gi.MemFree(footprint);
+}
+
+TEST(wc3_collision, small_worker_crosses_a_one_cell_lane_without_touching_its_walls) {
+    enum { CELLS = 64 };
+    uint8_t terrain[CELLS * CELLS] = {0};
+    vec2_t const goal = {186.0f, -16.0f};
+    vec2_t const against_wall = {186.0f, -29.0f};
+    reset_collision_world();
+    FOR_LOOP(x, CELLS) terrain[x + 30 * CELLS] = terrain[x + 32 * CELLS] = CM_PATHING_UNWALKABLE;
+    CM_SetupTestPathmap(CELLS, CELLS, terrain);
+    CM_SetupTestWorldBounds(&MAKE(box2_t, .min = {-1024,-1024}, .max = {1024,1024}));
+    edict_t *worker = make_collision_unit(-186.0f, -16.0f, 5.0f);
+    worker->unitinfo.MoveSpeed = 190.0f;
+    T_ASSERT(CM_LineIsWalkableForRadius(&worker->s.origin2, &goal, worker->collision));
+    T_ASSERT(!CM_LineIsWalkableForRadius(&worker->s.origin2, &against_wall, worker->collision));
+    T_ASSERT(!CM_LineIsWalkableForRadius(&worker->s.origin2, &goal, 20.0f));
+    T_ASSERT(unit_issueorder(worker, "move", &goal));
+    FOR_LOOP(i, 30) {
+        CM_ProcessPathJobs(65536);
+        if (!worker->currentmove || !worker->currentmove->think) break;
+        worker->currentmove->think(worker);
+    }
+    T_FEQ(worker->s.origin2.x, goal.x, 1.0f);
+    T_FEQ(worker->s.origin2.y, goal.y, 1.0f);
+}
+
 /* -----------------------------------------------------------------------
  * G_PushEntity tests
  * --------------------------------------------------------------------- */

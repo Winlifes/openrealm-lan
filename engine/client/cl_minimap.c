@@ -45,6 +45,10 @@ void CL_SetCameraPosition(vec2_t position) {
     cl.camera_prediction.active = true;
     cl.camera_prediction.origin = position;
     cl.camera_prediction.focus_ms = CL_RealTime();
+    /* The queued datagram is carried in the next sequenced packet, ahead of any
+     * reliable message it displaces. Other transports use the time-based window. */
+    cl.camera_prediction.focus_packet = Netchan_IsSequenced(&cls.netchan)
+        ? cls.netchan.outgoing_sequence + 1 : 0;
     MSG_WriteByte(&cls.netchan.message, clc_input);
     MSG_WriteInput(&cls.netchan.message, &(inputCmd_t){ .action = BZ_INPUT_FOCUS, .focus = position });
 }

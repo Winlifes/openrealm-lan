@@ -1333,6 +1333,10 @@ void G_SetCameraBounds(float const bounds[8]) {
             MAX(MAX(bounds[0], bounds[2]), MAX(bounds[4], bounds[6])),
             MAX(MAX(bounds[1], bounds[3]), MAX(bounds[5], bounds[7])),
         });
+    char text[96];
+    snprintf(text, sizeof(text), "%.9g %.9g %.9g %.9g", level.camera_bounds.min.x,
+             level.camera_bounds.min.y, level.camera_bounds.max.x, level.camera_bounds.max.y);
+    gi.configstring(CS_CAMERA_BOUNDS, text);
     FOR_LOOP(i, game.max_clients)
         G_ReclampClientCamera(game.clients + i);
 }

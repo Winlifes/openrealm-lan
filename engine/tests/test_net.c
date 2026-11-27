@@ -2009,7 +2009,7 @@ TEST(client_layout, radial_menu_keeps_persistent_hud_shortcuts_visible) {
     re.DrawImageEx = old_draw;
 }
 
-TEST(client_layout, command_button_shows_its_enabled_hotkey) {
+TEST(client_layout, disabled_command_button_keeps_its_visible_hotkey) {
     uiFrame_t command = { .flags = { .type = FT_COMMANDBUTTON }, .color = COLOR32_WHITE,
                           .onclick = "button AQA8", .hotkey = 'e' };
     rect_t screen = { 0.1f, 0.1f, 0.03f, 0.03f };
@@ -2024,9 +2024,11 @@ TEST(client_layout, command_button_shows_its_enabled_hotkey) {
     T_EQ(test_command_button_key, 'E');
 
     command.flagsvalue |= UIFRAME_DISABLED;
+    command.onclick = NULL;
     test_command_button_key = 0;
     SCR_LayoutDrawCommandButton(&command, &screen);
-    T_EQ(test_command_button_key, 0);
+    T_EQ(test_command_button_key, 'E');
+    T_ASSERT(!SCR_LayoutFrameHasClickCommand(&command));
     test_client_stubs_init();
 }
 
@@ -3597,6 +3599,59 @@ TEST(net, delayed_snapshot_keeps_pending_camera_focus) {
     test_client_stubs_init();
 }
 
+TEST(net, unacknowledged_focus_survives_late_camera_snapshot) {
+    uint8_t buf[256], packet[256];
+    sizeBuf_t msg = make_msg_buf(buf, sizeof(buf));
+    player_t from = {0}, to = { .number = 1, .client_ui_state = CLIENT_UI_GAME, .vieworigin = {100, 0, 0} };
+    test_client_stubs_init();
+    cls.netchan.remote_address.type = NA_IP;
+    SZ_Init(&cls.netchan.message, cls.netchan.message_buf, sizeof(cls.netchan.message_buf));
+    test_client_realtime = 1000;
+    test_client_ping = 20;
+    CL_SetCameraPosition((vec2_t){300, 0});
+    T_ASSERT(Netchan_BuildPacket(&cls.netchan, packet, sizeof(packet)) > 0);
+
+    /* The server is still sending snapshots while the input is delayed outbound. */
+    test_client_realtime = 1550;
+    MSG_WriteByte(&msg, svc_playerinfo); MSG_WriteDeltaPlayerState(&msg, &from, &to);
+    CL_ParseServerMessage(&msg);
+    T_ASSERT(cl.camera_prediction.active);
+    T_FEQ(cl.playerstate.vieworigin.x, 100.0f, 0.001f);
+    FOR_LOOP(i, VIEW_CAMERA_SAMPLES) T_FEQ(cl.viewDef.camerastate[i].origin.x, 300.0f, 0.001f);
+
+    /* Once the focus arrives, the first matching camera snapshot takes over. */
+    test_client_realtime = 1750;
+    cls.netchan.incoming_acknowledged = cls.netchan.outgoing_sequence;
+    from = to; to.vieworigin.x = 300;
+    msg = make_msg_buf(buf, sizeof(buf));
+    MSG_WriteByte(&msg, svc_playerinfo); MSG_WriteDeltaPlayerState(&msg, &from, &to);
+    CL_ParseServerMessage(&msg);
+    T_ASSERT(!cl.camera_prediction.active);
+    FOR_LOOP(i, VIEW_CAMERA_SAMPLES) T_FEQ(cl.viewDef.camerastate[i].origin.x, 300.0f, 0.001f);
+    test_client_stubs_init();
+}
+
+TEST(net, camera_prediction_uses_authored_bounds_from_configstring) {
+    uint8_t buf[256];
+    sizeBuf_t msg = make_msg_buf(buf, sizeof(buf));
+    inputCmd_t cmd;
+    test_client_stubs_init();
+    test_client_stubs_set_world_bounds((box2_t){ .min = {-500,-500}, .max = {500,500} });
+    SZ_Init(&cls.netchan.message, cls.netchan.message_buf, sizeof(cls.netchan.message_buf));
+    MSG_WriteByte(&msg, svc_configstring); MSG_WriteShort(&msg, CS_CAMERA_BOUNDS);
+    MSG_WriteString(&msg, "-125 -160 175 200");
+    CL_ParseServerMessage(&msg);
+
+    CL_SetCameraPosition((vec2_t){240,-250});
+    T_FEQ(cl.viewDef.camerastate[0].origin.x, 175.0f, 0.001f);
+    T_FEQ(cl.viewDef.camerastate[0].origin.y, -160.0f, 0.001f);
+    T_EQ(MSG_ReadByte(&cls.netchan.message), clc_input);
+    T_ASSERT(MSG_ReadInput(&cls.netchan.message, &cmd));
+    T_FEQ(cmd.focus.x, 175.0f, 0.001f);
+    T_FEQ(cmd.focus.y, -160.0f, 0.001f);
+    test_client_stubs_init();
+}
+
 TEST(net, camera_prediction_reconciles_to_server_clamped_bound) {
     uint8_t buf[256];
     sizeBuf_t sb = make_msg_buf(buf, sizeof(buf));
@@ -4476,6 +4531,30 @@ static void net_read_layout_command(cstring_t expected) {
     T_EQ(MSG_ReadByte(&cls.netchan.message), clc_stringcmd);
     MSG_ReadString(&cls.netchan.message, command);
     T_STREQ(command, expected);
+}
+
+TEST(client_screen, authored_build_key_takes_priority_over_a_plain_menu_binding) {
+    uint8_t message[256];
+    char binding[128];
+    test_client_stubs_init();
+    cls.state = ca_active;
+    cls.key_dest = key_game;
+    strlcpy(binding, Key_GetBinding('q', 0), sizeof(binding));
+    Key_SetBinding('q', 0, "cmd quests");
+    SZ_Init(&cls.netchan.message, message, sizeof(message));
+    strlcpy(cl.configstrings[CS_COMMANDBAR_HOTKEY_COMMAND], "commandkey", sizeof(cl.configstrings[0]));
+    net_install_command_button("button hhou", 'Q', false);
+    Key_Event('q', 0, true, 100);
+    Key_Event('q', 0, false, 101);
+    net_read_layout_command("commandkey 81");
+
+    SCR_ClearLayoutLayer(LAYER_COMMANDBAR);
+    SZ_Clear(&cls.netchan.message);
+    Key_Event('q', 0, true, 200);
+    Key_Event('q', 0, false, 201);
+    T_EQ(cls.netchan.message.cursize, 0);
+    Key_SetBinding('q', 0, binding);
+    test_client_stubs_init();
 }
 
 static struct { cstring_t command; bool queueable; } const net_queueable_orders[] = {

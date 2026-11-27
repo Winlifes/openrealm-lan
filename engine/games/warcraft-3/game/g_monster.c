@@ -61,7 +61,7 @@ uint32_t FindEnumValue(cstring_t value, cstring_t values[]) {
 
 static float get_unit_collision(pathTex_t const *pathtex) {
     int size = 0;
-    for (int x = 0; x < pathtex->width; x++) {
+    for (int x = 0; x < MIN(pathtex->width, pathtex->height); x++) {
         if (pathtex->map[(pathtex->width + 1) * x].b)
             size++;
     }

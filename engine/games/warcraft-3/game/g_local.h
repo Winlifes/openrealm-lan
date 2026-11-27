@@ -117,9 +117,7 @@ if (NAME) { \
     UI_SetCurrentClient((ent)->client); \
     UI_WriteStart(layer); \
     BuildUI((ent)->client, ##__VA_ARGS__); \
-    gi.Write(PF_LONG, &(int32_t){0}); \
-    gi.Write(PF_SHORT, &(int32_t){0}); \
-    gi.unicast(ent); \
+    UI_WriteEnd(ent); \
     UI_SetCurrentClient(NULL); \
 } while (0)
 

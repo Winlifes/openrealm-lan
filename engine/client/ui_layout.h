@@ -52,6 +52,7 @@ bool SCR_LayoutMouseEvent(layoutMouseEvent_t const *event);
 bool SCR_LayoutScrollTextAreaAt(handle_t layout, vec2_t const *point, int wheel_y);
 float SCR_LayoutTextAreaMaxScroll(uiFrame_t const *frame);
 bool SCR_LayoutKeyEvent(int key, bool shift_held);
+bool SCR_LayoutCommandBarHasKey(int key);
 
 /* Gamepad presentation reuses server-authored command frames and modal hit targets. */
 void SCR_GamepadBeginUIFrame(void);

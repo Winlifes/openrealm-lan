@@ -1545,7 +1545,7 @@ static float SCR_CommandButtonRadialShade(uiFrame_t const *frame) {
 static void SCR_DrawCommandButtonHotkey(uiFrame_t const *frame, rect_t const *icon) {
     uiCanvas_t const *canvas = CL_Canvas();
     rect_t const scene = canvas->scene;
-    if (!re.DrawCharScaled || !re.DrawFill || !SCR_LayoutFrameHasClickCommand(frame) ||
+    if (!re.DrawCharScaled || !re.DrawFill ||
         frame->hotkey <= ' ' || frame->hotkey > '~' ||
         scene.w <= 0 || scene.h <= 0 || canvas->window.width <= 0 || canvas->window.height <= 0) return;
 
@@ -2739,6 +2739,22 @@ bool SCR_LayoutMouseEvent(layoutMouseEvent_t const *mouse_event) {
                 return false;
             }
         }
+    }
+    return false;
+}
+
+/* A visible command label owns its letter over a plain one-shot binding. A
+ * disabled action advertises the same key but the authoritative table omits it. */
+bool SCR_LayoutCommandBarHasKey(int key) {
+    handle_t layout = layout_layers[LAYER_COMMANDBAR];
+    int const modal = SCR_LayoutModalLayer();
+    if (!layout || (modal >= 0 && modal != LAYER_COMMANDBAR) ||
+        (cl.playerstate.uiflags & (1u << LAYER_COMMANDBAR))) return false;
+    SCR_Clear(layout);
+    FOR_LOOP(i, SCR_NumFrames()) {
+        uiFrame_t const *frame = SCR_Frame(i);
+        if (frame && frame->flags.type == FT_COMMANDBUTTON && frame->hotkey &&
+            toupper(frame->hotkey) == toupper(key)) return true;
     }
     return false;
 }

@@ -153,6 +153,8 @@ packets; `client_camera.terrain_offsets_interpolate` checks the actual projectio
 plane. Run `make test` for all three, `make test-client-camera` for the focused projection check, or the in-engine command
 `build/bin/openwarcraft3-tests -data build/tests +dedicated 1 +test 'client_camera.*' +com_frame_limit 100`.
 
+Network camera input clamps to the server's optional `CS_CAMERA_BOUNDS` rectangle. The client keeps its locally predicted focus while an IP packet carrying that focus remains unacknowledged, including when older camera snapshots keep arriving after a key is released. A matching authoritative focus ends prediction. The existing upper deadline still allows recovery if input never arrives. `net.unacknowledged_focus_survives_late_camera_snapshot` and `net.camera_prediction_uses_authored_bounds_from_configstring` cover these cases.
+
 WoW authors actor Z plus `WOW_CAMERA_EYE_HEIGHT` in its server focus sample; the client does not replace it.
 Native camera angles convert at the game boundary; see [coordinates and camera angles](https://github.com/corepunch/open-realm/blob/main/AXIS.md) for the
 SC2 azimuth and WoW horizon/heading mappings. The historical `{pitch, roll, yaw}` shorthand describes view Euler

@@ -20,10 +20,12 @@
 #define CL_CAMERA_PREDICTION_MIN_MSEC 250 // Local prediction window in milliseconds without a fresh RTT.
 #define CL_CAMERA_PREDICTION_MAX_MSEC 1500 // Upper limit in milliseconds even if latency rises.
 
-/* Keep predicted camera targets inside the loaded map. Scripted WC3 camera
- * rectangles stay server-side; the client does not get a per-player copy. */
+/* Match the server's authored rectangle. A map without one uses world bounds. */
 vec2_t CL_ClampCameraPosition(vec2_t position) {
-    box2_t bounds = CM_GetWorldBounds();
+    box2_t const world = CM_GetWorldBounds();
+    box2_t bounds = cl.camera_bounds;
+    if (bounds.max.x <= bounds.min.x) bounds.min.x = world.min.x, bounds.max.x = world.max.x;
+    if (bounds.max.y <= bounds.min.y) bounds.min.y = world.min.y, bounds.max.y = world.max.y;
     if (bounds.max.x > bounds.min.x)
         position.x = MAX(bounds.min.x, MIN(bounds.max.x, position.x));
     if (bounds.max.y > bounds.min.y)
@@ -386,6 +388,14 @@ static void CL_ParseConfigString(sizeBuf_t *msg) {
     }
     if (index >= CS_GENERAL && index < CS_GENERAL + CS_MAX_NAMES / ENT_NAMES_PER_CS)
         entity_name_pool_decode(cl.configstrings[index]);
+    if (index == CS_CAMERA_BOUNDS) {
+        box2_t rect;
+        if (sscanf(cl.configstrings[index], "%f %f %f %f", &rect.min.x, &rect.min.y, &rect.max.x, &rect.max.y) == 4 &&
+            isfinite(rect.min.x) && isfinite(rect.min.y) && isfinite(rect.max.x) && isfinite(rect.max.y))
+            cl.camera_bounds = rect;
+        else
+            cl.camera_bounds = (box2_t){0};
+    }
 #ifdef __EMSCRIPTEN__
     if (index == CS_MATCH_LOADING) Sys_UpdateMatchLoadingPlayers(cl.configstrings[index]);
     if (index >= CS_PLAYER_LABELS) Sys_UpdateRoomPlayerName(index - CS_PLAYER_LABELS, cl.configstrings[index]);
@@ -667,7 +677,6 @@ void CL_ParsePlayerInfo(sizeBuf_t *msg) {
     /* Allow time for the server to send a snapshot after it receives the input. */
     uint32_t const prediction_ms = MAX(CL_CAMERA_PREDICTION_MIN_MSEC,
         MIN(CL_CAMERA_PREDICTION_MAX_MSEC, CL_NetworkPing() + 2 * FRAMETIME));
-    if (now - cl.camera_prediction.focus_ms > prediction_ms) cl.camera_prediction.active = false;
     if (now - cl.camera_prediction.view_ms > prediction_ms) cl.camera_prediction.view = false;
     if (cl.camera_prediction.view) {
         if (!memcmp(&cl.playerstate.viewangles, &cl.camera_prediction.angles, sizeof(vec3_t)) &&
@@ -681,9 +690,14 @@ void CL_ParsePlayerInfo(sizeBuf_t *msg) {
         }
     }
     if (cl.camera_prediction.active) {
+        uint32_t const age = now - cl.camera_prediction.focus_ms;
+        bool const outstanding = cls.netchan.incoming_acknowledged < cl.camera_prediction.focus_packet;
+        /* A newer RTT estimate is not proof the current focus reached the server.
+         * Old snapshots may continue arriving while its outbound packet waits. */
         cl.camera_prediction.origin = CL_ClampCameraPosition(cl.camera_prediction.origin);
-        if (cl.playerstate.vieworigin.x == cl.camera_prediction.origin.x &&
-            cl.playerstate.vieworigin.y == cl.camera_prediction.origin.y) {
+        bool const matches = cl.playerstate.vieworigin.x == cl.camera_prediction.origin.x &&
+            cl.playerstate.vieworigin.y == cl.camera_prediction.origin.y;
+        if (age > CL_CAMERA_PREDICTION_MAX_MSEC || (!outstanding && (matches || age > prediction_ms))) {
             cl.camera_prediction.active = false;
         } else {
             CL_PredictCameraPosition(cl.camera_prediction.origin);

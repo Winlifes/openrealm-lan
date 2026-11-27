@@ -153,6 +153,13 @@ void Key_Event(keyCode_t key, uint32_t mods, bool down, uint32_t time) {
         return;
     }
 
+    bool const letter = (key >= 'a' && key <= 'z') || (key >= 'A' && key <= 'Z');
+    if (down && cls.state == ca_active && cls.key_dest == key_game && !mods &&
+        letter && *kb != '+' && SCR_LayoutCommandBarHasKey(key)) {
+        SCR_LayoutKeyEvent(key, false);
+        return;
+    }
+
     if (key == K_ESCAPE && down && SCR_LayoutKeyEvent(key, (mods & KEY_MOD_SHIFT) != 0)) {
         return;
     }

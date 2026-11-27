@@ -311,6 +311,7 @@ enum {
     CS_COMMANDBAR_HOTKEY_COMMAND = 15, // optional command name for authoritative command-bar keys
     CS_MATCH_LOADING = 16, // ready count, total count, then player number and percentage pairs
     CS_PLAYER_LABEL_FONT = 17, // optional font index for persistent player name labels
+    CS_CAMERA_BOUNDS = 18, // optional min X/Y and max X/Y for local camera input
     CS_MAXCLIENTS = 30,
     CS_MAPCHECKSUM = 31,        // for catching cheater maps
     CS_MODELS = 32,

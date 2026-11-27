@@ -350,6 +350,9 @@ static bool filter_blockers(edict_t const *ent) {
     destructable_t const *dstr;
     if (ent == trymove_self || IS_HOLLOW(ent) || ent->collision <= 0.0f)
         return false;
+    /* A building's authored cells are already checked by static movement.
+     * Its legacy circle could block the open part of an irregular footprint. */
+    if (ent->pathtex && (ent->s.flags & EF_BUILDING)) return false;
     /* An alive walkable destructable is a ground surface, not a circle-shaped
      * obstacle. Its authored path texture remains responsible for deck edges.
      * Every spawned destructable carries its record, so one lookup classifies it. */
@@ -357,11 +360,7 @@ static bool filter_blockers(edict_t const *ent) {
     if (dstr && !dstr->dead &&
         dstr->placement_solid && ent->pathtex &&
         ent->data.DestructableData && ent->data.DestructableData->walkable) return false;
-    /* Trees have collisionSize 0 (they block only via their baked footprint) so
-     * they are already excluded above; buildings keep a real collision circle
-     * and ARE counted here — relying on the terrain footprint alone lets units
-     * leak through coarse 32u cells. Ground, sea and air movers otherwise only
-     * collide when their Warsmash-style movement domains overlap. */
+    /* Ground, sea and air movers only collide when their movement domains overlap. */
     return M_UnitsShareCollisionDomain(ent, trymove_self);
 }
 

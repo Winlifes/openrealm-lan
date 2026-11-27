@@ -89,7 +89,7 @@ bool G_ClosestStaticPathablePointInRectForRadiusFlags(vec2_t const *location, bo
     x1 = MIN((int)pathmap.width - 1, MAX(0, (int)floorf(MAX(nmin.x, nmax.x) * pathmap.width)));
     y0 = MIN((int)pathmap.height - 1, MAX(0, (int)floorf(MIN(nmin.y, nmax.y) * pathmap.height)));
     y1 = MIN((int)pathmap.height - 1, MAX(0, (int)floorf(MAX(nmin.y, nmax.y) * pathmap.height)));
-    radius_cells = (int)ceilf(MAX(0.f, radius) / pathmap_cell_world_size());
+    radius_cells = route_radius_cells(radius);
 
     for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
         vec2_t a, b, candidate, check;
@@ -108,6 +108,11 @@ bool G_ClosestStaticPathablePointInRectForRadiusFlags(vec2_t const *location, bo
         check_x = (int)floorf(check.x * pathmap.width); check_y = (int)floorf(check.y * pathmap.height);
         if (check_x != x || check_y != y)
             candidate = (vec2_t){ (min_x + max_x) * 0.5f, (min_y + max_y) * 0.5f };
+        if (!CM_PointIsPathableForRadiusFlags(&candidate, radius, blocked_flags)) {
+            candidate = CM_GetDenormalizedMapPosition((x + 0.5f) / pathmap.width,
+                                                       (y + 0.5f) / pathmap.height);
+            if (candidate.x < min_x || candidate.x > max_x || candidate.y < min_y || candidate.y > max_y) continue;
+        }
         distance = Vector2_distance(location, &candidate);
         if (!found || distance < best_distance) best_distance = distance, *out = candidate, found = true;
     }
