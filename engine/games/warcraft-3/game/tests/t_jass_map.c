@@ -771,6 +771,39 @@ static mapInfo_t *start_placement_world(uint32_t active) {
     return info;
 }
 
+TEST(wc3_jass_map, melee_lobby_resolves_random_race_before_script) {
+    mapInfo_t *info = start_placement_world(3);
+    info->flags = melee_map;
+    info->players[1].playerRace = kPlayerRaceOrc;
+    info->players[1].playerType = kPlayerTypeComputer;
+    info->players[2].playerType = kPlayerTypeComputer;
+
+    G_ApplyMapPlayerConfiguration(info);
+
+    T_ASSERT(run_test_jass(
+        "native GetPlayerRace takes player whichPlayer returns race\n"
+        "function main takes nothing returns nothing\n"
+        " local race r = GetPlayerRace(Player(2))\n"
+        " call BJassAssert(r == ConvertRace(1) or r == ConvertRace(2) or r == ConvertRace(3) or r == ConvertRace(4), \"computer race\")\n"
+        " call BJassAssert(GetPlayerRace(Player(1)) == ConvertRace(2), \"fixed computer race\")\n"
+        " call BJassAssert(not IsPlayerRacePrefSet(Player(2), RACE_PREF_RANDOM), \"resolved preference\")\n"
+        "endfunction\n"));
+    T_ASSERT(G_GetPlayerByNumber(0)->race >= kPlayerRaceHuman);
+    T_ASSERT(G_GetPlayerByNumber(0)->race <= kPlayerRaceNightElf);
+    T_EQ(G_GetPlayerByNumber(3)->race, kPlayerRaceNone);
+    T_EQ(info->players[2].playerRace, kPlayerRaceNone);
+}
+
+TEST(wc3_jass_map, scenario_lobby_retains_map_race) {
+    mapInfo_t *info = start_placement_world(2);
+    info->players[1].playerType = kPlayerTypeComputer;
+
+    G_ApplyMapPlayerConfiguration(info);
+
+    T_EQ(G_GetPlayerByNumber(1)->race, kPlayerRaceNone);
+    T_EQ(G_GetPlayerClientByNumber(1)->jass.controller, 1);
+}
+
 TEST(wc3_jass_map, melee_lobby_restores_alliances_before_map_main) {
     mapInfo_t *info = start_placement_world(4);
     mapTeam_t teams[] = { { .playerMasks = 3 }, { .playerMasks = 12 } };

@@ -722,9 +722,8 @@ static uint32_t G_MapControl(mapPlayer_t const *player) {
 }
 
 /* Race preferences are bit flags, unlike the sequential W3I race enum. */
-static uint32_t G_RacePreference(mapPlayer_t const *player) {
-    if (!player) return 0;
-    switch (player->playerRace) {
+static uint32_t G_RacePreference(playerRace_t race) {
+    switch (race) {
         case kPlayerRaceHuman: return 1;
         case kPlayerRaceOrc: return 2;
         case kPlayerRaceNightElf: return 4;
@@ -787,7 +786,7 @@ static void G_InitMapPlayer(edict_t *clent, mapInfo_t const *mapinfo, uint32_t p
     }
     clent->client->mapplayer = player;
     clent->client->jass.controller = G_MapControl(player);
-    clent->client->jass.race_pref = G_RacePreference(player);
+    clent->client->jass.race_pref = player ? G_RacePreference(ps->race) : 0;
     clent->client->jass.race_skin = 0;
     clent->client->jass.race_selectable = true;
     clent->client->jass.handicap = 100.0f;
@@ -913,6 +912,8 @@ static void G_ApplyMeleeLobbyAlliances(mapInfo_t const *info) {
  * campaign config remains authoritative when no lobby was applied. */
 void G_ApplyMapPlayerConfiguration(mapInfo_t const *info) {
     if (!info) return;
+    /* Separate rooms have separate processes. Seed lobby draws without reseeding map scripts. */
+    uint32_t race_seed = (uint32_t)(uint64_t)(gi.MonotonicMilliseconds() * 1000.0);
     if (info->lobby_settings_applied) FOR_LOOP(i, MAX_PLAYERS) {
         mapPlayer_t const *player = &info->players[i];
         gameClient_t *client = G_GetPlayerClientByNumber(i);
@@ -921,7 +922,12 @@ void G_ApplyMapPlayerConfiguration(mapInfo_t const *info) {
         client->ps.color = player->color;
         client->ps.team = G_MapPlayerTeam(info, i);
         client->ps.race = player->playerRace;
-        client->jass.race_pref = G_RacePreference(player);
+        /* The melee starting-unit and AI scripts dispatch on the resolved race. */
+        if ((info->flags & melee_map) && client->ps.race == kPlayerRaceNone && G_MeleeLobbyPlayerActive(info, i)) {
+            race_seed = race_seed * 1664525u + 1013904223u;
+            client->ps.race = kPlayerRaceHuman + (race_seed >> 16) % (kPlayerRaceNightElf - kPlayerRaceHuman + 1);
+        }
+        client->jass.race_pref = G_RacePreference(client->ps.race);
         client->jass.controller = G_MapControl(player);
         strlcpy(client->jass.name, player->playerName ? G_LevelString(player->playerName) : "", sizeof(client->jass.name));
         client->ps.name = client->jass.name;

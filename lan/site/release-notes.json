@@ -1,5 +1,11 @@
 [
   {
+    "release": "r94-game-station-real-44-melee-ai",
+    "changes": [
+      "修复近战地图的随机种族。电脑进局后会获得相应种族的基地和工人，并启动对应的 AI。"
+    ]
+  },
+  {
     "release": "r94-game-station-real-43-command-preload",
     "changes": [
       "在进房前准备公共指令按钮、单位信息和操作反馈的素材，减少首次选中单位、训练和移动时的临时下载。"
