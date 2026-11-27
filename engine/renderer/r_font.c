@@ -7,7 +7,9 @@
 #include "stb/stb_truetype.h"
 #undef STB_TRUETYPE_IMPLEMENTATION
 
-#define MAX_GLYPHSET 256
+#define LATIN_GLYPHS 256u
+#define GLYPH_PAGE_SIZE 32u
+#define GLYPH_PAGE_COUNT (1 + (0x10000u - LATIN_GLYPHS) / GLYPH_PAGE_SIZE)
 #define MAX_CACHED_FONTS 64
 #define FONT_SCALE 2
 #define INV_SCALE_X(x) ((x) / (FONT_SCALE * UI_FONT_COORD_SCALE))
@@ -16,7 +18,7 @@
 
 typedef struct {
     texture_t *image;
-    stbtt_bakedchar glyphs[MAX_GLYPHSET];
+    stbtt_bakedchar glyphs[];
 } glyphSet_t;
 
 typedef struct  font {
@@ -25,7 +27,7 @@ typedef struct  font {
     uint32_t requested_size;
     void *data;
     stbtt_fontinfo stbfont;
-    glyphSet_t *sets[MAX_GLYPHSET];
+    glyphSet_t *sets[GLYPH_PAGE_COUNT];
     float size;
     int height;
 } font_t;
@@ -49,8 +51,8 @@ static char const *utf8_to_codepoint(char const *p, unsigned *dst) {
     return p + 1;
 }
 
-static glyphSet_t* R_LoadGlyphSet(font_t *font, int idx) {
-    glyphSet_t *set = ri.MemAlloc(sizeof(glyphSet_t));
+static glyphSet_t *R_LoadGlyphSet(font_t *font, unsigned first, unsigned count) {
+    glyphSet_t *set = ri.MemAlloc(sizeof(*set) + count * sizeof(set->glyphs[0]));
     
     /* init image */
     int width = 128;
@@ -65,7 +67,7 @@ retry:
     s = stbtt_ScaleForMappingEmToPixels(&font->stbfont, 1) /
     stbtt_ScaleForPixelHeight(&font->stbfont, 1);
     res = stbtt_BakeFontBitmap(font->data, 0, font->size * s, fontimage,
-                               width, height, idx * 256, 256, set->glyphs);
+                               width, height, first, count, set->glyphs);
     
     /* retry with a larger image buffer if the buffer wasn't large enough */
     if (res < 0) {
@@ -80,7 +82,7 @@ retry:
     stbtt_GetFontVMetrics(&font->stbfont, &ascent, &descent, &linegap);
     float scale = stbtt_ScaleForMappingEmToPixels(&font->stbfont, font->size);
     int scaled_ascent = ascent * scale + 0.5;
-    for (int i = 0; i < 256; i++) {
+    FOR_LOOP(i, count) {
         set->glyphs[i].yoff += scaled_ascent;
         set->glyphs[i].xadvance = floor(set->glyphs[i].xadvance);
     }
@@ -101,12 +103,18 @@ retry:
 }
 
 
-static glyphSet_t* R_GetGlyphSet(font_t *font, int codepoint) {
-    int idx = (codepoint >> 8) % MAX_GLYPHSET;
+/* Keep Latin UI runs in one texture. A new CJK character should only bake
+ * its immediate neighbours, so a unit name cannot create several large atlases. */
+static stbtt_bakedchar *R_GetGlyph(font_t *font, unsigned codepoint, texture_t **image) {
+    unsigned const bmp = codepoint & 0xffffu;
+    bool const latin = bmp < LATIN_GLYPHS;
+    unsigned const first = latin ? 0u : bmp - bmp % GLYPH_PAGE_SIZE;
+    unsigned const idx = latin ? 0u : 1u + (first - LATIN_GLYPHS) / GLYPH_PAGE_SIZE;
     if (!font->sets[idx]) {
-        font->sets[idx] = R_LoadGlyphSet(font, idx);
+        font->sets[idx] = R_LoadGlyphSet(font, first, latin ? LATIN_GLYPHS : GLYPH_PAGE_SIZE);
     }
-    return font->sets[idx];
+    if (image) *image = font->sets[idx]->image;
+    return &font->sets[idx]->glyphs[bmp - first];
 }
 
 
@@ -149,9 +157,10 @@ font_t *R_LoadFont(cstring_t filename, uint32_t size) {
     font->height = (ascent - descent + linegap) * scale + 0.5;
     
     /* make tab and newline glyphs invisible */
-    stbtt_bakedchar *g = R_GetGlyphSet(font, '\n')->glyphs;
-    g['\t'].x1 = g['\t'].x0;
-    g['\n'].x1 = g['\n'].x0;
+    stbtt_bakedchar *tab = R_GetGlyph(font, '\t', NULL);
+    stbtt_bakedchar *newline = R_GetGlyph(font, '\n', NULL);
+    tab->x1 = tab->x0;
+    newline->x1 = newline->x0;
     
     font->next = r_fonts;
     r_fonts = font;
@@ -174,7 +183,7 @@ void R_ReleaseFont(font_t *font) {
         }
         link = &(*link)->next;
     }
-    for (int i = 0; i < MAX_GLYPHSET; i++) {
+    FOR_LOOP(i, GLYPH_PAGE_COUNT) {
         glyphSet_t *set = font->sets[i];
         if (set) {
             R_ReleaseTexture(set->image);
@@ -197,8 +206,7 @@ float R_GetFontWidth(font_t *font, cstring_t text) {
     unsigned codepoint;
     while (*p) {
         p = utf8_to_codepoint(p, &codepoint);
-        glyphSet_t *set = R_GetGlyphSet(font, codepoint);
-        stbtt_bakedchar *g = &set->glyphs[codepoint & 0xff];
+        stbtt_bakedchar const *g = R_GetGlyph(font, codepoint, NULL);
         x += INV_SCALE_X(g->xadvance);
     }
     return x;
@@ -225,16 +233,14 @@ bool will_word_fit(cstring_t text, float width, font_t const *font) {
          * opportunity, rather than one enormous unbreakable Latin word. */
         if (p != text && R_IsIdeographicGlyph(codepoint)) break;
         p = next;
-        glyphSet_t *set = R_GetGlyphSet((font_t *)font, codepoint);
-        stbtt_bakedchar *g = &set->glyphs[codepoint & 0xff];
+        stbtt_bakedchar const *g = R_GetGlyph((font_t *)font, codepoint, NULL);
         width -= INV_SCALE_X(g->xadvance);
         if (R_IsIdeographicGlyph(codepoint)) break;
     }
     for (; *p && isspace((unsigned char)*p) && *p != '\n';) {
         unsigned codepoint;
         p = utf8_to_codepoint(p, &codepoint);
-        glyphSet_t *set = R_GetGlyphSet((font_t *)font, codepoint);
-        stbtt_bakedchar *g = &set->glyphs[codepoint & 0xff];
+        stbtt_bakedchar const *g = R_GetGlyph((font_t *)font, codepoint, NULL);
         width -= INV_SCALE_X(g->xadvance);
     }
     /* Measurement and drawing subtract the same advances in different orders; tolerate sub-pixel residue. */
@@ -430,14 +436,14 @@ static vec2_t process_text(drawText_t const *arg, bool draw) {
         }
         unsigned codepoint;
         p = utf8_to_codepoint(p, &codepoint);
-        glyphSet_t *set = R_GetGlyphSet((font_t *)arg->font, codepoint);
-        stbtt_bakedchar *g = &set->glyphs[codepoint & 0xff];
+        texture_t *image;
+        stbtt_bakedchar *g = R_GetGlyph((font_t *)arg->font, codepoint, &image);
         if (draw) {
-            float const w = set->image->width;
-            float const h = set->image->height;
+            float const w = image->width;
+            float const h = image->height;
             rect_t const uv_rect = get_uvrect(g, h, w);
             rect_t const screen = get_screenrect(&cursor, g);
-            add_text_glyph(batch, arg, set->image, &screen, &uv_rect, color);
+            add_text_glyph(batch, arg, image, &screen, &uv_rect, color);
         }
         cursor.x += INV_SCALE_X(g->xadvance);
         max_cursor_x = MAX(max_cursor_x, cursor.x);

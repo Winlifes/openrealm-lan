@@ -1,5 +1,11 @@
 [
   {
+    "release": "r94-game-station-real-48-font-rendering",
+    "changes": [
+      "缩小中文字体首次渲染时生成的字形图集，减少第一次显示单位名和提示文本时的停顿。"
+    ]
+  },
+  {
     "release": "r94-game-station-real-47-command-assets",
     "changes": [
       "进房前解压当前地图的指令图标和公共界面素材，减少第一次选中单位或打开指令面板时的卡顿。继续复用已下载的资源包。"

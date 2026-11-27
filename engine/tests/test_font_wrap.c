@@ -20,17 +20,32 @@ void R_DrawImageBatch(texture_t const *t, SHADERTYPE shader, BLEND_MODE blend, f
 }
 
 static void check_two_lines(cstring_t text, float cells) {
-    static glyphSet_t glyphs;
+    glyphSet_t *glyphs = calloc(1, sizeof(*glyphs) + LATIN_GLYPHS * sizeof(glyphs->glyphs[0]));
     font_t font = { .height = 20, .size = 24 };
-    FOR_LOOP(i, MAX_GLYPHSET) {
-        glyphs.glyphs[i].xadvance = 16;
-        font.sets[i] = &glyphs;
-    }
+    FOR_LOOP(i, LATIN_GLYPHS) glyphs->glyphs[i].xadvance = 16;
+    FOR_LOOP(i, GLYPH_PAGE_COUNT) font.sets[i] = glyphs;
     drawText_t args = { .text = text, .font = &font, .flags = DRAW_WORD_WRAP,
                        .textWidth = cells * INV_SCALE_X(16) };
     vec2_t size = R_GetTextSize(&args);
+    free(glyphs);
     T_FEQ(size.y, 2 * R_GetFontHeight(&font), .00001f);
     T_ASSERT(R_TextFitsWidth(args.textWidth - size.x));
+}
+
+TEST(font_wrap, adjacent_unicode_pages_keep_distinct_widths) {
+    font_t font = { .height = 20, .size = 24 };
+    glyphSet_t *left = calloc(1, sizeof(*left) + GLYPH_PAGE_SIZE * sizeof(left->glyphs[0]));
+    glyphSet_t *right = calloc(1, sizeof(*right) + GLYPH_PAGE_SIZE * sizeof(right->glyphs[0]));
+    unsigned const first = 0x4e00u;
+    unsigned const page = 1u + (first - LATIN_GLYPHS) / GLYPH_PAGE_SIZE;
+    left->glyphs[GLYPH_PAGE_SIZE - 1].xadvance = 16;
+    right->glyphs[0].xadvance = 24;
+    font.sets[page] = left;
+    font.sets[page + 1] = right;
+    float const width = R_GetFontWidth(&font, "丟丠");
+    free(right);
+    free(left);
+    T_FEQ(width, INV_SCALE_X(40), .00001f);
 }
 
 TEST(font_wrap, chinese_breaks_between_glyphs_instead_of_before_every_glyph) {
