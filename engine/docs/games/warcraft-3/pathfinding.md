@@ -12,6 +12,21 @@ order / behavior -> target + interaction range -> routing -> collision-aware ste
 
 Ground Move, Patrol, Attack-move location orders, and Attack chases use collision-size-aware static routing through direct-line checks, waypoint acceleration, and flow generation. Attack still owns its interaction range independently: reaching a collision-safe route endpoint does not complete the attack. Harvest has an explicit collision split: Gold Mine approach and all resource-return legs use collision-sized **static-only** routing (live units ignored), while tree approach keeps live-unit collision and uses collision-sized resource-worker local avoidance.
 
+Right-click uses the ground intersection when a tree canopy wins the entity hit
+and the selected units cannot harvest that tree. The ordinary ground-order
+path still uses the authored tree footprint and the mover's collision radius.
+Queued clicks use the same ground point, while workers can still queue a tree
+harvest. `wc3_movement.smart_tree_click_moves_nonharvester_to_ground_under_canopy`
+exercises both immediate and queued clicks through the server command path.
+
+If a click lands in a disconnected pocket, the location order uses the
+closest legal point in the mover's own component. That point can still be
+behind a tree line. The adjusted waypoint goes through the same direct-line,
+waypoint and flow-field checks as a regular destination. The regression
+`wc3_movement.unreachable_move_routes_around_wall_to_adjusted_destination`
+advances the entity scheduler through a detour to the adjusted waypoint and
+checks the mover's clearance on every step.
+
 Movers with a radius below half a pathing cell can route through a single cell. At an exact world position or during a step, the static query checks the cells touched by that mover's authored footprint. In Zombie Island 1.5.5 a worker with a collision radius of 5 can travel down a 32-unit lane while its footprint still blocks contact with the walls. Larger movers use neighbouring-cell clearance in the shared route and step checks. Live-unit avoidance uses authored radii in the swept-circle check in `move_is_valid_policy()`. An authored building footprint provides its full static obstacle, including open corners. Radius-only structures still use their circle. The `wc3_collision` suite covers both cases.
 
 Normal movement uses the live `unitinfo.PropWindow`, initialized from `UnitData.propWin` / object field `uprw` and mutable through `SetUnitPropWindow`. The authored value is a propulsion window in degrees: steering may continue turning toward the avoidance-resolved heading every simulation tick, but `unit_moveindirection()` does not translate until the remaining facing error is strictly inside that window. This is shared movement behavior, so Attack chase, Follow, Patrol, Harvest, Repair, Way Gate approach, and ordinary Move inherit the same turn-before-propulsion rule rather than implementing Attack-specific steering. A zero runtime value prevents translation until facing exactly matches the resolved heading, so it can be used to hold movement while retaining turning.

@@ -61,6 +61,9 @@
   #match-player-list .is-ready progress::-moz-progress-bar { background: #879872; }
   #game-controls { position: absolute; z-index: 40; top: 42px; right: 8px; display: flex; gap: 5px; }
   #game-controls button { height: 30px; padding: 0 8px; font: 12px/1 system-ui, sans-serif; touch-action: manipulation; }
+  #game-controls label:not([hidden]) { display: flex; align-items: center; gap: 5px; padding: 0 5px;
+                                      color: var(--panel-text); background: #18150f; font: 12px system-ui, sans-serif; }
+  #game-controls select { font: inherit; color: inherit; background: #2a2116; border: 1px solid var(--panel-edge); }
   #game-container :is(a,button,input,#match-player-list):focus-visible { outline: 2px solid var(--panel-gold); outline-offset: 3px; }
   .is-pointer-locked #game-controls { display: none; }
   #display-status { position: absolute; top: 42px; right: 8px; z-index: 41; margin: 0; pointer-events: none;
@@ -103,6 +106,10 @@
     </section>
   </div>
   <div id="game-controls">
+    <label hidden>锁定速度 <select id="pointer-lock-speed">
+      <option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.5">150%</option>
+      <option value="2">200%</option><option value="3">300%</option>
+    </select></label>
     <button id="pointer-lock-button" type="button" title="按 Esc 释放鼠标" aria-pressed="false" hidden disabled>锁定鼠标</button>
     <button id="fullscreen-button" type="button" aria-pressed="false">进入全屏</button>
   </div>
@@ -193,7 +200,9 @@
   const matchPlayerList = document.getElementById('match-player-list');
   const matchPlayerNames = new Map();
   let matchPlayerProgress;
-  document.getElementById('match-loading-back').href = sitePath('rooms.html');
+  const matchBack = document.getElementById('match-loading-back');
+  matchBack.href = sitePath('rooms.html');
+  matchBack.addEventListener('click', () => window.openrealmSetMatchExitGuard?.(false));
   function showMatchLoadingPlayers() {
     if (!isRoom || !loadingMatch || loadFailed || !matchPlayerProgress) return;
     const [ready,total,...players] = matchPlayerProgress;
@@ -245,6 +254,7 @@
     if (active !== loadingMatch) {
       loadingMatch = active;
       mark(active ? 'wc3-match-loading' : 'wc3-match-ready');
+      if (active && isRoom) window.openrealmSetMatchExitGuard?.(true);
     }
     if (active) showMatchLoadingPlayers();
     presentMapLoading?.(active, progress, submitted);
@@ -363,6 +373,7 @@
     const message = error?.message || '资源初始化失败，请重试';
     window.__errors.push(message);
     watchingRoom = false;
+    window.openrealmSetMatchExitGuard?.(false);
     matchPlayers.hidden = true;
     warmAssets.clear();
     finishDownloadProgress();
@@ -620,6 +631,7 @@
     if (returningToSite) return;
     returningToSite = true;
     watchingRoom = false;
+    window.openrealmSetMatchExitGuard?.(false);
     presentMapLoading?.(false, 0, false);
     setStatus('正在保存进度并返回…');
     var leave = function (error) {

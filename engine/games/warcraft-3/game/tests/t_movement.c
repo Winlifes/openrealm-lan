@@ -2164,6 +2164,35 @@ TEST(wc3_movement, smart_nonwalkable_destructable_does_not_fall_back_to_move) {
     gi.unicast = old_unicast;
 }
 
+TEST(wc3_movement, smart_tree_click_moves_nonharvester_to_ground_under_canopy) {
+    static DestructableData_t const tree_data = {.file = "Doodads/TestTree.mdx"};
+    void (*old_write)(pfWriteType_t, void const *) = gi.Write;
+    void (*old_unicast)(edict_t *) = gi.unicast;
+    edict_t *clent = &g_edicts[0];
+    char tree_number[16];
+    cstring_t command[] = {"smart", tree_number, "192", "64", "queue"};
+
+    setup_test_world();
+    gi.Write = movement_noop_write;
+    gi.unicast = movement_noop_unicast;
+    edict_t *mover = alloc_test_unit(MAKEFOURCC('h','f','o','o'), 0.0f, 0.0f);
+    mover->stand = unit_stand;
+    unit_stand(mover);
+    edict_t *tree = make_smart_destructable(256.0f, 64.0f, &tree_data, TARG_TREE);
+    G_SelectEntity(clent->client, mover);
+    snprintf(tree_number, sizeof(tree_number), "%u", (unsigned)tree->s.number);
+
+    G_ClientCommand(clent, 4, command);
+    T_NOT_NULL(mover->goalentity);
+    if (mover->goalentity) T_FEQ(mover->goalentity->s.origin2.x, 192.0f, 0.01f);
+    G_ClientCommand(clent, 5, command);
+    T_EQ(G_UnitQueuedOrderCount(mover), 1);
+    T_EQ(mover->orders->queue.entries[mover->orders->queue.head].target_type, UNIT_ORDER_TARGET_POINT);
+
+    gi.Write = old_write;
+    gi.unicast = old_unicast;
+}
+
 TEST(wc3_movement, smart_attackable_wall_targets_gate) {
     static DestructableData_t const gate_data = {
         .file = "Doodads/TestGate.mdx",
@@ -4001,6 +4030,46 @@ TEST(wc3_movement, unreachable_move_settles_at_closest_boundary) {
     T_ASSERT(unit->s.origin2.x > start.x);
     T_ASSERT(unit->s.origin2.x < 7.0f * 32.0f);
     T_ASSERT(Vector2_distance(&unit->s.origin2, &dest) < Vector2_distance(&start, &dest));
+}
+
+TEST(wc3_movement, unreachable_move_routes_around_wall_to_adjusted_destination) {
+    enum { WIDTH = 28, HEIGHT = 24, CELL = 32 };
+    uint8_t pathmap[WIDTH * HEIGHT] = {0};
+    vec2_t const click = {17.5f * CELL, 11.5f * CELL};
+    vec2_t const approach = {21.5f * CELL, 11.5f * CELL};
+    edict_t *unit = make_moving_unit(5.5f * CELL, 7.5f * CELL);
+    unit->collision = 31.0f;
+    unit->unitinfo.MoveSpeed = 270.0f;
+    unit->unitinfo.PropWindow = DEG2RAD(60.0f);
+    unit->think = monster_think;
+
+    /* The click is inside a closed grove. The closest reachable cell is on
+     * the far side, and the separate tree line blocks a direct approach. */
+    for (int y = 8; y <= 14; y++) {
+        for (int x = 13; x <= 19; x++) {
+            if (y == 8 || y == 14 || x == 13 || x == 19)
+                pathmap[y * WIDTH + x] = CM_PATHING_UNWALKABLE;
+        }
+    }
+    for (int y = 5; y <= 18; y++)
+        pathmap[y * WIDTH + 8] = CM_PATHING_UNWALKABLE;
+    CM_SetupTestPathmap(WIDTH, HEIGHT, pathmap);
+    CM_SetupTestWorldBounds(&MAKE(box2_t, .min = {0.0f, 0.0f},
+                                .max = {WIDTH * CELL, HEIGHT * CELL}));
+    gi.LinkEntity(unit);
+    T_ASSERT(CM_PointIsPathableForRadius(&click, unit->collision));
+    T_ASSERT(!CM_LineIsWalkableForRadius(&unit->s.origin2, &approach, unit->collision));
+    T_ASSERT(unit_issueorder(unit, "move", &click));
+
+    for (int frame = 0; frame < 200 && unit->currentmove->think; frame++) {
+        level.time += FRAMETIME;
+        CM_ProcessPathJobs(4096);
+        G_RunEntities();
+        T_ASSERT(CM_PointIsPathableForRadius(&unit->s.origin2, unit->collision));
+    }
+
+    T_STREQ(unit->currentmove->animation, "stand");
+    T_FEQ(Vector2_distance(&unit->s.origin2, &approach), 0.0f, 0.01f);
 }
 
 /* Immobile is a single movement/facing contract, not just a command-menu filter. */

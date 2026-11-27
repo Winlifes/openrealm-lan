@@ -1432,6 +1432,10 @@ static bool move_fallback_steer(edict_t *self, moveAvoidPolicy_t policy) {
         self->movement->flow_fallback_goal = NULL;
         return false;
     }
+    /* A retargeted waypoint is in this mover's connected component. It can
+     * still require a detour, so route to it through the ordinary solver. */
+    if (Vector2_distance(&self->goalentity->s.origin2, &self->movement->flow_fallback_approach) <= 0.001f)
+        return false;
     dir = Vector2_sub(&self->movement->flow_fallback_approach, &self->s.origin2);
     self->movement->flow_direct = true;
     unit_apply_heading(self, &dir, policy);

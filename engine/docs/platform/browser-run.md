@@ -144,6 +144,14 @@ The fullscreen control expands
 the game container, keeping both overlay controls visible; canvas resizing does
 not cover the controls. Interact with the page once to unlock browser audio.
 
+In the LAN room client, the lock-speed control scales locked mouse deltas before
+Emscripten converts them to integers for SDL. Fractions carry over between motion
+events and reset on a lock transition or a speed change. Safari starts at 150%
+and the speed selection is stored per origin. The room client requests the
+browser's leave confirmation while a match is loading or active and releases
+that guard on the explicit exit path. Browser extensions and OS gestures can
+still issue commands outside the page's event handlers.
+
 On a touchscreen, one-finger tap/drag uses the usual left-click UI/selection
 path, and two fingers pan the camera during gameplay. A mouse and keyboard
 remain usable on hybrid laptops. The game canvas disables browser touch

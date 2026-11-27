@@ -56,6 +56,27 @@
   var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   var touchOn = params.get('touch') === '1' || (coarse && params.get('touch') !== '0');
 
+  // Consume navigation defaults on the game surface without hiding events from SDL.
+  for (const type of ['mousedown', 'mouseup', 'auxclick']) {
+    canvas.addEventListener(type, event => {
+      if (event.button === 3 || event.button === 4) event.preventDefault();
+    });
+  }
+  canvas.addEventListener('dragstart', event => event.preventDefault());
+  canvas.addEventListener('wheel', event => {
+    if (event.ctrlKey || event.metaKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+      event.preventDefault();
+    }
+  }, {passive:false});
+  function confirmLeavingMatch(event) {
+    event.preventDefault();
+    event.returnValue = true;
+  }
+  window.openrealmSetMatchExitGuard = active => {
+    if (active) window.addEventListener('beforeunload', confirmLeavingMatch);
+    else window.removeEventListener('beforeunload', confirmLeavingMatch);
+  };
+
   const container = document.getElementById('game-container');
   const fullscreenButton = document.getElementById('fullscreen-button');
   const matchFullscreenButton = document.getElementById('match-fullscreen-button');
@@ -151,6 +172,33 @@
   document.addEventListener('webkitfullscreenchange', syncFullscreen);
 
   if (canLockPointer) {
+    const speedControl = document.getElementById('pointer-lock-speed');
+    const speedKey = 'winlife-wc3-pointer-speed';
+    const speeds = ['0.75', '1', '1.5', '2', '3'];
+    const safari = /Version\/[\d.]+.*Safari\//.test(navigator.userAgent);
+    let savedSpeed;
+    try { savedSpeed = window.localStorage.getItem(speedKey); } catch (_) {}
+    speedControl.value = speeds.includes(savedSpeed) ? savedSpeed : safari ? '1.5' : '1';
+    speedControl.parentElement.hidden = false;
+    let speed = Number(speedControl.value);
+    let carryX = 0, carryY = 0;
+    speedControl.addEventListener('change', () => {
+      speed = Number(speedControl.value);
+      carryX = carryY = 0;
+      try { window.localStorage.setItem(speedKey, speedControl.value); } catch (_) {}
+    });
+    // Emscripten passes integer deltas to SDL. Accumulate fractions before
+    // they cross that boundary, including very small movements on Safari.
+    window.addEventListener('mousemove', event => {
+      if (document.pointerLockElement !== canvas || event.target !== canvas) return;
+      carryX += event.movementX * speed;
+      carryY += event.movementY * speed;
+      const x = Math.trunc(carryX) || 0, y = Math.trunc(carryY) || 0;
+      carryX -= x;
+      carryY -= y;
+      if (x !== event.movementX) Object.defineProperty(event, 'movementX', {value:x});
+      if (y !== event.movementY) Object.defineProperty(event, 'movementY', {value:y});
+    }, true);
     lockButton.hidden = false;
     lockButton.addEventListener('click', lockPointer);
     document.addEventListener('pointerlockerror', reportPointerLockError);
@@ -161,6 +209,7 @@
       document.exitPointerLock();
     }, true);
     document.addEventListener('pointerlockchange', () => {
+      carryX = carryY = 0;
       const locked = document.pointerLockElement === canvas;
       if (locked && fullscreenLock === 'release') {
         document.exitPointerLock();

@@ -181,6 +181,31 @@ same natural settlement. The restored type queries match unit rawcodes and
 display names and count units that pass the filter. Browser room checks loaded
 the three selected maps through the lobby and match readiness barrier.
 
+### Darwin's Island TFT 4.35 endgame on R53
+
+The map grants level 10 at 162 food and shares that creature's vision with its
+opponents. Its 200-food victory trigger gives all players full-map vision and
+offers the first player eight endings. The map uses permanent death after the
+victory trigger. Its terrain and playable bounds stay fixed. `AI Move` gives
+neutral hostile units an attack-move order to a random point every 21 seconds.
+Armed units can engage nearby enemies during that walk.
+
+In an isolated two-player room, combat crossed both food thresholds. The old
+build displayed the ending menu but lost the earlier players' fog modifiers
+as `CreateFogModifierRectBJ` replaced the shared last-created handle. The
+active fog registry now retains its own reference until Stop, Destroy, or map
+shutdown. The test `wc3_api.active_fog_modifier_outlives_the_script_reference`
+covers two recipients and stopping one modifier. Both players saw a distant
+opponent after selecting Feral Rampage in the repaired build. In a replay that
+measured the first 21-second order cycle, 41 of 48 sampled wild units moved,
+and the map's Harvested Human attacked a nearby passive test unit.
+
+A Forest move from `(400, -2608)` toward `(688, -2290)` retargets to the
+reachable point `(880, -2288)` for the starting creature. The old fallback
+steered directly toward it and repeatedly reversed when it met the tree
+line. The repaired move routed around the line and settled at the new
+point. The follow-up move along the corridor to `(880, -2704)` also passed.
+
 ## Campaign difficulty source inventory (Patch 5)
 
 Before interpreting runtime tests, enumerate difficulty-related branches and AI

@@ -11,13 +11,14 @@ function target() {
   const listeners = new Map();
   return {
     addEventListener(type, listener) { listeners.set(type, listener); },
+    removeEventListener(type, listener) { if (listeners.get(type) === listener) listeners.delete(type); },
     dispatchEvent(event) { return listeners.get(event.type)?.(event); },
     focus() {},
     setAttribute() {},
   };
 }
 
-function fixture({touch = false, delayedLock = false, fullscreenFails = false} = {}) {
+function fixture({touch = false, delayedLock = false, fullscreenFails = false, userAgent = '', speed} = {}) {
   const calls = [];
   const document = target();
   const canvas = target();
@@ -25,11 +26,13 @@ function fixture({touch = false, delayedLock = false, fullscreenFails = false} =
   const fullscreen = target();
   const matchFullscreen = { ...target(), hidden: true };
   const lock = target();
+  const speedControl = {...target(), value:'', parentElement:{hidden:true}};
   const status = {textContent:''};
   const elements = new Map([
     ['canvas', canvas], ['game-container', container], ['fullscreen-button', fullscreen],
     ['match-fullscreen-button', matchFullscreen],
     ['pointer-lock-button', lock], ['display-status', status],
+    ['pointer-lock-speed', speedControl],
   ]);
   document.getElementById = id => elements.get(id);
   document.documentElement = {classList:{add() {}}};
@@ -63,16 +66,18 @@ function fixture({touch = false, delayedLock = false, fullscreenFails = false} =
     document.fullscreenElement = null;
     document.dispatchEvent({type:'fullscreenchange'});
   };
-  const navigator = {userActivation:{get isActive() { return activated; }}};
+  const navigator = {userAgent, userActivation:{get isActive() { return activated; }}};
   const window = target();
   window.matchMedia = () => ({matches:touch});
+  const storage = new Map(speed ? [['winlife-wc3-pointer-speed', speed]] : []);
+  window.localStorage = {getItem:key=>storage.get(key), setItem:(key,value)=>storage.set(key,value)};
   runInNewContext(input, {
     document, window, navigator, location:{search:''}, URLSearchParams,
     performance, requestAnimationFrame() {}, setInterval() {}, setTimeout() {}, clearTimeout() {},
     MouseEvent: class { constructor(type) { this.type = type; } },
   });
   const activate = value => { activated = value; };
-  return {calls, document, canvas, fullscreen, matchFullscreen, finishLock, status, window, activate};
+  return {calls, document, canvas, fullscreen, matchFullscreen, finishLock, status, window, activate, lock, speedControl, storage};
 }
 
 test('fullscreen also locks the mouse and Escape releases it without relocking', async () => {
@@ -134,4 +139,44 @@ test('leaving fullscreen before a match keeps the windowed mode at loading', asy
   await window.openrealmEnterMatchFullscreen();
   assert.deepEqual(calls, ['lock', 'fullscreen', 'exit', 'unlock']);
   assert.equal(matchFullscreen.hidden, true);
+});
+
+test('locked Safari mouse motion keeps fractional deltas and uses the selected speed', async () => {
+  const {canvas, document, window, lock, speedControl, storage} = fixture({
+    userAgent:'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.1 Safari/605.1.15',
+  });
+  const motion = (x,y) => {
+    const event = {type:'mousemove', target:canvas, movementX:x, movementY:y};
+    window.dispatchEvent(event);
+    return [event.movementX,event.movementY];
+  };
+  assert.equal(speedControl.value,'1.5');
+  assert.deepEqual(motion(0.5,-0.5),[0.5,-0.5]);
+  await lock.dispatchEvent({type:'click'});
+  assert.deepEqual(motion(0.5,-0.5),[0,0]);
+  assert.deepEqual(motion(0.5,-0.5),[1,-1]);
+  document.exitPointerLock();
+  await lock.dispatchEvent({type:'click'});
+  assert.deepEqual(motion(0.5,-0.5),[0,0]);
+  speedControl.value = '2';
+  speedControl.dispatchEvent({type:'change'});
+  assert.deepEqual(motion(1,-1),[2,-2]);
+  assert.equal(storage.get('winlife-wc3-pointer-speed'),'2');
+});
+
+test('the canvas consumes page navigation gestures and active matches warn on tab close', () => {
+  const {canvas, window} = fixture();
+  function dispatch(target, type, values = {}) {
+    const event = {type, defaultPrevented:false, preventDefault() { this.defaultPrevented = true; }, ...values};
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+  assert.equal(dispatch(canvas,'auxclick',{button:4}),true);
+  assert.equal(dispatch(canvas,'mouseup',{button:2}),false);
+  assert.equal(dispatch(canvas,'wheel',{deltaX:80,deltaY:2}),true);
+  assert.equal(dispatch(window,'beforeunload'),false);
+  window.openrealmSetMatchExitGuard(true);
+  assert.equal(dispatch(window,'beforeunload'),true);
+  window.openrealmSetMatchExitGuard(false);
+  assert.equal(dispatch(window,'beforeunload'),false);
 });

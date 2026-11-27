@@ -50,6 +50,7 @@ type gamestate        extends handle
 type fgamestate       extends gamestate
 type limitop          extends handle
 type fogstate         extends handle
+type fogmodifier      extends handle
 type unittype        extends handle
 type attacktype      extends handle
 type damagetype      extends handle
@@ -309,6 +310,9 @@ native WaygateIsActive          takes unit waygate returns boolean
 native SetFogStateRect      takes player forWhichPlayer, fogstate whichState, rect where, boolean useSharedVision returns nothing
 native SetFogStateRadius    takes player forWhichPlayer, fogstate whichState, real centerx, real centerY, real radius, boolean useSharedVision returns nothing
 native SetFogStateRadiusLoc takes player forWhichPlayer, fogstate whichState, location center, real radius, boolean useSharedVision returns nothing
+native CreateFogModifierRect takes player forWhichPlayer, fogstate whichState, rect where, boolean useSharedVision, boolean afterUnits returns fogmodifier
+native FogModifierStart takes fogmodifier whichFogModifier returns nothing
+native FogModifierStop takes fogmodifier whichFogModifier returns nothing
 
 // Win conditions.
 native ConvertPlayerGameResult  takes integer i returns playergameresult

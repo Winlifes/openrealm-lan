@@ -1196,7 +1196,13 @@ static void G_FowRevealForViewers(edict_t const *ent, float radius, uint32_t vie
  * contract. Modifiers are applied after unit sight so their state persists. */
 #define MAX_FOG_MODIFIERS 256 // handles; bounded active map-script fog modifiers
 
-static fogModifier_t *g_fog_modifiers[MAX_FOG_MODIFIERS];
+/* An active modifier remains live when a script drops its last handle variable. */
+typedef struct {
+    fogModifier_t *modifier;
+    struct jass_ref *owner;
+} activeFogModifier_t;
+
+static activeFogModifier_t g_fog_modifiers[MAX_FOG_MODIFIERS];
 static uint32_t g_num_fog_modifiers;
 
 static void G_FowApplyModifierForPlayer(uint32_t player, fogModifier_t const *mod);
@@ -1219,20 +1225,21 @@ static void G_FowApplyModifierImmediately(fogModifier_t const *mod) {
     }
 }
 
-void G_FogModifierStart(fogModifier_t *mod) {
-    if (!mod) {
+/* Consume the script's retained reference until this modifier is stopped or the map ends. */
+void G_FogModifierStart(fogModifier_t *mod, struct jass_ref *owner) {
+    if (!mod || g_num_fog_modifiers == MAX_FOG_MODIFIERS) {
+        jass_releaseownedhandle(mod, owner);
         return;
     }
-    mod->started = true;
     FOR_LOOP(i, g_num_fog_modifiers) {
-        if (g_fog_modifiers[i] == mod) {
+        if (g_fog_modifiers[i].modifier == mod) {
+            jass_releaseownedhandle(mod, owner);
             return;
         }
     }
-    if (g_num_fog_modifiers < MAX_FOG_MODIFIERS) {
-        g_fog_modifiers[g_num_fog_modifiers++] = mod;
-        G_FowApplyModifierImmediately(mod);
-    }
+    mod->started = true;
+    g_fog_modifiers[g_num_fog_modifiers++] = (activeFogModifier_t){mod, owner};
+    G_FowApplyModifierImmediately(mod);
 }
 
 void G_FogModifierStop(fogModifier_t *mod) {
@@ -1241,8 +1248,10 @@ void G_FogModifierStop(fogModifier_t *mod) {
     }
     mod->started = false;
     FOR_LOOP(i, g_num_fog_modifiers) {
-        if (g_fog_modifiers[i] == mod) {
+        if (g_fog_modifiers[i].modifier == mod) {
+            struct jass_ref *owner = g_fog_modifiers[i].owner;
             g_fog_modifiers[i] = g_fog_modifiers[--g_num_fog_modifiers];
+            jass_releaseownedhandle(mod, owner);
             return;
         }
     }
@@ -1323,7 +1332,7 @@ static void G_FowApplyModifierForPlayer(uint32_t player, fogModifier_t const *mo
 
 static void G_FowApplyModifiers(uint32_t viewers) {
     FOR_LOOP(i, g_num_fog_modifiers) {
-        fogModifier_t const *mod = g_fog_modifiers[i];
+        fogModifier_t const *mod = g_fog_modifiers[i].modifier;
         if (!mod || !mod->started || !G_FowStateValid(mod->state) ||
             mod->player >= MAX_PLAYERS) {
             continue;
@@ -1355,6 +1364,8 @@ void G_FowShutdown(void) {
     SAFE_DELETE(g_fow_blocker_words, gi.MemFree);
     g_fow_blocker_word_stride = 0;
     memset(&level.fow, 0, sizeof(level.fow));
+    FOR_LOOP(i, g_num_fog_modifiers)
+        jass_releaseownedhandle(g_fog_modifiers[i].modifier, g_fog_modifiers[i].owner);
     memset(g_fog_modifiers, 0, sizeof(g_fog_modifiers));
     g_num_fog_modifiers = 0;
     g_fow_blocker_hash = 0;

@@ -666,7 +666,7 @@ uint32_t DestroyFogModifier(jass_t *j) {
 }
 uint32_t FogModifierStart(jass_t *j) {
     fogModifier_t *whichFogModifier = jass_checkhandle(j, 1, "fogmodifier");
-    G_FogModifierStart(whichFogModifier);
+    G_FogModifierStart(whichFogModifier, jass_retainownedhandle(j, 1, "fogmodifier"));
     return 0;
 }
 uint32_t FogModifierStop(jass_t *j) {

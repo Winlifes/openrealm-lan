@@ -1152,27 +1152,26 @@ CLIENTCOMMAND(Smart) {
         return;
     }
     target = &globals.edicts[number];
+    bool const tree = G_IsDestructable(target) && target->targtype == TARG_TREE;
+    bool const ground_target = tree || G_DestructableIsWalkable(target);
     queued = G_CommandQueueRequested(argc, argv, 2);
     if (argc >= 4 && strcmp(argv[2], "queue") && strcmp(argv[3], "queue")) {
         click_point = (vec2_t){ atoi(argv[2]), atoi(argv[3]) };
         have_click_point = true;
     }
     FOR_CONTROLLABLE_SELECTED_UNITS(client, ent) {
-        /* A queued Smart target is otherwise accepted into the FIFO before
-         * its destructable semantics are evaluated, preventing the clicked
-         * walkable surface from falling back to the queued ground move. */
-        if (queued && have_click_point && G_DestructableIsWalkable(target) &&
-            !G_DestructableAcceptsSmartAttack(ent, target)) continue;
+        /* Resolve a tree click or walkable surface before queuing a target
+         * that cannot be harvested or attacked when the order executes. */
+        if (queued && have_click_point && ground_target &&
+            !(tree && S_HarvestCanLumber(ent)) && !G_DestructableAcceptsSmartAttack(ent, target)) continue;
         if (G_IssueUnitTargetOrder(ent, "smart", target, queued, client->ps.number)) {
             if (G_UnitHasRally(ent)) rallied = true;
             issued = true;
         }
     }
-    /* A live walkable destructable is also traversable ground. If its entity
-     * Smart action was rejected, preserve the world point under the cursor and
-     * run the normal formation-aware ground Smart path instead. Keep the
-     * gameplay decision on destructable state rather than presentation flags. */
-    if (!issued && have_click_point && G_DestructableIsWalkable(target)) {
+    /* Tree canopies can cover walkable ground. If the selection could not
+     * interact with the tree or surface, route to the actual ground hit. */
+    if (!issued && have_click_point && ground_target) {
         bool const old_queued = client->menu.order_queued;
         client->menu.order_queued = queued;
         issued = move_selectlocation(clent, &click_point);

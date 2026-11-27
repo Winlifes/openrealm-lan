@@ -3590,6 +3590,41 @@ TEST(wc3_api, fog_state_shared_vision_reaches_allied_viewer_only) {
     T_EQ(level.fow.players[2].visible[index], 0);
 }
 
+/* A map can reveal the world for each player and discard the temporary handles. */
+TEST(wc3_api, active_fog_modifier_outlives_the_script_reference) {
+    setup_test_world();
+    reset_entities();
+    G_FowInit();
+    G_FowConnectPlayer(0);
+    G_FowConnectPlayer(1);
+    T_ASSERT(run_test_jass(
+        "globals\n"
+        "  fogmodifier latest = null\n"
+        "endglobals\n"
+        "function main takes nothing returns nothing\n"
+        "  local rect world = Rect(-99999.0, -99999.0, 99999.0, 99999.0)\n"
+        "  set latest = CreateFogModifierRect(Player(0), FOG_OF_WAR_VISIBLE, world, false, false)\n"
+        "  call FogModifierStart(latest)\n"
+        "  set latest = CreateFogModifierRect(Player(1), FOG_OF_WAR_VISIBLE, world, false, false)\n"
+        "  call FogModifierStart(latest)\n"
+        "endfunction\n"
+        "function stopLatest takes nothing returns nothing\n"
+        "  call FogModifierStop(latest)\n"
+        "endfunction\n"));
+    vec2_t const point = {256.0f, 256.0f};
+    T_ASSERT(G_FowPointIsVisible(0, &point));
+    T_ASSERT(G_FowPointIsVisible(1, &point));
+    G_FowUpdate();
+    T_ASSERT(G_FowPointIsVisible(0, &point));
+    T_ASSERT(G_FowPointIsVisible(1, &point));
+    jass_callbyname(level.vm, "stopLatest", true);
+    jass_runevents(level.vm);
+    G_FowUpdate();
+    T_ASSERT(G_FowPointIsVisible(0, &point));
+    T_ASSERT(!G_FowPointIsVisible(1, &point));
+    G_FowShutdown();
+}
+
 TEST(wc3_api, glyph_omniscience_visibility_expires_but_exploration_remains) {
     uint32_t index;
     uint32_t start;
@@ -3628,7 +3663,7 @@ TEST(wc3_api, fog_modifier_same_turn_start_stop_still_explores) {
     G_FowConnectPlayer(0);
     index = test_fow_cell(0.0f, 0.0f);
 
-    G_FogModifierStart(&mod);
+    G_FogModifierStart(&mod, NULL);
     T_EQ(level.fow.players[0].explored[index], 1);
     T_EQ(level.fow.players[0].visible[index], 1);
     G_FogModifierStop(&mod);
@@ -3653,7 +3688,7 @@ TEST(wc3_api, fog_modifier_states_and_visible_stop_transition) {
     G_FowConnectPlayer(0);
     index = test_fow_cell(0.0f, 0.0f);
 
-    G_FogModifierStart(&mod);
+    G_FogModifierStart(&mod, NULL);
     G_FowUpdate();
     T_EQ(level.fow.players[0].explored[index], 1);
     T_EQ(level.fow.players[0].visible[index], 1);
@@ -3665,7 +3700,7 @@ TEST(wc3_api, fog_modifier_states_and_visible_stop_transition) {
     mod.center.x = 256.0f;
     index = test_fow_cell(256.0f, 0.0f);
     mod.state = WC3_FOG_STATE_FOGGED;
-    G_FogModifierStart(&mod);
+    G_FogModifierStart(&mod, NULL);
     G_FowUpdate();
     T_EQ(level.fow.players[0].explored[index], 1);
     T_EQ(level.fow.players[0].visible[index], 0);
