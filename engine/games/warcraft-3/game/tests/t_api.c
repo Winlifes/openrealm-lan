@@ -8786,6 +8786,41 @@ TEST(wc3_api, group_add_is_set_semantics) {
     G_FreeJassGroup(group);
 }
 
+TEST(wc3_api, group_point_order_by_id_moves_each_spawned_unit) {
+    setup_test_world();
+    T_ASSERT(run_test_jass(
+        "function main takes nothing returns nothing\n"
+        "  local group wave = CreateGroup()\n"
+        "  local unit first = CreateUnit(Player(8), 'hfoo', -128.0, 0.0, 0.0)\n"
+        "  local unit second = CreateUnit(Player(8), 'hpea', -128.0, 128.0, 0.0)\n"
+        "  local location destination = Location(384.0, 64.0)\n"
+        "  call BJassAssert(not GroupPointOrderByIdLoc(wave, 851983, destination), \"empty wave rejects its order\")\n"
+        "  call GroupAddUnit(wave, first)\n"
+        "  call GroupAddUnit(wave, second)\n"
+        "  call BJassAssert(not GroupPointOrderByIdLoc(wave, 851983, null), \"null destination is rejected\")\n"
+        "  call BJassAssert(GroupPointOrderByIdLoc(wave, 851983, destination), \"spawned wave accepts attack-move\")\n"
+        "  call BJassAssert(GetUnitCurrentOrder(first) == 851983, \"first unit received attack-move\")\n"
+        "  call BJassAssert(GetUnitCurrentOrder(second) == 851983, \"second unit received attack-move\")\n"
+        "  call BJassAssert(not GroupPointOrderById(wave, 0, 192.0, 32.0), \"unknown order id is rejected\")\n"
+        "  call BJassAssert(GroupPointOrderById(wave, 851986, 192.0, 32.0), \"numeric coordinates and move id are accepted\")\n"
+        "  call BJassAssert(GetUnitCurrentOrder(first) == 851986, \"first unit received move\")\n"
+        "  call BJassAssert(GetUnitCurrentOrder(second) == 851986, \"second unit received move\")\n"
+        "  call RemoveLocation(destination)\n"
+        "  call DestroyGroup(wave)\n"
+        "endfunction\n"));
+    edict_t *first = find_test_unit(MAKEFOURCC('h','f','o','o'));
+    edict_t *second = find_test_unit(MAKEFOURCC('h','p','e','a'));
+    T_NOT_NULL(first);
+    T_NOT_NULL(second);
+    if (!first || !second) return;
+    T_NOT_NULL(first->goalentity);
+    T_NOT_NULL(second->goalentity);
+    if (first->goalentity && second->goalentity) {
+        T_FEQ(first->goalentity->s.origin2.x, 192.0f, 0.001f);
+        T_FEQ(second->goalentity->s.origin2.y, 32.0f, 0.001f);
+    }
+}
+
 TEST(wc3_api, jass_group_enumeration_grows_past_256_members) {
     enum { UNIT_COUNT = 300 };
     edict_t *last = NULL;

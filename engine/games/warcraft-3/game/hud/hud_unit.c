@@ -582,16 +582,9 @@ static void G_ResolveProducerCommandButtonCollisions(edict_t *ent,
     }
 }
 
-/* Neutral-elemental ability data reuses button positions across abilities
- * that are simultaneously present (Storm: Adsm/ANwk; Earth: ACpv/ANta). Keep
- * each command reachable by moving only the later duplicate to a free cell,
- * preferring the same bottom-row ability area. */
-static void G_ResolveBrewmasterButtonCollisions(edict_t *ent,
-                                                gameCommandButton_t *buttons,
-                                                uint8_t count) {
-    if (!ent || (ent->class_id != MAKEFOURCC('n','p','n','2') &&
-                 ent->class_id != MAKEFOURCC('n','p','n','3'))) return;
-
+/* Worker menus and elemental abilities can share authored slots. Keep the
+ * earlier command in place and move only later duplicates into free cells. */
+static void G_ResolveOverlappingCommandButtons(gameCommandButton_t *buttons, uint8_t count) {
     FOR_LOOP(i, count) {
         bool collision = false;
         FOR_LOOP(j, i) {
@@ -1056,6 +1049,7 @@ uint8_t G_GetCommandButtons(edict_t *ent, gameCommandButton_t *buttons, uint8_t 
     bool is_burrow;
     bool burrow_occupied;
     bool armed_structure;
+    bool has_build_menu;
 
     if (!ent || !ent->class_id || !buttons) {
         return 0;
@@ -1129,7 +1123,8 @@ uint8_t G_GetCommandButtons(edict_t *ent, gameCommandButton_t *buttons, uint8_t 
     if (burrow_occupied) {
         G_AddAbilityCommandButtons(ent, buttons, max_buttons, &count, "Astd");
     }
-    if (G_UnitHasBuildMenu(ent)) {
+    has_build_menu = G_UnitHasBuildMenu(ent);
+    if (has_build_menu) {
         G_AddCommandButton(ent, buttons, max_buttons, &count, STR_CmdBuild, false, 0);
     }
     if (a->heroAbilList) {
@@ -1320,7 +1315,8 @@ uint8_t G_GetCommandButtons(edict_t *ent, gameCommandButton_t *buttons, uint8_t 
     }
 
     G_ResolveProducerCommandButtonCollisions(ent, buttons, count);
-    G_ResolveBrewmasterButtonCollisions(ent, buttons, count);
+    if (has_build_menu || ent->class_id == MAKEFOURCC('n','p','n','2') || ent->class_id == MAKEFOURCC('n','p','n','3'))
+        G_ResolveOverlappingCommandButtons(buttons, count);
     if (S_ManaFlareActive(ent)) {
         FOR_LOOP(i, count) {
             /* Keep only the active Mana Flare toggle usable until Bmfl ends. */

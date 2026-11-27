@@ -235,48 +235,48 @@ uint32_t GroupImmediateOrder(jass_t *j) {
     }
     return jass_pushboolean(j, any);
 }
-/* By-id orders resolve through the same order table and gameplay dispatch as
- * their string counterparts; the return value is the aggregate acceptance
- * result, not a placeholder success flag. */
 uint32_t GroupImmediateOrderById(jass_t *j) {
     //ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
     //int32_t order = jass_checkinteger(j, 2);
     return jass_pushboolean(j, 0);
 }
+
+static bool group_issue_point_order(ggroup_t *group, cstring_t order, vec2_t const *point) {
+    char name[UNIT_ORDER_NAME_SIZE];
+    if (!G_JassGroupValid(group) || !point || !order || !*order) return false;
+    /* Numeric lookup may return the shared rawcode buffer. Keep the order
+     * stable while individual unit dispatch also looks up rawcodes. */
+    if (strlcpy(name, order, sizeof(name)) >= sizeof(name)) return false;
+    bool any = false;
+    FOR_LOOP(i, group->num_units) {
+        if (unit_issueorder(group->units[i], name, point)) any = true;
+    }
+    return any;
+}
+
 uint32_t GroupPointOrder(jass_t *j) {
     ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
     cstring_t order = jass_checkstring(j, 2);
     vec2_t dest = MAKE(vec2_t, jass_checknumber(j, 3), jass_checknumber(j, 4));
-    if (!G_JassGroupValid(whichGroup)) return jass_pushboolean(j, 0);
-    bool any = false;
-    FOR_LOOP(i, whichGroup->num_units) {
-        if (unit_issueorder(whichGroup->units[i], order, &dest)) any = true;
-    }
-    return jass_pushboolean(j, any);
+    return jass_pushboolean(j, group_issue_point_order(whichGroup, order, &dest));
 }
 uint32_t GroupPointOrderLoc(jass_t *j) {
     ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
     cstring_t order = jass_checkstring(j, 2);
     vec2_t const *dest = jass_checkhandle(j, 3, "location");
-    if (!G_JassGroupValid(whichGroup) || !dest) return jass_pushboolean(j, 0);
-    bool any = false;
-    FOR_LOOP(i, whichGroup->num_units) {
-        if (unit_issueorder(whichGroup->units[i], order, dest)) any = true;
-    }
-    return jass_pushboolean(j, any);
+    return jass_pushboolean(j, group_issue_point_order(whichGroup, order, dest));
 }
 uint32_t GroupPointOrderById(jass_t *j) {
-    //ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
-    //int32_t order = jass_checkinteger(j, 2);
-    //float x = jass_checknumber(j, 3);
-    //float y = jass_checknumber(j, 4);
-    return jass_pushboolean(j, 0);
+    ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
+    uint32_t const order = (uint32_t)jass_checkinteger(j, 2);
+    vec2_t const dest = MAKE(vec2_t, jass_checknumber(j, 3), jass_checknumber(j, 4));
+    return jass_pushboolean(j, group_issue_point_order(whichGroup, G_OrderId2String(order), &dest));
 }
 uint32_t GroupPointOrderByIdLoc(jass_t *j) {
-    //ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
-    //int32_t order = jass_checkinteger(j, 2);
-    //handle_t whichLocation = jass_checkhandle(j, 3, "location");
-    return jass_pushboolean(j, 0);
+    ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
+    uint32_t const order = (uint32_t)jass_checkinteger(j, 2);
+    vec2_t const *dest = jass_checkhandle(j, 3, "location");
+    return jass_pushboolean(j, group_issue_point_order(whichGroup, G_OrderId2String(order), dest));
 }
 uint32_t GroupTargetOrder(jass_t *j) {
     ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");

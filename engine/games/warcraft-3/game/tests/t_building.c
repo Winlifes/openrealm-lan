@@ -4668,6 +4668,57 @@ TEST(wc3_building, enable_user_ui_does_not_block_build_command_button) {
     client->no_ui = false;
 }
 
+TEST(wc3_building, custom_worker_ability_cannot_cover_the_build_button) {
+    static char const profiles[] =
+        "ID;PWXL;N;E\nB;X2;Y2;D0\n"
+        "C;X1;Y1;K\"id\"\nC;X2;Y1;K\"Builds\"\n"
+        "C;X1;Y2;K\"hpea\"\nC;X2;Y2;K\"hbar\"\nE\n";
+    static char const config[] =
+        "[CmdBuildHuman]\nArt=TestUI\\Textures\\solid_white.blp\nButtonpos=0,2\nHotkey=B\n"
+        "[Absk]\nArt=TestUI\\Textures\\solid_white.blp\nButtonpos=0,2\nHotkey=D\n";
+    UnitData_t data = { .race = "human" };
+    UnitAbilities_t abilities = {0};
+    gameCommandButton_t buttons[12];
+
+    setup_test_world();
+    bool const has_config = G_TestPushAbilityConfig(config);
+    slkTestData_t *rows = parse_slk_string(profiles);
+    slkTestData_t *old_rows = G_SetProfileRows(rows);
+    edict_t *worker = alloc_test_unit(MAKEFOURCC('h','p','e','a'), 0, 0);
+    worker->data.UnitData = &data;
+    worker->data.UnitAbilities = &abilities;
+    T_ASSERT(has_config);
+
+    uint8_t count = G_GetCommandButtons(worker, buttons, sizeof(buttons) / sizeof(buttons[0]));
+    bool build_at_home = false;
+    FOR_LOOP(i, count) {
+        if (!strcmp(buttons[i].command, STR_CmdBuild))
+            build_at_home = buttons[i].x == 0 && buttons[i].y == 2 && buttons[i].hotkey == 'B';
+    }
+    T_ASSERT(build_at_home);
+
+    abilities.abilList = "Absk";
+    count = G_GetCommandButtons(worker, buttons, sizeof(buttons) / sizeof(buttons[0]));
+    bool found_build = false, found_ability = false;
+    FOR_LOOP(i, count) {
+        gameCommandButton_t const *button = &buttons[i];
+        if (!strcmp(button->command, STR_CmdBuild))
+            found_build = button->x == 0 && button->y == 2 && button->hotkey == 'B';
+        if (!strcmp(button->command, "Absk")) {
+            found_ability = true;
+            T_EQ(button->hotkey, 'D');
+            FOR_LOOP(j, count) {
+                if (i != j) T_ASSERT(button->x != buttons[j].x || button->y != buttons[j].y);
+            }
+        }
+    }
+    T_ASSERT(found_build);
+    T_ASSERT(found_ability);
+    if (has_config) G_TestPopAbilityConfig();
+    G_SetProfileRows(old_rows);
+    free_slk_rows(rows);
+}
+
 static struct {
     char command[32];
     int16_t x, y;

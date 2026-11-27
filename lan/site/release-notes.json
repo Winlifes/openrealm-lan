@@ -1,5 +1,12 @@
 [
   {
+    "release": "r94-game-station-real-50-zombie-orders",
+    "changes": [
+      "修复《僵尸岛 27.5 暗黑降临》的建造按钮被奔跑技能盖住的问题。点击建造或按 B 都能展开建造菜单。",
+      "恢复地图脚本的群体攻击移动指令，让《僵尸岛 27.5 暗黑降临》刷出的僵尸沿地图设定的路线出击。"
+    ]
+  },
+  {
     "release": "r94-game-station-real-49-camera-build-hotkeys",
     "changes": [
       "修复网络延迟下松开移动键时镜头回跳，并让镜头预测使用地图设定的边界。",
