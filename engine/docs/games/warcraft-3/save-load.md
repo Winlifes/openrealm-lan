@@ -2,8 +2,14 @@
 
 ## Script continuations
 
-Current versions are native 171 / browser 32, with JASS snapshot 17. Divine
-Shield now retains its immunity in the timed status; its helper cannot restore
+Current versions are native 174 / browser 35, with JASS snapshot 17. The VM
+stores `unitpool` as an inline payload with the same weights, rawcodes,
+destruction flag and alias handling as `itempool`. The saved world accepts
+the current envelope versions. The
+`wc3_api.unit_pool_assigns_remaining_types_after_removal` test restores a
+pool through the world save path and removes entries through a saved alias.
+
+Divine Shield now retains its immunity in the timed status; its helper cannot restore
 a captured explicit unit flag. Old envelopes with the previous ownership
 meaning reject. See [Divine Shield state ownership](divine-shield-sources.md).
 Anonymous

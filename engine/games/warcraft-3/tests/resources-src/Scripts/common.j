@@ -10,6 +10,7 @@ type widget           extends agent
 type unit             extends widget
 type destructable     extends widget
 type item             extends widget
+type unitpool         extends handle
 type itempool         extends handle
 type itemtype         extends handle
 type effect           extends agent

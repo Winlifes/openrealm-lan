@@ -1,5 +1,13 @@
 [
   {
+    "release": "r94-game-station-real-52-map-compat",
+    "changes": [
+      "恢复《澄海 3C》5.45 和《军团 TD》3.41 中文版。",
+      "修复《人族无敌 II》2.2a 的全体随机无重复职业模式。",
+      "补齐地图脚本按单位类型筛选和统计单位的接口。"
+    ]
+  },
+  {
     "release": "r94-game-station-real-51-latest-maps",
     "changes": [
       "更新《达尔文进化岛》TFT 4.35 和《勾肥大战》2.50。",

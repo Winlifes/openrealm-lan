@@ -2747,12 +2747,12 @@ typedef struct jass_snapshot_handle_s {
     jassref_t *ref;
 } jassSnapshotHandle_t;
 
-/* Item pools contain only inline weights/rawcodes; the VM codec preserves their shared identity. */
+/* Object pools contain only inline weights/rawcodes; the VM codec preserves their shared identity. */
 static bool jass_snapshot_ownedhandle(cstring_t type) {
     static cstring_t const types[] = {
         "sound", "camerasetup", "rect", "location", "force", "gamecache", "region", "fogmodifier",
         "version", "itemtype", "attacktype", "damagetype", "weapontype", "soundtype", "pathingtype",
-        "mousebuttontype", "aidifficulty", "playerscore", "itempool"
+        "mousebuttontype", "aidifficulty", "playerscore", "itempool", "unitpool"
     };
     FOR_LOOP(i, sizeof(types) / sizeof(*types)) if (!strcmp(type, types[i])) return true;
     return false;

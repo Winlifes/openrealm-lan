@@ -68,11 +68,28 @@ uint32_t GroupClear(jass_t *j) {
 /* Enumeration filters run with each candidate bound as GetFilterUnit(). Apply
  * counted limits after the filter accepts a unit, and restore context so nested
  * group callbacks do not leak their candidate. */
-uint32_t GroupEnumUnitsOfType(jass_t *j) {
-    //ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
-    //cstring_t unitname = jass_checkstring(j, 2);
-    //handle_t filter = jass_checkhandle(j, 3, "boolexpr");
+static uint32_t group_enum_units_of_type(jass_t *j, int32_t count) {
+    ggroup_t *group = jass_checkhandle(j, 1, "group");
+    cstring_t name = jass_checkstring(j, 2);
+    jassFunc_t const *filter = jass_checkhandle(j, 3, "boolexpr");
+    if (!G_JassGroupValid(group) || !name || !*name) return 0;
+    /* Map wrappers pass UnitId2String, and Blizzard.j passes names like
+     * "marketplace". Both use the same filter and group membership contract. */
+    uint32_t id = strlen(name) == 4 ? FS_SLKKey(name) : 0;
+    for (uint32_t i = 0; i < globals.num_edicts && count > 0; ++i) {
+        edict_t *ent = &globals.edicts[i];
+        if (!ent->inuse || !IS_UNIT(ent) || G_IsDeferredFree(ent)) continue;
+        if (!id || ent->class_id != id) {
+            cstring_t display = G_UnitName(ent->class_id);
+            if (!display || strcasecmp(G_LevelString(display), name)) continue;
+        }
+        if (jass_evaluateboolexpr(j, filter, ent) && group_add_entity(group, ent)) count--;
+    }
     return 0;
+}
+
+uint32_t GroupEnumUnitsOfType(jass_t *j) {
+    return group_enum_units_of_type(j, INT32_MAX);
 }
 uint32_t GroupEnumUnitsOfPlayer(jass_t *j) {
     ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
@@ -91,11 +108,7 @@ uint32_t GroupEnumUnitsOfPlayer(jass_t *j) {
     return 0;
 }
 uint32_t GroupEnumUnitsOfTypeCounted(jass_t *j) {
-    //ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");
-    //cstring_t unitname = jass_checkstring(j, 2);
-    //handle_t filter = jass_checkhandle(j, 3, "boolexpr");
-    //int32_t countLimit = jass_checkinteger(j, 4);
-    return 0;
+    return group_enum_units_of_type(j, jass_checkinteger(j, 4));
 }
 uint32_t GroupEnumUnitsInRect(jass_t *j) {
     ggroup_t *whichGroup = jass_checkhandle(j, 1, "group");

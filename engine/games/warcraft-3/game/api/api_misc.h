@@ -1359,63 +1359,37 @@ uint32_t GetRandomReal(jass_t *j) {
     float t = (float)rand() / (float)RAND_MAX;
     return jass_pushnumber(j, lowBound + t * (highBound - lowBound));
 }
-uint32_t CreateUnitPool(jass_t *j) {
-    return jass_pushnullhandle(j, "unitpool");
-}
-uint32_t DestroyUnitPool(jass_t *j) {
-    //handle_t whichPool = jass_checkhandle(j, 1, "unitpool");
-    return 0;
-}
-uint32_t UnitPoolAddUnitType(jass_t *j) {
-    //handle_t whichPool = jass_checkhandle(j, 1, "unitpool");
-    //int32_t unitId = jass_checkinteger(j, 2);
-    //float weight = jass_checknumber(j, 3);
-    return 0;
-}
-uint32_t UnitPoolRemoveUnitType(jass_t *j) {
-    //handle_t whichPool = jass_checkhandle(j, 1, "unitpool");
-    //int32_t unitId = jass_checkinteger(j, 2);
-    return 0;
-}
-uint32_t PlaceRandomUnit(jass_t *j) {
-    //handle_t whichPool = jass_checkhandle(j, 1, "unitpool");
-    //mapPlayer_t *forWhichPlayer = jass_checkhandle(j, 2, "player");
-    //float x = jass_checknumber(j, 3);
-    //float y = jass_checknumber(j, 4);
-    //float facing = jass_checknumber(j, 5);
-    return jass_pushnullhandle(j, "unit");
-}
-/* Item pools are JASS-owned handles. Keep entries inline so destroying a pool
+/* Object pools are JASS-owned handles. Keep entries inline so destroying a pool
  * or discarding the script VM cannot leak separately allocated entry buffers. */
-#define WC3_ITEM_POOL_MAX_TYPES 256
+#define WC3_OBJECT_POOL_MAX_TYPES 256 // entries in the saved inline pool payload
 
 typedef struct {
     uint32_t type_id;
     float weight;
-} jassItemPoolEntry_t;
+} jassObjectPoolEntry_t;
 
 typedef struct {
     bool destroyed;
     uint32_t count;
-    jassItemPoolEntry_t entries[WC3_ITEM_POOL_MAX_TYPES];
-} jassItemPool_t;
+    jassObjectPoolEntry_t entries[WC3_OBJECT_POOL_MAX_TYPES];
+} jassObjectPool_t;
 
-uint32_t CreateItemPool(jass_t *j) {
-    jassItemPool_t *pool = jass_newhandle(j, sizeof(*pool), "itempool");
+static uint32_t create_object_pool(jass_t *j, cstring_t handle_type) {
+    jassObjectPool_t *pool = jass_newhandle(j, sizeof(*pool), handle_type);
     if (!pool) return 1; /* jass_newhandle already pushed the handle */
     memset(pool, 0, sizeof(*pool));
     return 1;
 }
-uint32_t DestroyItemPool(jass_t *j) {
-    jassItemPool_t *pool = jass_checkhandle(j, 1, "itempool");
+static uint32_t destroy_object_pool(jass_t *j, cstring_t handle_type) {
+    jassObjectPool_t *pool = jass_checkhandle(j, 1, handle_type);
     if (pool) {
         pool->destroyed = true;
         pool->count = 0;
     }
     return 0;
 }
-uint32_t ItemPoolAddItemType(jass_t *j) {
-    jassItemPool_t *pool = jass_checkhandle(j, 1, "itempool");
+static uint32_t add_object_pool_type(jass_t *j, cstring_t handle_type) {
+    jassObjectPool_t *pool = jass_checkhandle(j, 1, handle_type);
     uint32_t type_id = (uint32_t)jass_checkinteger(j, 2);
     float weight = jass_checknumber(j, 3);
     uint32_t i;
@@ -1427,13 +1401,13 @@ uint32_t ItemPoolAddItemType(jass_t *j) {
             return 0;
         }
     }
-    if (pool->count < WC3_ITEM_POOL_MAX_TYPES) {
-        pool->entries[pool->count++] = (jassItemPoolEntry_t){ type_id, weight };
+    if (pool->count < WC3_OBJECT_POOL_MAX_TYPES) {
+        pool->entries[pool->count++] = (jassObjectPoolEntry_t){ type_id, weight };
     }
     return 0;
 }
-uint32_t ItemPoolRemoveItemType(jass_t *j) {
-    jassItemPool_t *pool = jass_checkhandle(j, 1, "itempool");
+static uint32_t remove_object_pool_type(jass_t *j, cstring_t handle_type) {
+    jassObjectPool_t *pool = jass_checkhandle(j, 1, handle_type);
     uint32_t type_id = (uint32_t)jass_checkinteger(j, 2);
     uint32_t i;
     if (!pool || pool->destroyed) return 0;
@@ -1447,28 +1421,63 @@ uint32_t ItemPoolRemoveItemType(jass_t *j) {
     }
     return 0;
 }
-uint32_t PlaceRandomItem(jass_t *j) {
-    jassItemPool_t *pool = jass_checkhandle(j, 1, "itempool");
-    float x = jass_checknumber(j, 2);
-    float y = jass_checknumber(j, 3);
+/* Exclude unspawnable IDs from the weighted draw. The caller owns removal of
+ * a selected entry, as used by maps with distinct starting professions. */
+static uint32_t pick_object_pool_type(jassObjectPool_t const *pool, bool (*eligible)(uint32_t)) {
     double total = 0, roll;
     uint32_t i, selected = 0;
-    edict_t *item;
-    if (!pool || pool->destroyed) return jass_pushnullhandle(j, "item");
+    if (!pool || pool->destroyed) return 0;
     for (i = 0; i < pool->count; ++i) {
-        /* Invalid types must not consume probability mass. */
-        ItemData_t const *data = G_ItemData(pool->entries[i].type_id);
-        if (data && data->file) total += pool->entries[i].weight;
+        if (eligible(pool->entries[i].type_id)) total += pool->entries[i].weight;
     }
-    if (total <= 0) return jass_pushnullhandle(j, "item");
+    if (total <= 0) return 0;
     roll = ((double)rand() / ((double)RAND_MAX + 1.0)) * total;
     for (i = 0; i < pool->count; ++i) {
-        ItemData_t const *data = G_ItemData(pool->entries[i].type_id);
-        if (!data || !data->file) continue;
+        if (!eligible(pool->entries[i].type_id)) continue;
         selected = pool->entries[i].type_id;
         roll -= pool->entries[i].weight;
         if (roll < 0) break;
     }
+    return selected;
+}
+
+uint32_t CreateUnitPool(jass_t *j) { return create_object_pool(j, "unitpool"); }
+uint32_t DestroyUnitPool(jass_t *j) { return destroy_object_pool(j, "unitpool"); }
+uint32_t UnitPoolAddUnitType(jass_t *j) { return add_object_pool_type(j, "unitpool"); }
+uint32_t UnitPoolRemoveUnitType(jass_t *j) { return remove_object_pool_type(j, "unitpool"); }
+
+static bool pool_unit_eligible(uint32_t type) {
+    return G_UnitUI(type)->modelFile || G_UnitData(type)->race;
+}
+
+uint32_t PlaceRandomUnit(jass_t *j) {
+    jassObjectPool_t *pool = jass_checkhandle(j, 1, "unitpool");
+    player_t *player = jass_checkhandle(j, 2, "player");
+    vec2_t location = MAKE(vec2_t, jass_checknumber(j, 3), jass_checknumber(j, 4));
+    float facing = jass_checknumber(j, 5);
+    if (!player) return jass_pushnullhandle(j, "unit");
+    uint32_t type = pick_object_pool_type(pool, pool_unit_eligible);
+    if (!type) return jass_pushnullhandle(j, "unit");
+    edict_t *unit = unit_create(PLAYER_NUM(player), type, &location, facing);
+    return jass_pushlighthandle(j, unit, "unit");
+}
+
+uint32_t CreateItemPool(jass_t *j) { return create_object_pool(j, "itempool"); }
+uint32_t DestroyItemPool(jass_t *j) { return destroy_object_pool(j, "itempool"); }
+uint32_t ItemPoolAddItemType(jass_t *j) { return add_object_pool_type(j, "itempool"); }
+uint32_t ItemPoolRemoveItemType(jass_t *j) { return remove_object_pool_type(j, "itempool"); }
+
+static bool pool_item_eligible(uint32_t type) {
+    ItemData_t const *data = G_ItemData(type);
+    return data && data->file;
+}
+
+uint32_t PlaceRandomItem(jass_t *j) {
+    jassObjectPool_t *pool = jass_checkhandle(j, 1, "itempool");
+    float x = jass_checknumber(j, 2);
+    float y = jass_checknumber(j, 3);
+    uint32_t selected = pick_object_pool_type(pool, pool_item_eligible);
+    edict_t *item;
     if (!selected) return jass_pushnullhandle(j, "item");
     item = SP_SpawnAtLocation(selected, 0, &MAKE(vec2_t, x, y));
     return item ? jass_pushlighthandle(j, item, "item") : jass_pushnullhandle(j, "item");

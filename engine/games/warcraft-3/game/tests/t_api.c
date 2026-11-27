@@ -12457,6 +12457,74 @@ TEST(wc3_api, gameplay_natives_dispatch_and_select_race) {
     level.campaign_menu_race = 0;
 }
 
+TEST(wc3_api, group_type_query_counts_only_accepted_units) {
+    setup_test_world();
+    T_ASSERT(run_test_jass(
+        "function isFriendly takes nothing returns boolean\n"
+        " return GetOwningPlayer(GetFilterUnit()) == Player(0)\n"
+        "endfunction\n"
+        "function main takes nothing returns nothing\n"
+        " local group matches = CreateGroup()\n"
+        " local unit enemy = CreateUnit(Player(1), 'hfoo', 0.0, 32.0, 0.0)\n"
+        " local unit builder = CreateUnit(Player(0), 'hpea', 64.0, 32.0, 0.0)\n"
+        " local unit first = CreateUnit(Player(0), 'hfoo', 128.0, 32.0, 0.0)\n"
+        " local unit second = CreateUnit(Player(0), 'hfoo', 192.0, 32.0, 0.0)\n"
+        " call GroupEnumUnitsOfTypeCounted(matches, UnitId2String('hfoo'), Filter(function isFriendly), 1)\n"
+        " call BJassAssert(FirstOfGroup(matches) == first, \"filtered unit type was not enumerated\")\n"
+        " call GroupRemoveUnit(matches, first)\n"
+        " call BJassAssert(FirstOfGroup(matches) == null, \"count limit admitted another unit\")\n"
+        " call GroupEnumUnitsOfType(matches, UnitId2String('hfoo'), null)\n"
+        " call BJassAssert(FirstOfGroup(matches) == enemy, \"unfiltered unit type missing enemy\")\n"
+        " call GroupRemoveUnit(matches, enemy)\n"
+        " call GroupRemoveUnit(matches, first)\n"
+        " call BJassAssert(FirstOfGroup(matches) == second, \"unit type was incomplete\")\n"
+        " call GroupClear(matches)\n"
+        " call GroupEnumUnitsOfType(matches, GetUnitName(builder), null)\n"
+        " call BJassAssert(FirstOfGroup(matches) == builder, \"display name did not resolve the type\")\n"
+        " call DestroyGroup(matches)\n"
+        "endfunction\n"));
+}
+
+/* Maps remove a chosen profession from the pool before assigning the next seat. */
+TEST(wc3_api, unit_pool_assigns_remaining_types_after_removal) {
+    cstring_t filename = Test_TempPath("wc3-unit-pool.sav");
+    setup_test_world();
+    T_ASSERT(run_test_jass(
+        "globals\n"
+        " unitpool professions = null\n"
+        " unitpool alias = null\n"
+        "endglobals\n"
+        "function main takes nothing returns nothing\n"
+        " local unit first = null\n"
+        " set professions = CreateUnitPool()\n"
+        " call BJassAssert(professions != null, \"unit pool not allocated\")\n"
+        " set alias = professions\n"
+        " call BJassAssert(PlaceRandomUnit(professions, Player(0), 32.0, 64.0, 0.0) == null, \"empty pool spawned\")\n"
+        " call UnitPoolAddUnitType(professions, 'hfoo', 1.0)\n"
+        " call UnitPoolAddUnitType(professions, 'ZZZZ', 1000.0)\n"
+        " call UnitPoolAddUnitType(professions, 'hpea', 0.0)\n"
+        " set first = PlaceRandomUnit(professions, Player(0), 32.0, 64.0, 0.0)\n"
+        " call BJassAssert(GetUnitTypeId(first) == 'hfoo', \"pool did not assign the valid type\")\n"
+        " call BJassAssert(GetOwningPlayer(first) == Player(0), \"pool lost the owner\")\n"
+        " call UnitPoolRemoveUnitType(alias, GetUnitTypeId(first))\n"
+        " call BJassAssert(PlaceRandomUnit(professions, Player(1), 128.0, 64.0, 0.0) == null, \"removed type stayed in pool\")\n"
+        " call UnitPoolAddUnitType(professions, 'hpea', 1.0)\n"
+        "endfunction\n"
+        "function verify takes nothing returns nothing\n"
+        " local unit second = PlaceRandomUnit(alias, Player(1), 128.0, 64.0, 180.0)\n"
+        " call BJassAssert(GetUnitTypeId(second) == 'hpea', \"loaded pool lost the remaining type\")\n"
+        " call BJassAssert(GetOwningPlayer(second) == Player(1), \"pool did not assign the second seat\")\n"
+        " call DestroyUnitPool(professions)\n"
+        " call BJassAssert(PlaceRandomUnit(alias, Player(1), 0.0, 0.0, 0.0) == null, \"destroyed pool spawned\")\n"
+        "endfunction\n"));
+    T_ASSERT(WriteGame(filename));
+    T_ASSERT(ReadGame(filename));
+    jass_callbyname(level.vm, "verify", true);
+    jass_runevents(level.vm);
+    T_STREQ(jass_rterror_message(level.vm), "");
+    remove(filename);
+}
+
 /* Saved aliases must share the same mutable pool, including retired-pool state. */
 TEST(wc3_api, item_pool_snapshot_preserves_weights_aliases_and_destruction) {
     cstring_t filename = Test_TempPath("wc3-item-pool.sav");

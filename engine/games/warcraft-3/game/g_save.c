@@ -228,7 +228,8 @@ static uint32_t const save_commit = MAKEFOURCC('W', '3', 'O', 'K');
 /* Version 32 requires Divine Shield immunity to be owned by its timed status. */
 /* Version 33 preserves the retired state of destroyed triggers. */
 /* Version 34 retains trigger evaluation and execution counts. */
-static uint32_t const save_version = 34;
+/* Version 35 persists weighted unit pool handles. */
+static uint32_t const save_version = 35;
 #else
 /* Version 137 appends Stampede channel, beast and blast callbacks to the save roster. */
 /* Version 138 registers the Lava Spawn split controller callback. */
@@ -264,7 +265,8 @@ static uint32_t const save_version = 34;
 /* Version 171 requires Divine Shield immunity to be owned by its timed status. */
 /* Version 172 preserves the retired state of destroyed triggers. */
 /* Version 173 retains trigger evaluation and execution counts. */
-static uint32_t const save_version = 173;
+/* Version 174 persists weighted unit pool handles. */
+static uint32_t const save_version = 174;
 #endif
 /* Winlife native 147/browser 8 persist private AI VMs, HD-water state and the initial lobby roster. */
 #define SAVE_STREAM_BUFFER (1u << 20) // bytes; save files are several MB of field writes, so a large stdio buffer avoids per-4 KB syscalls

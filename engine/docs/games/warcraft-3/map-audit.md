@@ -158,6 +158,29 @@ creation, two-player start, player-issued movement, and cleanup on the live
 entrances. Pudge Wars Advanced waits for the host's mode selection. The test
 used the map's `-km1` chat mode before issuing movement.
 
+### Community room compatibility on R52
+
+R52 implements `unitpool` so that Humans II 2.2a can assign unique professions
+through `PlaceRandomUnit` and `UnitPoolRemoveUnitType`. Two players completed
+the map's difficulty and mode dialogs and received different professions. The
+2.6.70X candidate stalls in its bonus-system initializer. Its archive metadata
+identifies 2.6.70X, although the download page lists 2.6.75.
+
+The room catalog restores Chenghai 3C 5.45 and the Chinese Legion TD 3.41.
+Chenghai 6.93 supplies packed unit IDs in the byte order that the current object
+lookup fails to resolve, leaving the selection units without models. Both
+players in 5.45 selected the random-hero mode, received heroes, and verified
+movement before leaving. The computer's return scroll still depends on
+`UnitUseItem` support.
+
+Legion 3.43d reached settlement, with a runtime error from
+`BlzGetUnitBaseDamage` in an authored combat routine. The 3.44 and 3.47 maps
+require further Reforged script APIs to start. Two players in 3.41 chose a
+builder, built defenders on both sides, reached the opening wave and saw the
+same natural settlement. The restored type queries match unit rawcodes and
+display names and count units that pass the filter. Browser room checks loaded
+the three selected maps through the lobby and match readiness barrier.
+
 ## Campaign difficulty source inventory (Patch 5)
 
 Before interpreting runtime tests, enumerate difficulty-related branches and AI
