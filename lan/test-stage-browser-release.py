@@ -153,6 +153,7 @@ class BrowserReleaseInputs(unittest.TestCase):
 
             source = json.loads(preload_index.read_text())
             source['extra'] = {'maps': {'maps/test.w3m': ['units/unused/attack.ogg']}}
+            source['gameplay'] = {'maps': {'maps/test.w3m': ['units/orc/samuro/samuro.mdx']}}
             preload_index.write_text(json.dumps(source))
             command[2] = 'with-supplement'
             result = subprocess.run(command, env=env, capture_output=True, text=True)
@@ -161,9 +162,14 @@ class BrowserReleaseInputs(unittest.TestCase):
             updated_manifest = json.loads((update / 'release-manifest.json').read_text())
             for name in [plan['packs']['lobby'], *plan['packs']['maps'].values(), shared['pack'], selected['pack']]:
                 self.assertEqual(updated_manifest[name], manifest[name])
-            supplement = json.loads((update / 'preload.index.json').read_text())['extra']['maps']['maps/test.w3m']
+            updated_plan = json.loads((update / 'preload.index.json').read_text())
+            supplement = updated_plan['extra']['maps']['maps/test.w3m']
             self.assertEqual(supplement['files'], source['extra']['maps']['maps/test.w3m'])
             self.assertEqual((update / supplement['pack']).read_bytes()[8:], resources['units/unused/attack.ogg'])
+            gameplay_supplement = updated_plan['gameplay']['maps']['maps/test.w3m']
+            self.assertEqual(gameplay_supplement['files'], source['gameplay']['maps']['maps/test.w3m'])
+            self.assertIn(gameplay_supplement['pack'], updated_manifest)
+            self.assertEqual((update / gameplay_supplement['pack']).read_bytes()[8:], resources['units/orc/samuro/samuro.mdx'])
 
 
 if __name__ == '__main__':

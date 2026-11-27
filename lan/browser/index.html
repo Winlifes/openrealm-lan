@@ -499,7 +499,8 @@
     const audio = [plan?.audio?.shared, plan?.audio?.maps?.[roomMap]].filter(Boolean);
     const extra = [plan?.extra?.shared, plan?.extra?.maps?.[roomMap]].filter(Boolean);
     const melee = plan?.gameplay?.melee;
-    const gameplay = [plan?.gameplay?.shared, melee?.maps.includes(roomMap) && melee].filter(Boolean);
+    const gameplayArt = [plan?.gameplay?.shared, plan?.gameplay?.maps?.[roomMap]].filter(Boolean);
+    const gameplay = [...gameplayArt, melee?.maps.includes(roomMap) && melee].filter(Boolean);
     const usePacks = plan?.packs && typeof DecompressionStream === 'function';
     const bundles = usePacks ? [
       [plan.packs.lobby, plan.lobby, '公共开局资源包'],
@@ -550,8 +551,9 @@
       await preloadLooseAssets([...new Set([...plan.lobby, ...mapFiles, ...[...audio, ...extra, ...gameplay].flatMap(group => group.files)])], encodings);
     }
     if (isRoom) {
-      setStatus('正在准备对局音频…');
-      await wc3RoomAssets.expandAudio(warmAssets);
+      setStatus('正在准备对局音频和特效…');
+      const readyArt = new Set(gameplayArt.flatMap(group => group.files));
+      await wc3RoomAssets.expandPreloads(warmAssets, readyArt);
       mark('wc3-room-preload-ready');
     }
     return {paths, bootstrap, sidecars:encodings, mapPaths, mapBytes, engineModule, engineData:engineData.buffer, engineScript};

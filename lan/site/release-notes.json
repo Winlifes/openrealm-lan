@@ -1,5 +1,12 @@
 [
   {
+    "release": "r94-game-station-real-46-battle-assets",
+    "changes": [
+      "补齐《达尔文进化岛》《澄海 3C》和《僵尸岛 III 新世纪 1.5.5》对局中测到的特效、地物、单位和语音素材。",
+      "进房前解压公共特效和当前地图的补充素材，减少首次出现时的画面停顿。"
+    ]
+  },
+  {
     "release": "r94-game-station-real-45-frame-stalls",
     "changes": [
       "进房前准备小地图提示、建造贴图、野怪特效和建筑受损效果，减少首次触发这些效果时的画面卡顿。",

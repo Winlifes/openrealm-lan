@@ -97,11 +97,12 @@ const wc3RoomAssets = (() => {
     return /\.(wav|ogg|mp3|flac)$/i.test(path);
   }
 
-  async function expandAudio(assets) {
+  async function expandPreloads(assets, readyArt) {
     for (const [path, asset] of assets) {
-      if (isAudio(path) && !(asset instanceof Uint8Array)) assets.set(path, await inflate(asset));
+      if ((isAudio(path) || readyArt.has(path)) && !(asset instanceof Uint8Array))
+        assets.set(path, await inflate(asset));
     }
   }
 
-  return {readBinary, openStartupCache, unpack, inflate, expandAudio};
+  return {readBinary, openStartupCache, unpack, inflate, expandPreloads};
 })();

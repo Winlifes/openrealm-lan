@@ -67,13 +67,15 @@ The room client keeps verified startup files in the browser's Cache Storage. A l
 
 Packed releases give shared effects and the selected map's model-associated audio their own bundles. Sound files already listed in the map or lobby preload stay in those bundles. Record any additional loose soundtrack or scripted effects in the same preload index. The browser expands the selected audio files before joining, stores the encoded audio for case-insensitive reads during play, and decodes PCM on first use. Imported audio in the map archive arrives with the archive. An unlisted loose sound uses a background fetch on first use.
 
-Include measured command-card and other interface assets in the selected map bundle. The browser keeps model, texture, and other non-audio entries compressed until the engine opens them. Once an entry is mounted, it drops the temporary copy. Unopened entries stay available for the match.
+Include measured command-card and other interface assets in the selected map bundle. For the bulk model and texture bundles, the browser keeps entries compressed until the engine opens them. Once an entry is mounted, it drops the temporary copy. Unopened entries stay available for the match.
 
 Packed releases preload shared minimap effects, terrain decals, creep sleep, and unit death effects. When `development/maps-catalog.json` is available, the release also preloads standard unit models, portraits, textures, and voices for maps marked as melee. The stager reads the four races' unit tables from the served data directory and follows the model texture references. The browser downloads the melee bundle only for those maps and can keep its existing startup cache.
 
 Measure in-match resource requests and frame intervals before extending a map preload. A chain of requests for a new unit's model, portrait, textures and effects can suspend engine frames while the page continues to respond. Add the measured files to the selected map's preload, then repeat the same cold-cache play sequence. Keep unrelated maps out of the bundle.
 
 For an existing deployment, add newly found paths to `extra.lobby` or `extra.maps` in the same preload JSON. The browser downloads the supplemental shared bundle and the selected map's supplement before joining and can reuse its cached base bundles. Keep files already present in the base art and audio bundles out of the supplements.
+
+Use `gameplay.maps` in the preload source for assets found during later phases of a specific map. The stager follows their model dependencies and builds a separate bundle for each map, so adding combat assets preserves the existing lobby and startup bundle hashes. The browser expands these effects and the shared gameplay assets before admission to keep their first use from suspending a rendered frame.
 
 Caddy can serve optional `.gz` sidecars for measured preload files. Keep their uncompressed originals in the served mirror.
 

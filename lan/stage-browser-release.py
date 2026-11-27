@@ -47,11 +47,12 @@ playable_maps = set((preview / 'playable-maps.index.txt').read_text().splitlines
 extra = preload.get('extra', {})
 extra_lobby = extra.get('lobby', [])
 extra_maps = extra.get('maps', {})
-if not set(preload['maps']).union(extra_maps) <= playable_maps:
+gameplay_maps = preload.get('gameplay', {}).get('maps', {})
+if not set(preload['maps']).union(extra_maps, gameplay_maps) <= playable_maps:
     raise ValueError('Preload index names an unlisted playable map')
-if extra and not args.data_dir:
+if (extra or gameplay_maps) and not args.data_dir:
     raise ValueError('Supplemental preloads require a data directory')
-for group in [preload['lobby'], *preload['maps'].values(), extra_lobby, *extra_maps.values()]:
+for group in [preload['lobby'], *preload['maps'].values(), extra_lobby, *extra_maps.values(), *gameplay_maps.values()]:
     if not set(group) <= served_paths:
         raise ValueError('Preload index names an asset absent from the served data mirror')
 retained = preload.get('retainAfterLoad', {})
@@ -238,6 +239,21 @@ def pack_gameplay_assets(directory, plan):
             if files:
                 pack = write_pack(directory, 'room-gameplay-melee.bin', files)
                 result['melee'] = {'pack': pack, 'files': files, 'maps': melee}
+    map_groups = {}
+    for name, paths in sorted(gameplay_maps.items()):
+        selected = set(paths)
+        add_model_dependencies(selected)
+        selected.difference_update(already_packed([name]))
+        melee = result.get('melee')
+        if melee and name in melee['maps']:
+            selected.difference_update(melee['files'])
+        if selected:
+            files = sorted(selected)
+            key = hashlib.sha256(name.encode()).hexdigest()[:16]
+            pack = write_pack(directory, f'room-gameplay-{key}.bin', files)
+            map_groups[name] = {'pack': pack, 'files': files}
+    if map_groups:
+        result['maps'] = map_groups
     return result
 
 
