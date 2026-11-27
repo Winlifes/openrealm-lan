@@ -97,9 +97,23 @@ const wc3RoomAssets = (() => {
     return /\.(wav|ogg|mp3|flac)$/i.test(path);
   }
 
-  async function expandPreloads(assets, readyArt) {
+  const sharedSelectionIcons = new Set([
+    'replaceabletextures/commandbuttons/btnselectheroon.dds',
+    'replaceabletextures/commandbuttons/btnunholyaura.dds'
+  ]);
+
+  function isMatchUI(path, mapAssets) {
+    return sharedSelectionIcons.has(path) ||
+      path.startsWith('ui/widgets/tooltips/') ||
+      path.startsWith('ui/widgets/escmenu/') ||
+      (path.startsWith('ui/widgets/console/') && path.includes('/infocard-')) ||
+      (mapAssets.has(path) && (path.startsWith('replaceabletextures/commandbuttons/') ||
+        path.startsWith('replaceabletextures/commandbuttonsdisabled/')));
+  }
+
+  async function expandPreloads(assets, readyArt, mapAssets) {
     for (const [path, asset] of assets) {
-      if ((isAudio(path) || readyArt.has(path)) && !(asset instanceof Uint8Array))
+      if (!(asset instanceof Uint8Array) && (isAudio(path) || readyArt.has(path) || isMatchUI(path, mapAssets)))
         assets.set(path, await inflate(asset));
     }
   }

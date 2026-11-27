@@ -77,6 +77,8 @@ For an existing deployment, add newly found paths to `extra.lobby` or `extra.map
 
 Use `gameplay.maps` in the preload source for assets found during later phases of a specific map. The stager follows their model dependencies and builds a separate bundle for each map, so adding combat assets preserves the existing lobby and startup bundle hashes. The browser expands these effects and the shared gameplay assets before admission to keep their first use from suspending a rendered frame.
 
+Room admission also expands common selection and tooltip textures and the command icons listed for the selected map. The browser reuses the downloaded bundles for this step.
+
 Caddy can serve optional `.gz` sidecars for measured preload files. Keep their uncompressed originals in the served mirror.
 
 For a browser-only update that has been tested against the running native version, stage the release with `--server-build CURRENT_NATIVE_BUILD`. The browser then uses that build ID during the WebSocket handshake while the launcher points to the new browser release directory.
