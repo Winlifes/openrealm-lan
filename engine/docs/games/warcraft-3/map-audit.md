@@ -138,6 +138,26 @@ make audit-wc3-maps WC3_AUDIT_ARGS="--jobs 1 --frames 10 --timeout 60 --loose-ma
 Without `--loose-map`, the enumerator only walks retail campaign members inside
 `War3.mpq` / `War3x.mpq`. See [DotA Custom-Map Playability](dota-map-playability.md).
 
+### Community room compatibility on R50 and R51
+
+The R50 room catalog passed 14 of 14 bounded initialization checks with
+`lan/audit-installed-maps.py`. A room test is also needed for map actions that
+only run after players join, choose a mode, or reach a later wave.
+
+| Map | Runtime observation |
+| --- | --- |
+| 人族无敌 II 2.2a | In two rooms with the same difficulty and two human seats, random professions with repeats assigned both professions. Random professions without repeats assigned neither. `CreateUnitPool` and `PlaceRandomUnit` returned null to the map's assignment trigger. |
+| 军团 TD 3.41 | Both arena groups accepted the map's attack-move order in a controlled test using its `H0D6` arena units. The map's type query returned an empty group for a live `h03D`. `GroupEnumUnitsOfType` also serves the periodic builder resource label and wave speed update in this map. |
+| 澄海 3C 5.45 | A low-health computer hero carrying the map's Light return scroll `srrc` triggered `UnitUseItem`. The native rejected all three uses. |
+| 军团 TD Mega 3.47lHf3 | The downloaded map reaches a JASS parse error around escaped quotes. A diagnostic parser adjustment reached missing `BlzCreateFrameByType`, `BlzTriggerRegisterPlayerKeyEvent`, and `BlzGetMouseFocusUnit` calls. |
+| 澄海 3C 6.93 | Two clients reached the map and the host chose all heroes, single-hero quick play, and random mode. The view stayed black and the clients received no playable selection units. The server logged `MultiboardGetItem` range or registry errors. |
+
+R51 uses the R50 engine with updated community map files and preloads.
+Darwin's Island TFT 4.35 and Pudge Wars Advanced 2.50 both passed browser room
+creation, two-player start, player-issued movement, and cleanup on the live
+entrances. Pudge Wars Advanced waits for the host's mode selection. The test
+used the map's `-km1` chat mode before issuing movement.
+
 ## Campaign difficulty source inventory (Patch 5)
 
 Before interpreting runtime tests, enumerate difficulty-related branches and AI
