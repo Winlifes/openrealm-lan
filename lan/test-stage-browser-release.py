@@ -82,12 +82,27 @@ class BrowserReleaseInputs(unittest.TestCase):
             model = b'compressed model ' * 64
             resources = {'maps/test.w3m': archive, 'ui/frame.dds': b'shared', 'units/model.dds': model,
                          'units/test/unit.mdx': b'unit model', 'units/test/attack.ogg': b'attack clip',
-                         'units/unused/attack.ogg': b'unrelated clip', 'sound/interface/click.wav': b'UI clip'}
+                         'units/unused/attack.ogg': b'unrelated clip', 'sound/interface/click.wav': b'UI clip',
+                         'ui/minimap/minimap-ping.mdx': b'ping model', 'ui/minimap/ping2.dds': b'ping texture',
+                         'replaceabletextures/splats/splat01mature.dds': b'construction splat',
+                         'environment/smallbuildingfire/smallbuildingfire2.mdx': b'MDLX',
+                         'units/orcunitfunc.txt': b'[ogru]\nMissileart=Abilities\\Weapons\\Test.mdl\n',
+                         'units/unitskin.txt': b'[ogru]\nfile=Units\\Orc\\Grunt\\Grunt\n'
+                                              b'[osam]\nfile=Units\\Orc\\Samuro\\Samuro\n',
+                         'units/orc/grunt/grunt.mdx': b'MDLXTEXS' + struct.pack('<II', 268, 0) +
+                                                     b'Textures\\Grunt.blp'.ljust(264, b'\0'),
+                         'units/orc/grunt/grunt_portrait.mdx': b'MDLX',
+                         'units/orc/grunt/gruntready1.ogg': b'ready voice',
+                         'units/orc/samuro/samuro.mdx': b'MDLX', 'textures/grunt.dds': b'grunt texture',
+                         'objects/spawnmodels/blood.mdx': b'MDLX', 'abilities/weapons/test.mdx': b'MDLX'}
             for path, body in resources.items():
                 file = data / path
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_bytes(body)
             served_index.write_text('\n'.join([*resources, 'units/model.blp']) + '\n')
+            (root / 'development/maps-catalog.json').write_text(json.dumps([
+                {'path': 'maps/test.w3m', 'flags': 4},
+            ]))
             preload_index.write_text(json.dumps({'lobby':['ui/frame.dds'],
                 'maps':{'maps/test.w3m':['ui/frame.dds', 'units/model.blp', 'units/test/unit.mdx']},
                 'retainAfterLoad':{'maps/test.w3m':['ui/frame.dds']}}))
@@ -123,6 +138,18 @@ class BrowserReleaseInputs(unittest.TestCase):
                 body = (target / group['pack']).read_bytes()
                 self.assertEqual(body[8:], resources[group['files'][0]])
                 self.assertEqual(manifest[group['pack']]['sha256'], hashlib.sha256(body).hexdigest())
+
+            gameplay = plan['gameplay']
+            self.assertEqual(gameplay['shared']['files'], ['environment/smallbuildingfire/smallbuildingfire2.mdx',
+                             'objects/spawnmodels/blood.mdx',
+                             'replaceabletextures/splats/splat01mature.dds', 'ui/minimap/minimap-ping.mdx',
+                             'ui/minimap/ping2.dds'])
+            self.assertEqual(gameplay['melee']['maps'], ['maps/test.w3m'])
+            self.assertEqual(gameplay['melee']['files'], ['abilities/weapons/test.mdx', 'textures/grunt.dds',
+                             'units/orc/grunt/grunt.mdx', 'units/orc/grunt/grunt_portrait.mdx',
+                             'units/orc/grunt/gruntready1.ogg'])
+            for group in gameplay.values():
+                self.assertIn(group['pack'], manifest)
 
             source = json.loads(preload_index.read_text())
             source['extra'] = {'maps': {'maps/test.w3m': ['units/unused/attack.ogg']}}

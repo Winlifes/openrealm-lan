@@ -129,6 +129,118 @@ def pack_room_audio(directory, lobby, maps):
     return {'shared': {'pack': shared_pack, 'files': shared} if shared else None, 'maps': map_packs}
 
 
+def art_path(value, relative_to=None):
+    path = PurePosixPath(value.strip(' "\x00').replace('\\', '/').lower())
+    if path.is_absolute() or '..' in path.parts or not path.name:
+        return None
+    extensions = {'.mdl': ('.mdx',), '.blp': ('.dds', '.blp'), '.tga': ('.dds', '.tga'),
+                  '': ('.mdx', '.dds', '.blp')}
+    for base in (path, relative_to / path) if relative_to else (path,):
+        for extension in extensions.get(path.suffix, (path.suffix,)):
+            candidate = base.with_suffix(extension).as_posix()
+            if candidate in served_paths and asset_source(candidate).is_file():
+                return candidate
+    return None
+
+
+def add_model_dependencies(paths):
+    pending = [name for name in paths if name.endswith('.mdx')]
+    while pending:
+        model = pending.pop()
+        directory = PurePosixPath(model).parent
+        portrait = model.removesuffix('.mdx') + '_portrait.mdx'
+        if not model.endswith('_portrait.mdx') and portrait in served_paths and portrait not in paths:
+            paths.add(portrait)
+            pending.append(portrait)
+        body = asset_source(model).read_bytes()
+        if body[:4] != b'MDLX':
+            continue
+        offset = 4
+        while offset + 8 <= len(body):
+            tag, size = struct.unpack_from('<4sI', body, offset)
+            offset += 8
+            end = offset + size
+            if end > len(body):
+                raise ValueError('Invalid MDX chunk size in ' + model)
+            if tag == b'TEXS':
+                for entry in range(offset, end - 267, 268):
+                    raw = body[entry + 4:entry + 264].split(b'\0', 1)[0]
+                    texture = art_path(raw.decode('utf-8', errors='replace'), directory)
+                    if texture:
+                        paths.add(texture)
+            offset = end
+
+
+def melee_unit_assets():
+    unit_section = re.compile(r'^\[([A-Za-z0-9]{4})\]$', re.MULTILINE)
+    data = [args.data_dir / 'units' / f'{race}unitfunc.txt'
+            for race in ('human', 'orc', 'nightelf', 'undead')]
+    unit_funcs = [path.read_text(errors='replace') for path in data if path.is_file()]
+    ids = {code for source in unit_funcs for code in unit_section.findall(source)}
+    unit_skin = args.data_dir / 'units/unitskin.txt'
+    if unit_skin.is_file():
+        unit_funcs.append(unit_skin.read_text(errors='replace'))
+    paths = set()
+    for source in unit_funcs:
+        code = None
+        for line in source.splitlines():
+            line = line.strip()
+            if line.startswith('['):
+                match = unit_section.fullmatch(line)
+                code = match[1] if match else None
+            elif code in ids:
+                key, sep, value = line.partition('=')
+                field = key.strip().lower()
+                if sep and (field == 'file' or field.endswith('art')):
+                    paths.update(path for item in value.split(',') if (path := art_path(item)))
+    add_model_dependencies(paths)
+    model_dirs = {PurePosixPath(name).parent for name in paths
+                  if name.startswith('units/') and name.endswith('.mdx')}
+    paths.update(name for name in served_paths if PurePosixPath(name).suffix in {'.ogg', '.wav', '.flac', '.mp3'}
+                 and PurePosixPath(name).parent in model_dirs)
+    return paths
+
+
+def pack_gameplay_assets(directory, plan):
+    # These effects can first appear in any match, well after the opening scene is registered.
+    common = {name for name in served_paths if name.startswith((
+        'ui/minimap/', 'replaceabletextures/splats/', 'abilities/spells/other/creepsleep/',
+        'objects/spawnmodels/', 'environment/smallbuildingfire/', 'environment/largebuildingfire/',
+        'environment/nightelfbuildingfire/', 'environment/undeadbuildingfire/'))
+        and PurePosixPath(name).suffix in {'.mdx', '.blp', '.dds', '.tga', '.ogg', '.wav'}}
+    add_model_dependencies(common)
+    shared = set(plan['lobby'])
+    for section in ('audio', 'extra'):
+        shared.update(((plan.get(section) or {}).get('shared') or {}).get('files', ()))
+
+    def already_packed(map_names):
+        packaged = []
+        for name in map_names:
+            paths = set(plan['maps'][name])
+            for section in ('audio', 'extra'):
+                paths.update((plan.get(section, {}).get('maps', {}).get(name) or {}).get('files', ()))
+            packaged.append(paths)
+        return shared.union(set.intersection(*packaged))
+
+    result = {}
+    common_files = sorted(common - already_packed(plan['maps'])) if plan['maps'] else []
+    if common_files:
+        pack = write_pack(directory, 'room-gameplay-shared.bin', common_files)
+        result['shared'] = {'pack': pack, 'files': common_files}
+        shared.update(common_files)
+
+    catalog_path = dev / 'maps-catalog.json'
+    if catalog_path.is_file():
+        melee = sorted({row['path'] for row in json.loads(catalog_path.read_text())
+                        if row['flags'] & 4 and row['path'] in plan['maps']})
+        if melee:
+            files = sorted(melee_unit_assets() - already_packed(melee))
+            if files:
+                pack = write_pack(directory, 'room-gameplay-melee.bin', files)
+                result['melee'] = {'pack': pack, 'files': files, 'maps': melee}
+    return result
+
+
 def pack_startup_assets(directory):
     lobby = list(dict.fromkeys(preload['lobby']))
     shared_paths = set(lobby)
@@ -162,6 +274,9 @@ def pack_startup_assets(directory):
             'shared': {'pack': write_pack(directory, 'room-extra-shared.bin', shared), 'files': shared} if shared else None,
             'maps': extra_plans,
         }
+    gameplay = pack_gameplay_assets(directory, plan)
+    if gameplay:
+        plan['gameplay'] = gameplay
     return plan
 
 
