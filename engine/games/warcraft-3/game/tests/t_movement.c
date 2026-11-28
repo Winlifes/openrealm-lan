@@ -3803,6 +3803,40 @@ TEST(wc3_movement, flyer_uses_water_surface_before_fly_height) {
     T_FEQ(unit->s.origin.z, 364.0f, 0.01f);
 }
 
+TEST(wc3_movement, flying_move_follows_the_terrain_in_the_same_frame) {
+    static UnitData_t const fly_data = { .moveTypeName = "fly", .turnRate = (float)M_PI };
+    vec2_t const low = { TILE_SIZE, TILE_SIZE };
+    vec2_t const high = { 2 * TILE_SIZE, TILE_SIZE };
+    edict_t *unit = make_moving_unit(low.x, low.y);
+    war3mapVertex_t *vertices = (war3mapVertex_t *)world.map->vertices;
+
+    /* Two flat rows form a one-tile slope with an authored cliff level change. */
+    for (uint32_t row = 1; row <= 2; row++) {
+        vertices[row * world.map->width + 1].level = 2;
+        vertices[row * world.map->width + 2].level = 3;
+    }
+    set_uniform_test_water_height(-64.0f);
+    unit->data.UnitData = &fly_data;
+    unit->aiflags |= AI_FLYING;
+    unit->think = monster_think;
+    unit->unitinfo.MoveSpeed = 320.0f;
+    unit->unitinfo.FlyHeight = 180.0f;
+    M_CheckGround(unit);
+
+    vec2_t const destinations[] = { high, low };
+    FOR_LOOP(leg, sizeof(destinations) / sizeof(*destinations)) {
+        T_ASSERT(unit_issueorder(unit, "move", &destinations[leg]));
+        for (int frame = 0; frame < 10; frame++) {
+            level.time += FRAMETIME;
+            G_RunEntities();
+            float const terrain = CM_GetHeightAtPoint(unit->s.origin.x, unit->s.origin.y);
+            T_FEQ(unit->s.origin.z, terrain + 180.0f, 0.01f);
+            T_FEQ(unit->s.ground_offset, 180.0f, 0.01f);
+        }
+        T_FEQ(Vector2_distance(&unit->s.origin2, &destinations[leg]), 0.0f, 0.01f);
+    }
+}
+
 TEST(wc3_movement, float_unit_uses_water_surface_and_ignores_bridge) {
     static UnitData_t const float_data = { .moveTypeName = "float" };
     static DestructableData_t const bridge_data = { .walkable = true };

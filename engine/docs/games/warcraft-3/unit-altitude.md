@@ -34,6 +34,16 @@ Units/UnitData.slk moveHeight / umvh
 `M_CheckGround`. Current Warsmash also leaves `rate` unimplemented, so OpenRealm intentionally applies `height`
 immediately until rate interpolation is implemented as a separate feature.
 
+The entity scheduler refreshes support before thinking. A committed move or
+arrival recomputes support at its accepted coordinates before linking the
+unit. This keeps the transmitted altitude aligned with the unit's position
+throughout a climb or descent. On R53, a flight across a slope in Darwin's
+Island TFT 4.35 or Twisted Meadows carried the preceding tick's surface Z
+in each moving snapshot. The measured clearance deficit reached 39 world
+units in Darwin and 54 in Twisted Meadows. R54 kept climb and descent
+samples within 0.01 world units of support Z plus the authored flight height
+on both routes.
+
 ## Supporting Surface
 
 `M_CheckGround` owns WC3 unit support-surface selection:
@@ -111,6 +121,7 @@ Focused tests are in `games/warcraft-3/game/tests/t_movement.c`, `t_pathfinding.
 
 - `wc3_movement.fly_height_is_added_to_support_surface`
 - `wc3_movement.flyer_uses_water_surface_before_fly_height`
+- `wc3_movement.flying_move_follows_the_terrain_in_the_same_frame`
 - `wc3_pathfinding.movement_class_pathing_distinguishes_walk_and_fly_bits`
 - `wc3_pathfinding.static_path_texture_green_channel_marks_unflyable`
 - `wc3_pathfinding.flyer_move_validation_uses_unflyable_static_pathing`

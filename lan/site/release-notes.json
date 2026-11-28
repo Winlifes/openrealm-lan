@@ -1,5 +1,11 @@
 [
   {
+    "release": "r94-game-station-real-54-flight-height",
+    "changes": [
+      "修复飞行单位跨越高低地时高度滞后一拍的问题。飞行单位会随地形升降，保持地图设定的离地高度。"
+    ]
+  },
+  {
     "release": "r94-game-station-real-53-darwin-input",
     "changes": [
       "修复《达尔文进化岛》TFT 4.35 达到 11 级后全图视野无法保持的问题。",

@@ -622,6 +622,9 @@ static void unit_commit_step(edict_t *self, vec2_t const *cand) {
     self->s.origin2 = *cand;
     self->s.origin.x = cand->x;
     self->s.origin.y = cand->y;
+    /* The frame's initial support sample precedes thinking. Commit the new
+     * support height with XY so snapshots contain one coherent position. */
+    M_CheckGround(self);
     gi.LinkEntity(self);
     /* Reaching legal ground ends a footprint egress; the next think resumes
      * ordinary direct/flow routing. */
