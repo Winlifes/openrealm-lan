@@ -2473,12 +2473,15 @@ TOKENFUNC(TOKENS) {
 static void jass_remove_comments(string_t buf) {
     bool in_line  = false;
     bool in_block = false;
-    uint32_t quotes  = 0;
+    bool in_string = false;
     char *src = buf, *dst = buf;
     while (*src) {
         if (!in_line && !in_block) {
-            if (*src == '"') { quotes++; *dst++ = *src++; }
-            else if (quotes & 1) { *dst++ = *src++; }
+            if (in_string && *src == '\\' && src[1]) {
+                *dst++ = *src++;
+                *dst++ = *src++;
+            } else if (*src == '"') { in_string = !in_string; *dst++ = *src++; }
+            else if (in_string) { *dst++ = *src++; }
             else if (src[0] == '/' && src[1] == '/') { in_line  = true;  src += 2; }
             else if (src[0] == '/' && src[1] == '*') { in_block = true;  src += 2; }
             else { *dst++ = *src++; }

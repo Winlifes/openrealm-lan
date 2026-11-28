@@ -206,6 +206,22 @@ steered directly toward it and repeatedly reversed when it met the tree
 line. The repaired move routed around the line and settled at the new
 point. The follow-up move along the corridor to `(880, -2704)` also passed.
 
+### Community room compatibility on R55
+
+The room catalog adds the original archives for [Burbenog TD 2.33 Editor's Version](https://www.epicwar.com/maps/31556/)
+and [Element TD Survivor 4.3b](https://www.epicwar.com/maps/196175/).
+The release records the archive hashes and the assets observed during browser
+room entry and opening gameplay in its room preload manifest.
+
+| Map | Runtime observation |
+| --- | --- |
+| Burbenog TD 2.33 Editor's Version | Four players chose different governors and built towers. The puppy wave progressed to the footman wave. All four players received the map's defeat dialog after the defense failed. |
+| Element TD Survivor 4.3b | The host chose Normal difficulty and Extra Short mode. Four players built towers in separate lanes and reached the scripted waves. All four players received the map's result after losing their lives. The map defines eight human slots. |
+| Castle Fight EU 2.1.12 | An escaped quote caused comment stripping to truncate a later URL string. The lexer fix lets both sides receive builders and place production buildings. The tested units failed to advance and the multiboard logged invalid item lookups. |
+| X Hero Siege 3.33 | Four players received heroes via the map's random selection command. The first defensive wave did not reach the players in the test. |
+| Uther Party 2 v0.4d | Four players entered the match. The Classic mode selection units did not appear during the test. |
+| YouTD Classic 1.2c and Reforged 1.2 R1 | The Classic candidate exited during region setup. The Reforged candidate required `BlzChangeMinimapTerrainTex` to initialize. |
+
 ## Campaign difficulty source inventory (Patch 5)
 
 Before interpreting runtime tests, enumerate difficulty-related branches and AI

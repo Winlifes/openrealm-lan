@@ -1,5 +1,13 @@
 [
   {
+    "release": "r94-game-station-real-55-popular-maps",
+    "changes": [
+      "新增《Burbenog TD》2.33 编辑者版，支持最多 4 人合作守塔。",
+      "新增《元素塔防 Survivor》4.3b，支持最多 8 人。",
+      "两张新图的地图文件及实测用到的开局素材会在进房前下载。"
+    ]
+  },
+  {
     "release": "r94-game-station-real-54-flight-height",
     "changes": [
       "修复飞行单位跨越高低地时高度滞后一拍的问题。飞行单位会随地形升降，保持地图设定的离地高度。"

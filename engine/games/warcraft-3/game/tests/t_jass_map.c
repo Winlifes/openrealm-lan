@@ -217,6 +217,20 @@ TEST(wc3_jass_map, minified_set_empty_string) {
         "endfunction\n"));
 }
 
+TEST(wc3_jass_map, escaped_quote_preserves_comment_markers_inside_later_strings) {
+    T_ASSERT(run_test_jass(
+        "globals\n"
+        "  string alphabet = \"a\\\"b\"\n"
+        "endglobals\n"
+        "function address takes nothing returns string\n"
+        "  return \"https://example.invalid/*path*/\" // a real line comment\n"
+        "endfunction\n"
+        "function main takes nothing returns nothing\n"
+        "  /* a real block comment */\n"
+        "  call BJassAssert(address() == \"https://example.invalid/*path*/\", \"address was preserved\")\n"
+        "endfunction\n"));
+}
+
 /* DotA's compiled script is CR-only and glues )then / if( the way Vexorian does. */
 TEST(wc3_jass_map, minified_constant_function) {
     T_ASSERT(run_test_jass(

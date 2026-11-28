@@ -5,7 +5,7 @@ const {runInThisContext} = require('node:vm');
 const {gzipSync} = require('node:zlib');
 const test = require('node:test');
 const source = readFileSync(__dirname + '/wc3-room-assets.js', 'utf8');
-const {readBinary, openStartupCache, unpack, inflate, expandAudio} = runInThisContext(source + '\nwc3RoomAssets');
+const {readBinary, openStartupCache, unpack, inflate, expandPreloads} = runInThisContext(source + '\nwc3RoomAssets');
 
 test('startup downloads report progress and reject incomplete or corrupted files', async () => {
   const manifest = {bytes:4, sha256:createHash('sha256').update('abcd').digest('hex')};
@@ -93,7 +93,7 @@ test('room audio is synchronously readable after resource preparation', async ()
   const audio = 'units/test/attack.ogg';
   const model = 'units/test/unit.mdx';
   const assets = new Map([[audio, packed], [model, packed]]);
-  await expandAudio(assets);
+  await expandPreloads(assets, new Set(), new Set());
   assert.ok(assets.get(audio) instanceof Uint8Array);
   assert.deepEqual(Buffer.from(assets.get(audio)), clip);
   assert.strictEqual(assets.get(model), packed);
